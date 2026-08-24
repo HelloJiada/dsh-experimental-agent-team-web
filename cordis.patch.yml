@@ -1,0 +1,8 @@
+# External Agent Teams web bundle patch.
+# This bundle is opt-in and should not be part of the default web profile.
+
+- insert:
+    - id: agent-team-web
+      name: "@deepseek-ai/dsh-experimental-agent-team-web"
+      inject:
+        - sessionProjections
