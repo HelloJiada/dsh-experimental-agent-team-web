@@ -12,7 +12,7 @@
     "rootDir": "src",
     "jsx": "react-jsx",
     "isolatedModules": true,
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
   "include": [

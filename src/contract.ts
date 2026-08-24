@@ -1,6 +1,6 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { TeamMessageId, TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team'
+import type { TeamMessageId, TeamTaskId } from './agent-team-types.js'
 
 export type AgentTeamMemberRole = 'lead' | 'teammate'
 export type AgentTeamMemberPhase = 'provisioning' | 'active' | 'failed'
@@ -41,4 +41,10 @@ export interface AgentTeamView {
   readonly members: AgentTeamMemberView[]
   readonly tasks: AgentTeamTaskView[]
   readonly messages: AgentTeamMessageView[]
+}
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionMap {
+    agentTeam: AgentTeamView | null
+  }
 }

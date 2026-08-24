@@ -6,7 +6,7 @@ import type {
   TeamMemberSnapshot,
   TeamMessageSnapshot,
   TeamTaskSnapshot,
-} from '@deepseek-ai/dsh-experimental-agent-team'
+} from './agent-team-types.js'
 import type {
   AgentTeamMemberView,
   AgentTeamMessageView,
@@ -260,6 +260,12 @@ const viewSchema = z.object({
   tasks: z.array(taskViewSchema),
   messages: z.array(messageViewSchema),
 }).strict().nullable() as z.ZodType<AgentTeamView | null>
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    agentTeam: AgentTeamProjectionState
+  }
+}
 
 export const agentTeamProjectionDefinition = {
   key: 'agentTeam',

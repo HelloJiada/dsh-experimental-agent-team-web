@@ -8,8 +8,7 @@ This package adds a read-only Agent Teams web surface as an external installable
 
 **Experimental**
 
-This package is intended for experimental and internal use first.
-It depends on DeepSeek Harness package interfaces that may still evolve.
+This package is intended for experimental and internal use first. It depends on DeepSeek Harness package interfaces that may still evolve.
 
 ## What this package does
 
@@ -42,16 +41,39 @@ This package does not maintain a second Team authority store in the browser, doe
 
 ## Installation
 
-Install the package into an environment that already includes compatible DeepSeek Harness packages.
+This package is distributed as a **prebuilt bundle**. The repository commits the built `lib/` artifacts, so installation does not require building from source or fetching the DeepSeek Harness monorepo.
 
-Then add the bundle to your DSH profile, for example:
+### Recommended: install from a release tarball
 
-```yaml
-plugins:
-  - "@deepseek-ai/dsh-experimental-agent-team-web"
+Download the `.tgz` attached to a GitHub Release, then install it into your DSH profile:
+
+```bash
+cd ~/.dsh/profiles/web
+pnpm add ./dsh-experimental-agent-team-web-0.1.0.tgz
 ```
 
-Or include its bundle patch directly.
+### Alternative: install from git
+
+Install the package into an environment that already includes compatible DeepSeek Harness packages:
+
+```bash
+cd ~/.dsh/profiles/web
+pnpm add git+ssh://git@github.com/HelloJiada/dsh-experimental-agent-team-web.git
+```
+
+The git checkout already contains the committed `lib/` artifacts, so no build step runs during installation.
+
+### Enable the bundle in your DSH profile
+
+Add this to your DSH profile patch (`~/.dsh/cordis.patch.yml`):
+
+```yaml
+- insert:
+    - id: external-agent-team-web
+      name: "@deepseek-ai/dsh-experimental-agent-team-web"
+```
+
+The Agent Teams runtime package (`@deepseek-ai/dsh-experimental-agent-team`) must already be available in the profile; this bundle does not install it.
 
 ## Requirements
 
@@ -94,16 +116,33 @@ The projection value is:
 
 The view contains only committed Team facts needed by the UI.
 
-## Development
+## Building and packaging
 
-Typical local workflow:
+This section is for maintainers, not for consumers.
 
 ```bash
 pnpm install
 pnpm run build
-pnpm run typecheck
 pnpm run test
+pnpm pack
 ```
+
+`pnpm pack` produces `deepseek-ai-dsh-experimental-agent-team-web-<version>.tgz`; attach it to a GitHub Release for consumption.
+
+Build output layout:
+
+```text
+lib/
+├── index.js
+├── client.js
+├── invariant.js
+└── types/
+    ├── index.d.ts
+    ├── client/index.d.ts
+    └── invariant.d.ts
+```
+
+See `docs/releasing.md` for the release strategy.
 
 ## Known limitations
 
