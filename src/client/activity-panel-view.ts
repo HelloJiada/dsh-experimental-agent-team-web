@@ -67,7 +67,9 @@ function priorityRows(team: AgentTeamView): ActivityPanelPriorityRow[] {
       .map(priorityRankOf)
       .map(priority => priority === null ? undefined : byPriority.get(priority))
       .filter((insight): insight is AgentTeamTaskInsightView => insight !== undefined)
-    : team.taskInsights
+    : team.taskInsights.filter(insight =>
+      insight.status !== 'completed' && insight.status !== 'failed' && insight.status !== 'cancelled',
+    )
 
   return rankedInsights.slice(0, 3).map(insight => ({
     taskId: String(insight.taskId),
