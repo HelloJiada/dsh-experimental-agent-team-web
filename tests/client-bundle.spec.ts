@@ -28,7 +28,7 @@ interface SlotRegistration {
 }
 
 interface RegisteredSlot {
-  readonly slotName: string
+  readonly injectedSlotName: string | undefined
   readonly registration: SlotRegistration
   readonly component: unknown
 }
@@ -107,13 +107,19 @@ describe('client bundle protocol', () => {
 
     const bundle = exports as unknown as ClientBundleExports
     const registeredSlots: RegisteredSlot[] = []
+    let injectedSlotName: string | undefined
     bundle.apply({
       slots: {
         inject(slotName, register): void {
-          register()
+          injectedSlotName = slotName
+          try {
+            register()
+          } finally {
+            injectedSlotName = undefined
+          }
         },
         register(registration, component): SlotRegistration {
-          registeredSlots.push({ slotName: registration.name, registration, component })
+          registeredSlots.push({ injectedSlotName, registration, component })
           return registration
         },
       },
@@ -126,17 +132,17 @@ describe('client bundle protocol', () => {
 
     expect(registeredSlots).toEqual([
       expect.objectContaining({
-        slotName: 'shell.overlay',
+        injectedSlotName: 'shell.overlay',
         registration: expect.objectContaining({ id: 'agent-team-activity' }),
         component: bundle.AgentTeamActivityPanel,
       }),
       expect.objectContaining({
-        slotName: 'conversation.view',
+        injectedSlotName: 'conversation.view',
         registration: expect.objectContaining({ id: 'agent-team' }),
         component: bundle.AgentTeamConversationSummary,
       }),
     ])
-    expect(registeredSlots.find(slot => slot.slotName === 'conversation.view')?.component)
+    expect(registeredSlots.find(slot => slot.injectedSlotName === 'conversation.view')?.component)
       .not.toBe(bundle.AgentTeamActivityPanel)
   })
 
