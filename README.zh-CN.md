@@ -13,13 +13,15 @@
 它提供：
 
 - 对已提交 Agent Team 记录的 Host session projection；
-- Client conversation UI 中的 Team 工作台；
+- 当前 session 的活动徽标与轻量 transcript 摘要入口；
+- 通过 shell overlay 打开的非模态 Team 活动监视器；
 - 成员、任务和 Team 邮箱状态的只读展示；
 - 基于已提交记录推导出的团队健康度、风险提醒、建议动作和排序后的干预优先级；
 - 依赖链风险传播与成员负载分析；
 - 消息投递风险分级；
 - 快速筛选计数与推导出的 Team 时间线；
-- 带实时筛选与搜索的交互式标签页 dashboard；
+- 聚焦当前活动、阻塞工作、优先级与成员状态的紧凑监视摘要；
+- 任务依赖 DAG 可视化（纯 SVG 分层依赖图，节点状态着色、owner 归属、点击高亮依赖/下游）；
 - 有界事件历史时间线（同实体合并计数、上限 100 个实体）、时间线摘要统计、滚动里程碑窗口（按行数/按时间）与 command-bridge 建议层；
 - 宿主可消费的 Command Bridge 计划 envelope（`commandPlan` DTO：版本、优先级计数、带具体 target 的命令列表，只读、可 JSON 序列化）；
 - 对上游 `dsh-agent-teams` 运行时 `agent-teams/*` session 事件的适配（含 failed / cancelled 任务状态）；
@@ -30,7 +32,7 @@
 
 ## 架构
 
-Host Bundle 注册 `agentTeam` session projection。浏览器 Bundle 通过 DSH Client slot 系统注册 `Team` conversation view。该视图消费 projection DTO，渲染为标签页式 Captain dashboard（概览 / 任务 / 成员 / 消息 / 时间线），支持交互式筛选 chips 与搜索，并由与 Host 测试共用的纯筛选引擎支撑。
+Host Bundle 注册 `agentTeam` session projection。浏览器 Bundle 注册当前 session 的活动徽标和轻量 transcript 摘要入口；二者都会通过 DSH 的 shell-overlay slot 打开非模态 Team 活动监视器。该监视器消费 projection DTO，聚焦 active/blocked 工作、优先级和成员，不再嵌入旧的完整 dashboard。
 
 Projection 同时消费 vendored `team/*` 事件词表与上游 `dsh-agent-teams` 的 `agent-teams/*` session 事件（适配层见 `src/upstream.ts`）；逐字段对比见 [docs/contract-alignment.md](docs/contract-alignment.md)。
 
@@ -55,7 +57,7 @@ Lead/root session 的已提交 Agent Team event log 是 Team 数据的唯一权�
 - 对邮箱未送达风险的显式暴露；
 - 依赖链 fan-out 分析与干预优先级排序；
 - 快速筛选计数与 Team 时间线，便于快速扫描；
-- 带标签页导航与实时筛选的交互式 dashboard 体验；
+- 在不遮挡 conversation 的前提下突出当前 active/blocked 工作的活动监视器；
 - 有界事件历史时间线（同实体合并计数、上限 100 个实体）、摘要统计与滚动里程碑窗口（按行数/按时间）；
 - command-bridge 建议层：从 committed facts 推导带具体 target id 的可执行命令建议，并打包为宿主可消费的 `commandPlan` envelope（执行需宿主 runtime 工具层，本 bundle 保持只读）。
 
@@ -117,9 +119,11 @@ Profile 必须已经具备 Agent Team runtime 包；本 Bundle 不会安装它�
 
 ## 使用方式
 
-在已启用的 Web Profile 中打开兼容 conversation，选择 `Team` 视图，即可查看当前 session 已提交的 Team 成员、任务、邮箱状态，以及派生出来的团队洞察。
+在兼容 conversation 中，只有当前 session 存在 active 或 blocked Team 工作时才会显示 Team 活动徽标。点击徽标，或点击 transcript 中的轻量 Team 摘要，即可打开监视器。
 
-如果当前 session 没有已提交 Team 记录，视图会显示空状态。该工作台仅用于查看，不能在 UI 中修改成员、任务或邮箱状态。
+宽屏时监视器默认停靠；可选切换为可拖动、可缩放的悬浮面板。在 960px 及以下，它会变为带安全边距的紧凑 overlay。面板几何信息只保存在各浏览器本地。该监视器仅用于查看，不能在 UI 中修改成员、任务或邮箱状态；点击成员会打开该成员已有的 session。
+
+监视器默认不展示完整 timeline、筛选器、依赖 DAG 或 command explorer。依赖 DAG 仍作为 projection 的细节能力保留，供需要它的宿主体验消费。
 
 ## 构建、检查与打包
 
@@ -143,13 +147,13 @@ pnpm pack
 window.__ModuleLoader__.load({ id: "@deepseek-ai/dsh-experimental-agent-team-web", factory: (require) => { /* ... */ } })
 ```
 
-DSH module table 提供共享的 Host runtime dependencies。当前构建的 Client 中，实际 runtime external 为 `react` 与 `react/jsx-runtime`（dashboard UI 使用 hooks）；不要将其与 `dsh.client.inject` metadata 混为一谈。
+DSH module table 提供共享的 Host runtime dependencies。当前构建的 Client 中，实际 runtime external 为 `react` 与 `react/jsx-runtime`（活动监视器 UI 使用 hooks）；不要将其与 `dsh.client.inject` metadata 混为一谈。
 
 ## 已知限制
 
-- Team dashboard 仍然只读（筛选与导航仅在客户端侧进行）。
+- Team 活动监视器仍然只读。
 - 没有实时 runtime-status channel。
-- dashboard 位于 conversation view slot 内；暂不提供独立 dashboard URL 路由。
+- 监视器位于 shell overlay，不提供独立 dashboard URL 路由。
 - Team facts 仅来自 Lead/root session 的已提交 event log。
 - 本包仍属实验性项目，依赖兼容的 DSH Host contracts，不兼容任意 DSH 版本。
 

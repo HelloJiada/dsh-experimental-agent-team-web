@@ -51,6 +51,7 @@ describe('client bundle protocol', () => {
     expect(source).toMatch(/ctx\.slots\.inject\(["']shell\.overlay["']/)
     expect(source).toMatch(/name:\s*["']shell\.overlay["']/)
     expect(source).toMatch(/id:\s*["']agent-team-activity["']/)
+    expect(source).toMatch(/name:\s*["']conversation\.view["'][\s\S]*AgentTeamConversationSummary\)\);/)
     expect(source).not.toContain('}, AgentTeamWorkspace)')
 
     const declared = new Set(manifest.dsh?.client?.inject ?? [])

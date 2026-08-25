@@ -190,12 +190,26 @@
 3. 新增 `tests/command-bridge-execution.spec.ts`（2 用例）：词表恰为 6 种且无重复、文档覆盖全部 kind 与关键字段；
 4. `docs/command-bridge-execution.md` 进入 tarball（`package.json` files + `package-layout` 测试同步）。
 
+### 第十五轮（任务依赖 DAG 投影能力，已完成）
+
+1. 新增零依赖纯模块 `src/dependency-dag.ts`：Kahn 拓扑分层（level = 依赖源起的最长路径），环回退到末尾列；`dependencyDagView(tasks, memberNames)` 产出节点（level/position/tone/ownerName/下游 fan-out 深度）与去重边；
+2. 契约新增 `AgentTeamDagNodeView` / `AgentTeamDagEdgeView` / `AgentTeamDagView`，`AgentTeamView.dependencyDag` 作为稳定 DTO 由 host projection 计算并下发（含 zod schema）；
+3. 提供 DAG detail 表达：纯 SVG 分层图可按层、状态、owner 与依赖/下游关系呈现；零新增外部依赖，client external 仍只有 react + react/jsx-runtime；
+4. 新增 6 个 DAG 单元测试（链式分层、fan-in/fan-out、未解析依赖、环回退、owner 与 tone、空图）+ e2e 回放断言（spec→impl→docs 三层、followup 二层、owner Bob、danger tone、深度 3）。
+
+### 第十六轮（当前 session 浮动活动面板，已完成）
+
+1. Team UI 从嵌入式完整 dashboard 转为当前 session 的活动徽标、transcript 轻量摘要入口和 shell-overlay 非模态监视器；
+2. 徽标仅在 active/blocked 工作存在时显示；宽屏默认停靠、可选拖动/缩放悬浮，≤960px 使用紧凑安全边距 overlay，几何仅在各浏览器本地持久化；
+3. 监视器聚焦健康度、优先级、active/blocked 工作与成员状态；点击成员打开已有 session；默认不嵌入完整 timeline、筛选、DAG 或 command explorer；
+4. DAG、时间线和 Command Bridge 保持为稳定 projection/detail DTO，供需要下钻的宿主体验使用。
+
 ## 后续建议
 
 1. 独立 dashboard route（需宿主 Web shell 提供路由接入点，当前 slot 系统无该能力）；
 2. 宿主侧按 [docs/command-bridge-execution.md](command-bridge-execution.md) 实现 `commandPlan.commands` 执行层（bundle 侧契约与规范已就绪）；
 3. 在真实 Profile 中按 [docs/real-profile-smoke-check.md](real-profile-smoke-check.md) 做一次真机冒烟、再按 [docs/verification-checklist.md](verification-checklist.md) 走完整核对表（确定性回放已就绪，真机验证仍待执行）；
-4. 里程碑窗口可扩展：按依赖链/阶段语义聚合（当前按行数与按时间两种窗口均已支持）。
+4. 可按宿主需求把 DAG、里程碑或 Command Bridge detail 接入专门的下钻体验，而不扩充默认活动监视器。
 
 ## 设计原则
 

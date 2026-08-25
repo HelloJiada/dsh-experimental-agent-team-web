@@ -4,6 +4,7 @@ import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '
 import type { AgentTeamMemberLoadView, AgentTeamMemberView, AgentTeamMessageRiskView, AgentTeamMessageView, AgentTeamQuickFiltersView, AgentTeamTaskInsightView, AgentTeamTaskView, AgentTeamTimelineEntryView, AgentTeamTimelineSummaryView, AgentTeamView } from './contract.js';
 export { timelineMilestonesView } from './timeline-milestones.js';
 export { commandPlanView } from './commands.js';
+export { dependencyDagView } from './dependency-dag.js';
 /** One committed Team event, retained as a bounded timeline history entry. */
 export interface AgentTeamHistoryEntry {
     readonly id: string;

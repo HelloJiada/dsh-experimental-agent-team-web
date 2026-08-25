@@ -1,8 +1,8 @@
-# 端到端示例：Agent Team Dashboard 工作流
+# 端到端示例：Agent Team 活动监视器工作流
 
 日期：2026-08-25
 
-本文用一个可复现的示例串联本 bundle 的完整数据通路：从 committed Team 事件 → host projection → 派生洞察 → 交互式 dashboard → command bridge 建议。
+本文用一个可复现的示例串联本 bundle 的完整数据通路：从 committed Team 事件 → host projection → 派生洞察 → 轻量活动监视器 → command bridge 建议。
 
 ## 1. 环境准备
 
@@ -31,7 +31,7 @@
 
 ## 3. Projection 推导出的东西
 
-`viewAgentTeam` 会把上述事实折叠成 dashboard 所需数据：
+`viewAgentTeam` 会把上述事实折叠成活动监视器及其细节投影所需数据：
 
 ### 健康度与风险
 - `failedMemberCount = 1` → 健康度扣分
@@ -55,13 +55,13 @@
 - `Ship docs` 的两次 `team/task` 事件合并为 1 条，`count = 2`，显示最新 rev
 - 消息 queued + （后续）delivered 会合并为 1 条
 
-## 4. Dashboard 各标签页看到什么
+## 4. 当前 session 的活动入口与监视器
 
-- **概览**：健康度指标卡、Captain Briefing、Top Interventions、风险清单
-- **任务**：筛选 chips（Ready / Blocked / Stalled / Orphaned / 已完成…）+ 搜索；默认显示全部任务，点 `Blocked` 只剩 `task-impl`
-- **成员**：按负载筛选 + 名字搜索
-- **消息**：高风险 / 待送达 / Wakeup 筛选；`消息风险` 列表把 wakeup 未送达标为 high
-- **时间线**：合并后的历史条目，每条带 `#seq`、`×count`（多次更新时）、`t=time`；顶部新增摘要统计卡（事件总数 / 任务、成员、消息事件分布 / 合并条目数 / 序号范围 / 最新里程碑）；下方为滚动里程碑窗口，可切换「按行数（8/窗）/ 按时间（1h/窗）」，最近窗口置顶，headline 取最显著事件
+- 只有当前 session 有 active 或 blocked Team 工作时，才显示活动徽标和 transcript 中的轻量摘要入口；
+- 点击任一入口会打开非模态监视器，conversation 保持可见；
+- 宽屏默认停靠，用户可切换为可拖动、可缩放的悬浮面板；960px 及以下使用带安全边距的紧凑 overlay；几何信息仅保存在本地浏览器；
+- 监视器默认展示健康度、active/blocked 工作、Top Interventions 和成员状态；点击成员会打开其已有 session；
+- 默认不会嵌入完整时间线、筛选器、任务依赖 DAG 或 command explorer。DAG 仍作为 projection/detail 能力保留：`task-spec → task-impl → task-docs` 与 `task-followup` 可在需要下钻的宿主体验中按层、状态、owner 和依赖/下游关系呈现。
 
 ## 5. Command Bridge 建议（示例）
 
@@ -77,10 +77,11 @@
 ## 6. 验证清单
 
 - [ ] `pnpm run typecheck` 通过
-- [ ] `pnpm run test` 全绿（45 个用例）
+- [ ] `pnpm run test` 全绿（57 个用例）
 - [ ] `pnpm run build` 产出 host ESM + client CJS bundle
-- [ ] 在真实 Profile 中打开 Team 视图，五个标签页可切换、筛选可用
-- [ ] 概览页 Command Bridge 可展开查看宿主可消费的 `commandPlan` JSON payload
+- [ ] 在真实 Profile 中确认 current-session activity badge 与 transcript 摘要仅在 active/blocked 时出现，二者都能打开监视器
+- [ ] 验证宽屏停靠/可选悬浮与 ≤960px 紧凑 overlay；点击成员会打开已有 session
+- [ ] 验证默认监视器不嵌入完整 timeline、筛选、DAG 或 command explorer，`commandPlan` DTO 仍可供宿主消费
 
 真实 Profile + 上游 `dsh-agent-teams` 的逐项联调核对见 [docs/verification-checklist.md](verification-checklist.md)；无真实 Profile 时可用 `pnpm vitest run --configLoader runner tests/e2e-replay.spec.ts` 做确定性回放验证。
 

@@ -1,13 +1,13 @@
-# 真实 Profile 快速冒烟验证（AgentTeams + Team Dashboard）
+# 真实 Profile 快速冒烟验证（AgentTeams + Team 活动监视器）
 
 日期：2026-08-25
 
 这是一份**最小可执行**的真机联调流程：目标不是覆盖所有边界，而是在几分钟内确认
 
 1. 上游 `@nanmicoder/dsh-agent-teams` 已在 Web Profile 中生效；
-2. 本 bundle 的 Team dashboard 已被正确注入；
+2. 本 bundle 的 Team 活动监视器已被正确注入；
 3. `agent-teams/*` best-effort session 事件已被宿主识别；
-4. Captain 侧最关键的观察能力（概览 / 时间线 / Command Bridge）能看到真实数据。
+4. Captain 侧的 current-session 活动入口与轻量监视器能准确反映真实数据。
 
 完整核对表见 [verification-checklist.md](verification-checklist.md)。本文件只保留最短路径。
 
@@ -74,16 +74,16 @@ Use AgentTeams to review the last 20 commits from performance, security, and pro
 - 至少一次 `task-updated`
 - 至少一条 `message-sent`
 
-## 4. 打开 Team 视图做 60 秒冒烟检查
+## 4. 打开活动监视器做 60 秒冒烟检查
 
 至少确认以下 6 项：
 
-1. **概览**：健康度 / 成员数 / 任务数不是空值；
-2. **Top Interventions**：若存在 blocked/stalled 任务，列表不为空；
-3. **时间线摘要**：序号范围、事件总数、最新里程碑存在；
-4. **里程碑窗口**：能在「按行数 / 按时间」两种模式之间切换；
-5. **Command Bridge**：能看到建议命令列表；
-6. **`commandPlan` envelope**：概览页可展开 JSON，且包含 `version`、`generatedFromTeamId`、`commands[].targetId`。
+1. **活动入口**：当前 session 存在 active 或 blocked 工作时，活动徽标与 transcript 轻量摘要出现；
+2. **打开方式**：点击任一入口都能打开非模态监视器，conversation 保持可见；
+3. **监视器摘要**：健康度 / 成员数 / active/blocked 任务数不是空值；若存在 blocked/stalled 工作，Top Interventions 不为空；
+4. **布局**：宽屏默认停靠，可切换为可拖动、可缩放的悬浮面板；在 ≤960px 下为紧凑安全边距 overlay；
+5. **成员导航**：点击成员会打开其已有 session；
+6. **内容边界**：默认面板不显示完整 timeline、筛选器、DAG 或 command explorer；这些仍可作为 projection/detail DTO 供宿主消费。
 
 ## 5. 若 Team 视图为空，先排查这三个问题
 
@@ -93,7 +93,7 @@ Use AgentTeams to review the last 20 commits from performance, security, and pro
 
 - `.agent-teams/` 磁盘状态可能存在；
 - 但本 bundle 读不到 committed event log；
-- Team dashboard 会显示空状态。
+- 活动入口不会显示。
 
 ### B. bundle 没有注入到 profile
 

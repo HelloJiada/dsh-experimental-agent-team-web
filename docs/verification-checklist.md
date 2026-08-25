@@ -10,7 +10,7 @@
 
 ## 1. 关键前提：宿主必须识别 `agent-teams/*` 事件类型
 
-上游 runtime 的事件是 **best-effort**：只有宿主把 `agent-teams/*`（7 种）纳入其 `KNOWN_SESSION_EVENT_TYPES` 时，事件才会作为 session 事件落盘；否则磁盘状态 `.agent-teams/` 仍是权威，但本 bundle 的 projection 读不到事件流，dashboard 会显示空状态。
+上游 runtime 的事件是 **best-effort**：只有宿主把 `agent-teams/*`（7 种）纳入其 `KNOWN_SESSION_EVENT_TYPES` 时，事件才会作为 session 事件落盘；否则磁盘状态 `.agent-teams/` 仍是权威，但本 bundle 的 projection 读不到事件流，活动入口不会显示。
 
 验证方法：跑一个真实团队流程后，检查 lead session 的 committed event log 中是否出现 `agent-teams/*` 事件。
 
@@ -44,31 +44,29 @@ pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.0.tgz
 6. 用 captain 给成员发消息（`message-sent`）
 7. 再创建一个依赖失败任务的新任务（验证 blocked 派生）
 
-## 4. 打开 Team 视图逐项核对
+## 4. 打开当前 session 活动监视器逐项核对
 
 | 检查点 | 预期 |
 | --- | --- |
-| 概览：健康度、成员数、任务数 | 与 committed 事件一致，健康度在 0–100 |
-| 概览：Captain Briefing / Top Interventions | 阻塞任务出现在干预首位；failed / cancelled 任务**不**出现在干预里 |
-| 任务：状态与洞察 | `completed` / `failed` / `cancelled` / `blocked` 正确；terminal 任务 readiness 为 failed / cancelled |
+| 活动入口范围 | 只有当前 session 有 active 或 blocked 工作时出现活动徽标与 transcript 摘要；无符合条件工作时不出现 |
+| 打开与布局 | 点击任一入口打开非模态监视器；宽屏默认停靠，可选悬浮、拖动和缩放；≤960px 为紧凑安全边距 overlay；几何仅本地浏览器持久化 |
+| 监视器摘要 | 健康度、成员数、active/blocked 任务数与 committed 事件一致；Captain Briefing / Top Interventions 中阻塞任务优先，failed / cancelled 任务**不**出现 |
+| 成员导航 | 点击成员打开已有成员 session；不创建新会话 |
+| 默认内容边界 | 默认监视器不嵌入完整 timeline、筛选器、依赖 DAG 或 command explorer |
+| 依赖图：DAG detail | `dependencyDag` DTO 保持可用：分层、状态、owner、依赖边数正确；这是 detail/projection 能力，不是默认监视器内容 |
 | 任务：owner 解析 | 上游按名字寻址，成员加入后再建任务时 owner 能解析到 session id |
-| 成员：负载分级 | 持有 in_progress 任务的成员为 focused/stretched 等 |
 | 消息：风险 | 上游消息为 quiet + 未送达 → **low** 风险（不会刷「待送达」噪音）；目标成员 failed 时才是 high |
-| 时间线：摘要统计 | 事件总数 = 合并前事件数；合并条目数与实体数一致；序号范围连续；最新里程碑为最后事件 |
-| 时间线：里程碑窗口 | 按 8 行滚动窗口分组、最近窗口置顶；headline 取最显著事件（danger > warn > good），如 failed 任务；窗口内分布与事件数正确 |
-| 时间线：窗口切换 | 「按行数 / 按时间」切换后窗口分布随模式变化；时间模式按 1h 桶聚合，无时间戳行归入最早桶 |
-| Command Bridge | 有 `task:unblock` 指向阻塞任务；无 failed 成员则无 `member:restart`；无 high 风险消息则无 `message:redeliver` |
-| Command Bridge：计划 envelope | 概览页可展开查看 `commandPlan` JSON：`version: 1`、`generatedFromTeamId` 为团队 id、`total`/优先级计数与命令列表一致、每条命令带具体 `targetId` |
+| 时间线与 Command Bridge DTO | 时间线摘要、里程碑窗口和 `commandPlan`（`version: 1`、团队 id、计数、具体 `targetId`）继续作为 projection/detail 能力可供宿主消费 |
 | Command Bridge：执行契约 | 宿主侧消费规范见 [docs/command-bridge-execution.md](command-bridge-execution.md)：6 种命令词表、逐 kind 执行语义、幂等与安全建议 |
 
 ## 5. 已知边界（验证时逐条确认）
 
-- 事件是 best-effort：`KNOWN_SESSION_EVENT_TYPES` 未含 `agent-teams/*` 时 dashboard 为空；
+- 事件是 best-effort：`KNOWN_SESSION_EVENT_TYPES` 未含 `agent-teams/*` 时活动入口不会显示；
 - 名字 → id 解析是近似：`captain` → 团队 session；成员按 name 折叠查找；未知名字回退到团队 id（见 `docs/contract-alignment.md`）；
 - `output` / `attempt` / `attemptId` / `handoffId` 与时间戳暂不进入视图；
-- `team-deleted` 只进入历史时间线，视图保留删除前最后状态；
+- `team-deleted` 只进入历史时间线，投影保留删除前最后状态；
 - 事件历史按实体合并、上限 100 个实体；
-- dashboard 只读，Command Bridge 仅建议、不执行。
+- 活动监视器只读，Command Bridge 仅建议、不执行。
 
 ## 6. 可执行回放（无真实 Profile 时的替代验证）
 
