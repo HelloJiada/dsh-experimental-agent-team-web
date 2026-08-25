@@ -46,6 +46,7 @@ function riskView(): AgentTeamView {
       latestTitle: null,
     },
     timelineMilestones: [],
+    dependencyDag: { nodes: [], edges: [], levels: 0 },
     commandPlan: {
       version: 1,
       generatedFromTeamId: 'lead' as never,

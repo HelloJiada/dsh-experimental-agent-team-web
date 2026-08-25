@@ -148,6 +148,28 @@ export interface AgentTeamCommandPlanView {
   readonly commands: AgentTeamCommandSuggestion[]
 }
 
+export interface AgentTeamDagNodeView {
+  readonly id: string
+  readonly subject: string
+  readonly status: AgentTeamTaskStatus
+  readonly tone: 'neutral' | 'good' | 'warn' | 'danger'
+  readonly ownerName: string | null
+  readonly level: number
+  readonly position: number
+  readonly dependencyDepth: number
+}
+
+export interface AgentTeamDagEdgeView {
+  readonly from: string
+  readonly to: string
+}
+
+export interface AgentTeamDagView {
+  readonly nodes: AgentTeamDagNodeView[]
+  readonly edges: AgentTeamDagEdgeView[]
+  readonly levels: number
+}
+
 export interface AgentTeamSummaryView {
   readonly memberCount: number
   readonly failedMemberCount: number
@@ -193,6 +215,7 @@ export interface AgentTeamView {
   readonly timeline: AgentTeamTimelineEntryView[]
   readonly timelineSummary: AgentTeamTimelineSummaryView
   readonly timelineMilestones: AgentTeamMilestoneWindowView[]
+  readonly dependencyDag: AgentTeamDagView
   readonly commandPlan: AgentTeamCommandPlanView
   readonly summary: AgentTeamSummaryView
 }

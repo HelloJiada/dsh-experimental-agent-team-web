@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
+  AgentTeamDagNodeView,
   AgentTeamMemberLoadView,
   AgentTeamMessageRiskView,
   AgentTeamTaskInsightView,
@@ -15,11 +16,12 @@ import {
 import { type AgentTeamCommandSuggestion } from '../commands.js'
 import { timelineMilestonesView } from '../timeline-milestones.js'
 
-type WorkspaceTab = 'overview' | 'tasks' | 'members' | 'messages' | 'timeline'
+type WorkspaceTab = 'overview' | 'tasks' | 'dag' | 'members' | 'messages' | 'timeline'
 
 const TABS: readonly { key: WorkspaceTab, label: string }[] = [
   { key: 'overview', label: '概览' },
   { key: 'tasks', label: '任务' },
+  { key: 'dag', label: '依赖图' },
   { key: 'members', label: '成员' },
   { key: 'messages', label: '消息' },
   { key: 'timeline', label: '时间线' },
@@ -552,6 +554,149 @@ function MessagesTab({
   )
 }
 
+const DAG_COL_WIDTH = 232
+const DAG_ROW_HEIGHT = 84
+const DAG_NODE_WIDTH = 200
+const DAG_NODE_HEIGHT = 56
+const DAG_PAD = 24
+
+const dagTonePalette: Record<AgentTeamDagNodeView['tone'], { fill: string, stroke: string, text: string }> = {
+  neutral: { fill: '#f8fafc', stroke: '#cbd5e1', text: '#334155' },
+  good: { fill: '#f0fdf4', stroke: '#86efac', text: '#166534' },
+  warn: { fill: '#fffbeb', stroke: '#fde68a', text: '#92400e' },
+  danger: { fill: '#fef2f2', stroke: '#fca5a5', text: '#991b1b' },
+}
+
+function DependencyDagTab({ team }: { readonly team: AgentTeamView }): JSX.Element {
+  const dag = team.dependencyDag
+  const [selected, setSelected] = useState<string | null>(null)
+
+  const positions = useMemo(() => {
+    const map = new Map<string, { x: number, y: number }>()
+    for (const node of dag.nodes) {
+      map.set(node.id, {
+        x: DAG_PAD + node.level * DAG_COL_WIDTH,
+        y: DAG_PAD + node.position * DAG_ROW_HEIGHT,
+      })
+    }
+    return map
+  }, [dag])
+
+  const adjacent = useMemo(() => {
+    const set = new Set<string>()
+    if (selected !== null) {
+      for (const edge of dag.edges) {
+        if (edge.from === selected || edge.to === selected) {
+          set.add(edge.from)
+          set.add(edge.to)
+        }
+      }
+    }
+    return set
+  }, [dag.edges, selected])
+
+  const maxPerLevel = useMemo(() => {
+    let max = 0
+    const counts = new Map<number, number>()
+    for (const node of dag.nodes) {
+      const count = (counts.get(node.level) ?? 0) + 1
+      counts.set(node.level, count)
+      if (count > max) max = count
+    }
+    return max
+  }, [dag.nodes])
+
+  if (dag.nodes.length === 0) {
+    return (
+      <section>
+        <h3>任务依赖图</h3>
+        <p>当前没有任务，暂无可视化依赖关系。</p>
+      </section>
+    )
+  }
+
+  const width = DAG_PAD * 2 + (dag.levels - 1) * DAG_COL_WIDTH + DAG_NODE_WIDTH
+  const height = DAG_PAD * 2 + maxPerLevel * DAG_ROW_HEIGHT
+
+  return (
+    <section style={{ display: 'grid', gap: 12 }}>
+      <div>
+        <h3 style={{ marginBottom: 8 }}>任务依赖图（DAG）</h3>
+        <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>
+          {dag.nodes.length} 个任务 · {dag.levels} 层 · {dag.edges.length} 条依赖
+          {selected !== null ? ' · 点击已选节点可取消高亮' : ' · 点击节点高亮其依赖/下游'}
+        </p>
+      </div>
+      <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff' }}>
+        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="任务依赖图">
+          <defs>
+            <marker id="dagArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+            </marker>
+          </defs>
+          {dag.edges.map(edge => {
+            const from = positions.get(edge.from)
+            const to = positions.get(edge.to)
+            if (from === undefined || to === undefined) return null
+            const highlighted = selected !== null && (edge.from === selected || edge.to === selected)
+            const path = [
+              `M ${from.x + DAG_NODE_WIDTH} ${from.y + DAG_NODE_HEIGHT / 2}`,
+              `C ${from.x + DAG_NODE_WIDTH + 60} ${from.y + DAG_NODE_HEIGHT / 2},`,
+              `${to.x - 60} ${to.y + DAG_NODE_HEIGHT / 2},`,
+              `${to.x} ${to.y + DAG_NODE_HEIGHT / 2}`,
+            ].join(' ')
+            return (
+              <path
+                key={`${edge.from}->${edge.to}`}
+                d={path}
+                fill="none"
+                stroke={highlighted ? '#2563eb' : '#94a3b8'}
+                strokeWidth={highlighted ? 2.5 : 1.2}
+                markerEnd="url(#dagArrow)"
+              />
+            )
+          })}
+          {dag.nodes.map(node => {
+            const position = positions.get(node.id)
+            if (position === undefined) return null
+            const palette = dagTonePalette[node.tone]
+            const dimmed = selected !== null && !adjacent.has(node.id)
+            const isSelected = selected === node.id
+            return (
+              <g
+                key={node.id}
+                onClick={() => setSelected(prev => (prev === node.id ? null : node.id))}
+                style={{ cursor: 'pointer', opacity: dimmed ? 0.3 : 1 }}
+              >
+                <title>{`${node.subject}\nstatus: ${node.status}\nowner: ${node.ownerName ?? '未指派'}\n下游依赖: ${node.dependencyDepth}`}</title>
+                <rect
+                  x={position.x}
+                  y={position.y}
+                  width={DAG_NODE_WIDTH}
+                  height={DAG_NODE_HEIGHT}
+                  rx={8}
+                  fill={palette.fill}
+                  stroke={isSelected ? '#2563eb' : palette.stroke}
+                  strokeWidth={isSelected ? 2 : 1}
+                />
+                <text x={position.x + 10} y={position.y + 22} fontSize={13} fontWeight={600} fill={palette.text}>
+                  {node.subject.length > 20 ? `${node.subject.slice(0, 20)}…` : node.subject}
+                </text>
+                <text x={position.x + 10} y={position.y + 42} fontSize={11} fill="#64748b">
+                  {node.status}{node.ownerName !== null ? ` · ${node.ownerName}` : ' · 未指派'}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+      <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+        节点按依赖层从左到右排列（第 0 层为无依赖任务）；颜色反映任务状态；数字角标语义见任务洞察。
+      </p>
+    </section>
+  )
+}
+
 function TimelineTab({ team }: { readonly team: AgentTeamView }): JSX.Element {
   const summary = team.timelineSummary
   const [windowMode, setWindowMode] = useState<'count' | 'time'>('count')
@@ -670,6 +815,7 @@ export function AgentTeamWorkspace({ useProjection }: ConvViewProps): JSX.Elemen
 
       {tab === 'overview' && <OverviewTab team={team} />}
       {tab === 'tasks' && <TasksTab team={team} filter={filter} onFilterChange={setFilter} />}
+      {tab === 'dag' && <DependencyDagTab team={team} />}
       {tab === 'members' && <MembersTab team={team} filter={filter} onFilterChange={setFilter} />}
       {tab === 'messages' && <MessagesTab team={team} filter={filter} onFilterChange={setFilter} />}
       {tab === 'timeline' && <TimelineTab team={team} />}

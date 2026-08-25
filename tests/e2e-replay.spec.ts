@@ -139,5 +139,18 @@ describe('agentTeam end-to-end replay of the upstream lifecycle', () => {
       total: commands.length,
       commands: expect.any(Array) as unknown,
     })
+
+    // Dependency DAG: spec(0) -> impl(1) -> docs(2), followup(2); 3 levels.
+    expect(view.dependencyDag.levels).toBe(3)
+    expect(view.dependencyDag.nodes).toHaveLength(4)
+    expect(view.dependencyDag.edges).toHaveLength(3)
+    expect(view.dependencyDag.nodes.find(node => node.id === 'task-spec')?.level).toBe(0)
+    expect(view.dependencyDag.nodes.find(node => node.id === 'task-impl')?.level).toBe(1)
+    expect(view.dependencyDag.nodes.find(node => node.id === 'task-docs')?.level).toBe(2)
+    expect(view.dependencyDag.nodes.find(node => node.id === 'task-followup')?.level).toBe(2)
+    // Owner names resolve to members; failed impl is the danger node.
+    expect(view.dependencyDag.nodes.find(node => node.id === 'task-followup')?.ownerName).toBe('Bob')
+    expect(view.dependencyDag.nodes.find(node => node.id === 'task-impl')?.tone).toBe('danger')
+    expect(view.dependencyDag.nodes.find(node => node.id === 'task-spec')?.dependencyDepth).toBe(3)
   })
 })

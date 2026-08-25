@@ -30,6 +30,8 @@ export { timelineMilestonesView } from './timeline-milestones.js'
 import { commandPlanView } from './commands.js'
 import { AGENT_TEAM_COMMAND_KINDS } from './commands.js'
 export { commandPlanView } from './commands.js'
+import { dependencyDagView } from './dependency-dag.js'
+export { dependencyDagView } from './dependency-dag.js'
 
 /** One committed Team event, retained as a bounded timeline history entry. */
 export interface AgentTeamHistoryEntry {
@@ -978,6 +980,10 @@ export function viewAgentTeam(state: AgentTeamProjectionState): AgentTeamView | 
   const timeline = timelineView(members, tasks, messages, state.history ?? [])
   const timelineSummary = timelineSummaryView(timeline)
   const timelineMilestones = timelineMilestonesView(timeline)
+  const memberNames = new Map<string, string>(
+    members.map(member => [String(member.id), member.name]),
+  )
+  const dependencyDag = dependencyDagView(tasks, memberNames)
   const summary = summaryView(members, tasks, messages, rankedInsights, memberLoads, messageRisks)
   const commandPlan = commandPlanView({
     teamId: state.teamId,
@@ -1006,6 +1012,7 @@ export function viewAgentTeam(state: AgentTeamProjectionState): AgentTeamView | 
     timeline,
     timelineSummary,
     timelineMilestones,
+    dependencyDag,
     commandPlan,
     summary,
   }
@@ -1141,6 +1148,28 @@ const commandPlanViewSchema = z.object({
   commands: z.array(commandSuggestionViewSchema),
 }).strict()
 
+const dagNodeViewSchema = z.object({
+  id: z.string().min(1),
+  subject: z.string(),
+  status: z.enum(['pending', 'in_progress', 'completed', 'failed', 'cancelled']),
+  tone: z.enum(['neutral', 'good', 'warn', 'danger']),
+  ownerName: z.string().nullable(),
+  level: z.number().int().nonnegative(),
+  position: z.number().int().nonnegative(),
+  dependencyDepth: z.number().int().nonnegative(),
+}).strict()
+
+const dagEdgeViewSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+}).strict()
+
+const dagViewSchema = z.object({
+  nodes: z.array(dagNodeViewSchema),
+  edges: z.array(dagEdgeViewSchema),
+  levels: z.number().int().nonnegative(),
+}).strict()
+
 const summaryViewSchema = z.object({
   memberCount: z.number().int().nonnegative(),
   failedMemberCount: z.number().int().nonnegative(),
@@ -1186,6 +1215,7 @@ const viewSchema = z.object({
   timeline: z.array(timelineEntryViewSchema),
   timelineSummary: timelineSummaryViewSchema,
   timelineMilestones: z.array(timelineMilestoneWindowViewSchema),
+  dependencyDag: dagViewSchema,
   commandPlan: commandPlanViewSchema,
   summary: summaryViewSchema,
 }).strict().nullable() as z.ZodType<AgentTeamView | null>

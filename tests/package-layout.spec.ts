@@ -36,6 +36,10 @@ describe('package layout', () => {
     await expect(Promise.all(expected.map(path => access(resolve(root, path))))).resolves.toHaveLength(expected.length)
   })
 
+  it('does not require a CSS sidecar at runtime', async () => {
+    await expect(access(resolve(root, 'lib/style.css'))).rejects.toThrow()
+  })
+
   it('does not publish declarations for colocated source tests', async () => {
     const declarationFiles = await listFiles(resolve(root, 'lib/types'))
 

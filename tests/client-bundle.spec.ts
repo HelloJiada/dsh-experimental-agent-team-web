@@ -1,9 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Script, createContext } from 'node:vm'
+import { JSDOM } from 'jsdom'
 import { describe, expect, it, vi } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
+const clientBundleSource = readFile(resolve(root, 'lib/client.js'), 'utf8')
 const defaultModuleTable = new Set([
   'react',
   'react/jsx-runtime',
@@ -55,12 +57,32 @@ interface PackageManifest {
   readonly dsh?: { readonly client?: { readonly inject?: readonly string[] } }
 }
 
+function createClientRequire(options: {
+  readonly available?: ReadonlySet<string>
+  readonly requested?: Set<string>
+} = {}): (id: string) => unknown {
+  return (id) => {
+    options.requested?.add(id)
+    if (options.available !== undefined && !options.available.has(id)) {
+      throw new Error(`unexpected client external: ${id}`)
+    }
+    if (id === 'react/jsx-runtime') {
+      return { Fragment: Symbol('Fragment'), jsx: vi.fn(), jsxs: vi.fn() }
+    }
+    if (id === 'react') {
+      return { useState: vi.fn(() => [undefined, vi.fn()]), useMemo: vi.fn((fn: () => unknown) => fn()) }
+    }
+    if (id === '@deepseek-ai/dsh-client-ui-layout/client') return {}
+    throw new Error(`missing test stub for declared client external: ${id}`)
+  }
+}
+
 describe('client bundle protocol', () => {
   it('registers a classic-script factory whose requests exist in the DSH module table', async () => {
     const manifest = JSON.parse(
       await readFile(resolve(root, 'package.json'), 'utf8'),
     ) as PackageManifest
-    const source = await readFile(resolve(root, 'lib/client.js'), 'utf8')
+    const source = await clientBundleSource
     const registrations: Registration[] = []
     const context = createContext({
       window: {
@@ -79,18 +101,7 @@ describe('client bundle protocol', () => {
     const declared = new Set(manifest.dsh?.client?.inject ?? [])
     const available = new Set([...defaultModuleTable, ...declared])
     const requested = new Set<string>()
-    const exports = registrations[0]!.factory((id) => {
-      requested.add(id)
-      if (!available.has(id)) throw new Error(`unexpected client external: ${id}`)
-      if (id === 'react/jsx-runtime') {
-        return { Fragment: Symbol('Fragment'), jsx: vi.fn(), jsxs: vi.fn() }
-      }
-      if (id === 'react') {
-        return { useState: vi.fn(() => [undefined, vi.fn()]), useMemo: vi.fn((fn: () => unknown) => fn()) }
-      }
-      if (id === '@deepseek-ai/dsh-client-ui-layout/client') return {}
-      throw new Error(`missing test stub for declared client external: ${id}`)
-    })
+    const exports = registrations[0]!.factory(createClientRequire({ available, requested }))
 
     expect(requested).toEqual(new Set([
       'react',
@@ -146,8 +157,64 @@ describe('client bundle protocol', () => {
       .not.toBe(bundle.AgentTeamActivityPanel)
   })
 
-  it('parses as a classic script without top-level ESM module syntax', async () => {
-    const source = await readFile(resolve(root, 'lib/client.js'), 'utf8')
+  it('installs the bundled CSS module once when the factory runs in a DOM', async () => {
+    const source = await clientBundleSource
+    const registrations: Registration[] = []
+    const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+      runScripts: 'outside-only',
+    })
+    Object.defineProperty(dom.window, '__ModuleLoader__', {
+      value: {
+        load(registration: Registration): void {
+          registrations.push(registration)
+        },
+      },
+    })
+
+    dom.window.eval(source)
+    expect(registrations).toHaveLength(1)
+
+    try {
+      const require = createClientRequire()
+      registrations[0]!.factory(require)
+      registrations[0]!.factory(require)
+
+      const tagId = '@deepseek-ai/dsh-experimental-agent-team-web/AgentTeamActivityPanel.module.css'
+      const selector = `style[data-plugin-css=${JSON.stringify(tagId)}]`
+      expect(dom.window.document.querySelectorAll(selector)).toHaveLength(1)
+      const style = dom.window.document.querySelector<HTMLStyleElement>(selector)!
+      expect(style.dataset.plugin).toBe('@deepseek-ai/dsh-experimental-agent-team-web')
+      expect(style.dataset.pluginCss).toBe(tagId)
+      expect(style.textContent).toContain('_root')
+      expect(style.textContent).toMatch(/@media \((?:max-width:\s*960px|width\s*<=\s*960px)\)/)
+      expect(style.textContent).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)/)
+    } finally {
+      dom.window.close()
+    }
+  })
+
+  it('runs the client factory without a DOM', async () => {
+    const source = await clientBundleSource
+    const registrations: Registration[] = []
+    const context = createContext({
+      window: {
+        __ModuleLoader__: {
+          load(registration: Registration): void {
+            registrations.push(registration)
+          },
+        },
+      },
+    })
+    new Script(source, { filename: 'lib/client.js' }).runInContext(context)
+
+    expect(() => registrations[0]!.factory(createClientRequire())).not.toThrow()
+  })
+
+  it('parses as a self-contained classic script without CSS runtime requests', async () => {
+    const source = await clientBundleSource
     expect(() => new Script(source, { filename: 'lib/client.js' })).not.toThrow()
+    expect(source).not.toMatch(/^\s*import\s/m)
+    expect(source).not.toMatch(/require\([^)]*\.css["'][^)]*\)/)
+    expect(source).not.toContain(`${root}/`)
   })
 })
