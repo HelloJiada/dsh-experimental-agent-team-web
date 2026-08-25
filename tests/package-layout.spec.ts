@@ -1,8 +1,18 @@
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
+
+async function listFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true })
+  const files = await Promise.all(entries.map(async entry => {
+    const path = resolve(directory, entry.name)
+    if (entry.isDirectory()) return listFiles(path).then(paths => paths.map(child => `${entry.name}/${child}`))
+    return [entry.name]
+  }))
+  return files.flat()
+}
 const expected = [
   'lib/index.js',
   'lib/client.js',
@@ -24,6 +34,12 @@ describe('package layout', () => {
 
     expect(new Set(declaredExports)).toEqual(new Set(expected))
     await expect(Promise.all(expected.map(path => access(resolve(root, path))))).resolves.toHaveLength(expected.length)
+  })
+
+  it('does not publish declarations for colocated source tests', async () => {
+    const declarationFiles = await listFiles(resolve(root, 'lib/types'))
+
+    expect(declarationFiles.filter(path => path.includes('.test.d.ts'))).toEqual([])
   })
 
   it('publishes linked English and Chinese README files with the release tarball name', async () => {
