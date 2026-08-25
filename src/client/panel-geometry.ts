@@ -81,7 +81,7 @@ export function compactPanelForBounds(bounds: PanelBounds): boolean {
 }
 
 export function panelUsesAutoHeight(layout: PanelLayout): boolean {
-  return !layout.manualHeight
+  return layout.mode === 'docked' || !layout.manualHeight
 }
 
 export function panelMaximumHeight(layout: PanelLayout, bounds: PanelBounds): number {
@@ -105,11 +105,13 @@ function visibleGeometry(geometry: PanelGeometry, bounds: PanelBounds): PanelGeo
 
 export function resolvePanelGeometry(layout: PanelLayout, bounds: PanelBounds): PanelGeometry {
   if (compactPanelForBounds(bounds)) {
+    const marginX = Math.min(PANEL_FLOAT_MARGIN, Math.floor(bounds.width / 2))
+    const marginY = Math.min(PANEL_FLOAT_MARGIN, Math.floor(bounds.height / 2))
     return {
-      x: PANEL_FLOAT_MARGIN,
-      y: PANEL_FLOAT_MARGIN,
-      width: Math.max(1, bounds.width - PANEL_FLOAT_MARGIN * 2),
-      height: Math.max(1, bounds.height - PANEL_FLOAT_MARGIN * 2),
+      x: marginX,
+      y: marginY,
+      width: Math.max(1, bounds.width - marginX * 2),
+      height: Math.max(1, bounds.height - marginY * 2),
     }
   }
   if (layout.mode === 'docked') {
@@ -138,7 +140,7 @@ export function floatPanelLayout(layout: PanelLayout, bounds: PanelBounds): Pane
 
 export function dockPanelLayout(layout: PanelLayout, bounds: PanelBounds): PanelLayout {
   const geometry = resolvePanelGeometry({ ...layout, mode: 'docked' }, bounds)
-  return { ...layout, mode: 'docked', x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height }
+  return { ...layout, mode: 'docked', manualHeight: false, x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height }
 }
 
 export function movePanelLayout(layout: PanelLayout, dx: number, dy: number, bounds: PanelBounds): PanelLayout {
@@ -165,7 +167,7 @@ export function resizePanelLayout(
   } else {
     geometry = {
       ...current,
-      width: clamp(current.width + dx, 1, bounds.width - PANEL_FLOAT_MARGIN - current.x),
+      width: clamp(current.width + dx, 1, Math.min(PANEL_MAX_WIDTH, bounds.width - PANEL_FLOAT_MARGIN - current.x)),
       height: clamp(current.height + dy, 1, bounds.height - PANEL_FLOAT_MARGIN - current.y),
     }
   }

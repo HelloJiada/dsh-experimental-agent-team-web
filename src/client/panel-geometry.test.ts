@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_PANEL_LAYOUT,
+  PANEL_MAX_WIDTH,
   compactPanelForBounds,
   dockPanelLayout,
   floatPanelLayout,
@@ -49,6 +50,29 @@ describe('activity panel geometry', () => {
     expect(panelUsesAutoHeight(resizePanelLayout(floating, 'left', 20, 20, wide))).toBe(true)
     expect(panelUsesAutoHeight(resizePanelLayout(floating, 'bottom', 20, 20, wide))).toBe(false)
     expect(panelUsesAutoHeight(resizePanelLayout(floating, 'corner', 20, 20, wide))).toBe(false)
+  })
+
+  it('restores automatic height when docking a manually resized floating panel', () => {
+    const manuallyResized = resizePanelLayout(floatPanelLayout(DEFAULT_PANEL_LAYOUT, wide), 'bottom', 20, 20, wide)
+    expect(manuallyResized.manualHeight).toBe(true)
+    const docked = dockPanelLayout(manuallyResized, wide)
+    expect(docked.manualHeight).toBe(false)
+    expect(panelUsesAutoHeight({ ...docked, manualHeight: true })).toBe(true)
+  })
+
+  it('caps corner resize width at the panel maximum', () => {
+    const extraWide = { width: 1800, height: 900, anchorRight: 1600 }
+    const starting = floatPanelLayout({ ...DEFAULT_PANEL_LAYOUT, mode: 'floating', x: 100, y: 100 }, extraWide)
+    const resized = resizePanelLayout(starting, 'corner', 10000, 0, extraWide)
+    expect(resized.width).toBe(PANEL_MAX_WIDTH)
+  })
+
+  it('uses reduced compact margins when a full safe margin cannot fit', () => {
+    const compact = resolvePanelGeometry(DEFAULT_PANEL_LAYOUT, { width: 20, height: 18, anchorRight: 20 })
+    expect(compact.x).toBeGreaterThanOrEqual(0)
+    expect(compact.y).toBeGreaterThanOrEqual(0)
+    expect(compact.x + compact.width).toBeLessThanOrEqual(20)
+    expect(compact.y + compact.height).toBeLessThanOrEqual(18)
   })
 
   it('preserves a visible rectangle when converting between docked and floating modes', () => {
