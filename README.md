@@ -21,7 +21,7 @@ It provides:
 - message delivery risk classification;
 - quick-filter counts and a derived Team timeline;
 - a compact monitor summary of current activity, blocked work, priorities, and member status;
-- a task-dependency DAG visualization (pure-SVG layered graph, status-toned nodes, owner labels, click-to-highlight dependencies/dependents);
+- a task-dependency DAG projection/detail capability (pure-SVG layered graph, status-toned nodes, owner labels, click-to-highlight dependencies/dependents for host experiences that opt into it);
 - a bounded event-history timeline (entity-coalesced, capped) with timeline summary analytics, rolling milestone windows (count- or time-based), and a command-bridge suggestion layer;
 - a host-consumable Command Bridge plan envelope (`commandPlan` DTO: version, priority counts, and a command list with concrete targets, read-only and JSON-serializable);
 - an adapter for the upstream `dsh-agent-teams` runtime's `agent-teams/*` session events (with `failed`/`cancelled` task states);

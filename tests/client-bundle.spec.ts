@@ -22,6 +22,34 @@ interface Registration {
   readonly factory: ClientFactory
 }
 
+interface SlotRegistration {
+  readonly name: string
+  readonly id: string
+}
+
+interface RegisteredSlot {
+  readonly slotName: string
+  readonly registration: SlotRegistration
+  readonly component: unknown
+}
+
+interface ClientBundleExports {
+  readonly inject: readonly string[]
+  readonly apply: (ctx: {
+    readonly slots: {
+      inject(slotName: string, register: () => unknown): void
+      register(registration: SlotRegistration, component: unknown): unknown
+    }
+    readonly sessions: {
+      subagentAddress(sessionId: unknown): undefined
+      openSubagent(address: unknown): void
+      open(sessionId: unknown): void
+    }
+  }) => void
+  readonly AgentTeamActivityPanel: unknown
+  readonly AgentTeamConversationSummary: unknown
+}
+
 interface PackageManifest {
   readonly name: string
   readonly dsh?: { readonly client?: { readonly inject?: readonly string[] } }
@@ -48,12 +76,6 @@ describe('client bundle protocol', () => {
     expect(registrations).toHaveLength(1)
     expect(registrations[0]?.id).toBe(manifest.name)
     expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-layout')
-    expect(source).toMatch(/ctx\.slots\.inject\(["']shell\.overlay["']/)
-    expect(source).toMatch(/name:\s*["']shell\.overlay["']/)
-    expect(source).toMatch(/id:\s*["']agent-team-activity["']/)
-    expect(source).toMatch(/name:\s*["']conversation\.view["'][\s\S]*AgentTeamConversationSummary\)\);/)
-    expect(source).not.toContain('}, AgentTeamWorkspace)')
-
     const declared = new Set(manifest.dsh?.client?.inject ?? [])
     const available = new Set([...defaultModuleTable, ...declared])
     const requested = new Set<string>()
@@ -82,6 +104,40 @@ describe('client bundle protocol', () => {
       AgentTeamActivityPanel: expect.any(Function),
       AgentTeamConversationSummary: expect.any(Function),
     })
+
+    const bundle = exports as unknown as ClientBundleExports
+    const registeredSlots: RegisteredSlot[] = []
+    bundle.apply({
+      slots: {
+        inject(slotName, register): void {
+          register()
+        },
+        register(registration, component): SlotRegistration {
+          registeredSlots.push({ slotName: registration.name, registration, component })
+          return registration
+        },
+      },
+      sessions: {
+        subagentAddress: () => undefined,
+        openSubagent: () => undefined,
+        open: () => undefined,
+      },
+    })
+
+    expect(registeredSlots).toEqual([
+      expect.objectContaining({
+        slotName: 'shell.overlay',
+        registration: expect.objectContaining({ id: 'agent-team-activity' }),
+        component: bundle.AgentTeamActivityPanel,
+      }),
+      expect.objectContaining({
+        slotName: 'conversation.view',
+        registration: expect.objectContaining({ id: 'agent-team' }),
+        component: bundle.AgentTeamConversationSummary,
+      }),
+    ])
+    expect(registeredSlots.find(slot => slot.slotName === 'conversation.view')?.component)
+      .not.toBe(bundle.AgentTeamActivityPanel)
   })
 
   it('parses as a classic script without top-level ESM module syntax', async () => {
