@@ -13,6 +13,7 @@ const defaultModuleTable = new Set([
   '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-runtime/client',
+  '@deepseek-ai/dsh-client-ui-layout/client',
 ])
 
 type ClientFactory = (require: (id: string) => unknown) => Record<string, unknown>
@@ -23,7 +24,7 @@ interface Registration {
 
 interface PackageManifest {
   readonly name: string
-  readonly dsh?: { readonly client?: { readonly external?: readonly string[] } }
+  readonly dsh?: { readonly client?: { readonly inject?: readonly string[] } }
 }
 
 describe('client bundle protocol', () => {
@@ -46,8 +47,13 @@ describe('client bundle protocol', () => {
     expect(() => new Script(source, { filename: 'lib/client.js' }).runInContext(context)).not.toThrow()
     expect(registrations).toHaveLength(1)
     expect(registrations[0]?.id).toBe(manifest.name)
+    expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-layout')
+    expect(source).toMatch(/ctx\.slots\.inject\(["']shell\.overlay["']/)
+    expect(source).toMatch(/name:\s*["']shell\.overlay["']/)
+    expect(source).toMatch(/id:\s*["']agent-team-activity["']/)
+    expect(source).not.toContain('}, AgentTeamWorkspace)')
 
-    const declared = new Set(manifest.dsh?.client?.external ?? [])
+    const declared = new Set(manifest.dsh?.client?.inject ?? [])
     const available = new Set([...defaultModuleTable, ...declared])
     const requested = new Set<string>()
     const exports = registrations[0]!.factory((id) => {
@@ -59,15 +65,21 @@ describe('client bundle protocol', () => {
       if (id === 'react') {
         return { useState: vi.fn(() => [undefined, vi.fn()]), useMemo: vi.fn((fn: () => unknown) => fn()) }
       }
+      if (id === '@deepseek-ai/dsh-client-ui-layout/client') return {}
       throw new Error(`missing test stub for declared client external: ${id}`)
     })
 
-    expect(requested).toEqual(new Set(['react', 'react/jsx-runtime']))
+    expect(requested).toEqual(new Set([
+      'react',
+      'react/jsx-runtime',
+      '@deepseek-ai/dsh-client-ui-layout/client',
+    ]))
     expect([...requested].every(id => available.has(id))).toBe(true)
     expect(exports).toMatchObject({
       inject: ['slots'],
       apply: expect.any(Function),
-      AgentTeamWorkspace: expect.any(Function),
+      AgentTeamActivityPanel: expect.any(Function),
+      AgentTeamConversationSummary: expect.any(Function),
     })
   })
 
