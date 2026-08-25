@@ -39,6 +39,7 @@ describe('agentTeam projection', () => {
         },
       },
       delivered: { 'msg-1': true },
+      history: [],
     })
 
     expect(view).not.toBeNull()

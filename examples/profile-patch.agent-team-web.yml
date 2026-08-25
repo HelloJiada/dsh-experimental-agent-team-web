@@ -1,0 +1,32 @@
+# Real-profile integration skeleton for AgentTeams + this web bundle.
+# Date: 2026-08-25
+#
+# 1) Install the upstream runtime plugin into the web profile:
+#    dsh plugin --profile web add @nanmicoder/dsh-agent-teams@latest
+#
+# 2) Install this bundle into the same profile (tarball or git):
+#    cd ~/.dsh/profiles/web
+#    pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.0.tgz
+#
+# 3) Ensure the host recognizes agent-teams/* session events.
+#    The upstream runtime records them best-effort; if `KNOWN_SESSION_EVENT_TYPES`
+#    does not include `agent-teams/*`, this dashboard will stay empty even though
+#    `.agent-teams/` disk state still exists.
+#
+# 4) Merge this patch into the web profile and validate composition:
+#    dsh --profile web --dump-config
+#    dsh web
+#
+# Then ask for a real team directly, for example:
+#   /agent-teams review the last 20 commits from performance, security, and product perspectives
+#
+# Open the conversation, switch to the Team view, and verify:
+# - Captain Briefing / Top Interventions
+# - timeline summary + milestone windows
+# - commandPlan JSON payload in Command Bridge
+
+- insert:
+    - id: agent-team-web
+      name: "@deepseek-ai/dsh-experimental-agent-team-web"
+      inject:
+        - sessionProjections

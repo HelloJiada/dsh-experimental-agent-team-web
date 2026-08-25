@@ -17,7 +17,22 @@ export type TeamMessageId = Branded<'TeamMessageId'>
 export type TeamMemberPhase = 'provisioning' | 'active' | 'failed'
 
 /** Durable task lifecycle. */
-export type TeamTaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted'
+export type TeamTaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'deleted'
+
+/**
+ * Mapping from the upstream `dsh-agent-teams` task status vocabulary to the
+ * vendored one used by this bundle's projection. `claimed` is represented as
+ * `pending` with an owner; `failed` / `cancelled` are carried through so the
+ * dashboard can surface terminal work honestly.
+ */
+export const UPSTREAM_TASK_STATUS: Record<string, TeamTaskStatus> = {
+  pending: 'pending',
+  claimed: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+}
 
 /** Whole durable value written on every teammate lifecycle change. */
 export interface TeamMemberSnapshot {
