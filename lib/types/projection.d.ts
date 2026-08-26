@@ -22,6 +22,7 @@ export interface AgentTeamHistoryEntry {
 }
 export interface AgentTeamProjectionState {
     readonly teamId: SessionId | null;
+    readonly captainSessionId?: SessionId | null;
     readonly hasTeamEvents: boolean;
     readonly members: Record<string, TeamMemberSnapshot>;
     readonly tasks: Record<string, TeamTaskSnapshot>;

@@ -9,7 +9,7 @@
  * session ids (`assignee`, `from`, `to`), ids are resolved against the
  * folded member map, with `captain` meaning the owning session.
  */
-import type { SessionEvent } from '@deepseek-ai/dsh-session';
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
 import type { SessionEventMap } from '@deepseek-ai/dsh-session/types';
 import type { AgentTeamHistoryEntry, AgentTeamProjectionState } from './projection.js';
 export type UpstreamAgentTeamEventType = keyof SessionEventMap & `agent-teams/${string}`;
@@ -76,6 +76,7 @@ declare module '@deepseek-ai/dsh-session/types' {
         'agent-teams/team-deleted': TeamDeletedData;
     }
 }
+export declare function effectiveCaptainSessionId(state: AgentTeamProjectionState): SessionId | null;
 /**
  * Applies one upstream `agent-teams/*` event to the projection state.
  * Returns `null` for unrecognized event types. History bookkeeping is left to
