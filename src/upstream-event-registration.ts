@@ -21,12 +21,18 @@ function compatibilityError(missing: readonly string[]): AgentTeamHostCompatibil
 }
 
 function mutableCatalogueOf(value: unknown): MutableEventTypeCatalogue {
-  if (
-    typeof value !== 'object'
-    || value === null
-    || typeof (value as { add?: unknown }).add !== 'function'
-    || typeof (value as { has?: unknown }).has !== 'function'
-  ) {
+  if (typeof value !== 'object' || value === null) {
+    throw compatibilityError(UPSTREAM_TEAM_EVENT_TYPES)
+  }
+  try {
+    if (
+      typeof (value as { add?: unknown }).add !== 'function'
+      || typeof (value as { has?: unknown }).has !== 'function'
+    ) {
+      throw compatibilityError(UPSTREAM_TEAM_EVENT_TYPES)
+    }
+  } catch (error) {
+    if (error instanceof AgentTeamHostCompatibilityError) throw error
     throw compatibilityError(UPSTREAM_TEAM_EVENT_TYPES)
   }
   return value as MutableEventTypeCatalogue

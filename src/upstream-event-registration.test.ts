@@ -34,4 +34,26 @@ describe('upstream Agent Team event registration', () => {
     expect(() => registerUpstreamAgentTeamEventTypes(catalogue))
       .toThrow(/agent-teams\/team-created/)
   })
+
+  it('converts throwing event catalogue accessors to compatibility errors', () => {
+    for (const catalogue of [
+      {
+        get add() {
+          throw new Error('add getter failed')
+        },
+        has: () => false,
+      },
+      {
+        add: () => undefined,
+        get has() {
+          throw new Error('has getter failed')
+        },
+      },
+    ]) {
+      expect(() => registerUpstreamAgentTeamEventTypes(catalogue))
+        .toThrow(AgentTeamHostCompatibilityError)
+      expect(() => registerUpstreamAgentTeamEventTypes(catalogue))
+        .toThrow(/@deepseek-ai\/dsh-experimental-agent-team-web.*@deepseek-ai\/dsh-session@0\.1\.1-rc\.2.*supported Host/)
+    }
+  })
 })
