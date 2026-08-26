@@ -27,6 +27,15 @@ describe('agentTeam upstream (agent-teams/*) adapter', () => {
     }))
     expect(state.teamId).toEqual(SessionId('team-docs'))
     expect(state.captainSessionId).toEqual(SessionId('session-lead'))
+
+    const view = viewAgentTeam(state)
+    expect(view?.teamId).toEqual(SessionId('team-docs'))
+    expect(view?.leadMemberId).toEqual(SessionId('session-lead'))
+    expect(view?.members.find(member => member.role === 'lead')).toMatchObject({
+      id: SessionId('session-lead'),
+      sessionId: SessionId('session-lead'),
+    })
+    expect(view?.commandPlan.generatedFromTeamId).toEqual(SessionId('team-docs'))
     expect(state.hasTeamEvents).toBe(true)
   })
 
@@ -189,9 +198,19 @@ describe('agentTeam upstream (agent-teams/*) adapter', () => {
       ts: 100,
     }))
 
+    state = applyAgentTeamEvent(state, event('agent-teams/message-sent', 4, {
+      teamId: 'team-docs',
+      messageId: 'm2',
+      from: 'Researcher',
+      to: 'captain',
+      content: 'done',
+      ts: 101,
+    }))
+
     const message = state.messages['m1']
-    expect(message?.senderId).toEqual(SessionId('team-docs'))
+    expect(message?.senderId).toEqual(SessionId('session-lead'))
     expect(message?.targetId).toEqual(SessionId('session-worker-1'))
+    expect(state.messages['m2']?.targetId).toEqual(SessionId('session-lead'))
     expect(message?.senderName).toBe('captain')
     expect(message?.delivery).toBe('quiet')
     expect(message?.content).toEqual([{ type: 'text', text: 'please research' }])

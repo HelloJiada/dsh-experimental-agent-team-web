@@ -22,6 +22,7 @@ import type {
 } from './contract.js'
 import {
   applyUpstreamEvent,
+  effectiveCaptainSessionId,
   isUpstreamTeamEventType,
   upstreamHistoryEntryOf,
 } from './upstream.js'
@@ -933,17 +934,19 @@ function summaryView(
 
 export function viewAgentTeam(state: AgentTeamProjectionState): AgentTeamView | null {
   if (!state.hasTeamEvents || state.teamId === null) return null
+  const captainSessionId = effectiveCaptainSessionId(state)
+  if (captainSessionId === null) return null
   const deliveredIds = new Set(Object.keys(state.delivered))
   const lead: AgentTeamMemberView = {
-    id: state.teamId,
+    id: captainSessionId,
     name: 'lead',
     role: 'lead',
     phase: 'active',
-    sessionId: state.teamId,
+    sessionId: captainSessionId,
   }
   const members = [
     lead,
-    ...Object.values(state.members).filter(member => member.id !== state.teamId).map(memberView),
+    ...Object.values(state.members).filter(member => member.id !== captainSessionId).map(memberView),
   ].sort(memberComparator)
   const tasks = Object.values(state.tasks)
     .filter((task): task is TeamTaskSnapshot & { status: 'pending' | 'in_progress' | 'completed' } => task.status !== 'deleted')
@@ -997,7 +1000,7 @@ export function viewAgentTeam(state: AgentTeamProjectionState): AgentTeamView | 
   })
   return {
     teamId: state.teamId,
-    leadMemberId: state.teamId,
+    leadMemberId: captainSessionId,
     members,
     tasks,
     messages,

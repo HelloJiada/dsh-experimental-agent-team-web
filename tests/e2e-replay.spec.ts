@@ -30,8 +30,16 @@ describe('agentTeam end-to-end replay of the upstream lifecycle', () => {
     const view = viewAgentTeam(state)
     expect(view).not.toBeNull()
 
-    // Team identity and members (names resolved to session ids).
+    // Team provenance and Captain session identity remain separate.
+    expect(state.teamId).toBe('team-docs')
+    expect(state.captainSessionId).toBe('session-lead')
     expect(view?.teamId).toEqual(SessionId('team-docs'))
+    expect(view?.leadMemberId).toBe('session-lead')
+    expect(view?.members.find(member => member.role === 'lead')?.sessionId).toBe('session-lead')
+    expect(view?.commandPlan.generatedFromTeamId).toBe('team-docs')
+    expect(view?.messages.find(message => message.id === 'msg-1')?.senderId).toBe('session-lead')
+    expect(view?.messages.find(message => message.id === 'msg-2')?.targetId).toBe('session-lead')
+    expect(view?.messages.find(message => message.id === 'msg-3')?.senderId).toBe('session-lead')
     expect(view?.members.map(member => member.name).sort()).toEqual(['Alice', 'Bob', 'lead'])
     const alice = view?.members.find(member => member.name === 'Alice')
     expect(alice?.sessionId).toEqual(SessionId('session-writer-1'))

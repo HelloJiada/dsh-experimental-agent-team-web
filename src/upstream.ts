@@ -109,8 +109,12 @@ function dataOf<T>(event: SessionEvent): T {
   return event.data as unknown as T
 }
 
+export function effectiveCaptainSessionId(state: AgentTeamProjectionState): SessionId | null {
+  return state.captainSessionId ?? state.teamId
+}
+
 function memberIdForName(state: AgentTeamProjectionState, name: string): SessionId | null {
-  if (name === 'captain' && state.teamId !== null) return state.teamId
+  if (name === 'captain') return effectiveCaptainSessionId(state)
   for (const member of Object.values(state.members)) {
     if (member.name === name) return member.id
   }
@@ -209,11 +213,12 @@ export function applyUpstreamEvent(
     }
     case 'agent-teams/message-sent': {
       const data = dataOf<MessageSentData>(event)
+      const captainSessionId = effectiveCaptainSessionId(state)
       const message: TeamMessageSnapshot = {
         id: data.messageId as never,
-        senderId: memberIdForName(state, data.from) ?? state.teamId ?? brandSessionId(data.teamId),
+        senderId: memberIdForName(state, data.from) ?? captainSessionId ?? brandSessionId(data.teamId),
         senderName: data.from,
-        targetId: memberIdForName(state, data.to) ?? state.teamId ?? brandSessionId(data.teamId),
+        targetId: memberIdForName(state, data.to) ?? captainSessionId ?? brandSessionId(data.teamId),
         delivery: 'quiet',
         content: [{ type: 'text', text: data.content }],
       }
