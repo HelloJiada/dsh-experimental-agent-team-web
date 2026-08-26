@@ -35,6 +35,16 @@ describe('upstream Agent Team event registration', () => {
       .toThrow(/agent-teams\/team-created/)
   })
 
+  it('rejects a catalogue whose has method returns truthy non-boolean values', () => {
+    const catalogue = {
+      add: (_type: string) => catalogue,
+      has: (_type: string) => 'yes',
+    }
+
+    expect(() => registerUpstreamAgentTeamEventTypes(catalogue))
+      .toThrow(AgentTeamHostCompatibilityError)
+  })
+
   it('converts throwing event catalogue accessors to compatibility errors', () => {
     for (const catalogue of [
       {

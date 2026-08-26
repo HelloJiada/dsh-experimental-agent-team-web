@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { TeamId } from './agent-team-types.js'
 import {
   applyAgentTeamEvent,
   initAgentTeamProjection,
@@ -9,7 +10,7 @@ import {
 
 describe('agentTeam projection intelligence view', () => {
   it('builds grouped task sections and actionable summary', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
 
     state = applyAgentTeamEvent(state, {
@@ -145,7 +146,7 @@ describe('agentTeam projection intelligence view', () => {
   })
 
   it('detects orphaned tasks and overloaded members', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
     const workerId = SessionId('session-worker-2')
 
@@ -255,7 +256,7 @@ describe('agentTeam projection intelligence view', () => {
   })
 
   it('returns healthy guidance when no alerts are present', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
 
     state = applyAgentTeamEvent(state, {

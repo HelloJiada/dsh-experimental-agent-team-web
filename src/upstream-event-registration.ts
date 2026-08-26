@@ -40,7 +40,7 @@ function mutableCatalogueOf(value: unknown): MutableEventTypeCatalogue {
 
 function missingTypes(catalogue: MutableEventTypeCatalogue): readonly string[] {
   try {
-    return UPSTREAM_TEAM_EVENT_TYPES.filter(type => !catalogue.has(type))
+    return UPSTREAM_TEAM_EVENT_TYPES.filter(type => catalogue.has(type) !== true)
   } catch {
     return UPSTREAM_TEAM_EVENT_TYPES
   }

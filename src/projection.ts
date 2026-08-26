@@ -3,10 +3,12 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionId as brandSessionId } from '@deepseek-ai/dsh-session'
 import type {
+  TeamId,
   TeamMemberSnapshot,
   TeamMessageSnapshot,
   TeamTaskSnapshot,
 } from './agent-team-types.js'
+import { TeamId as brandTeamId } from './agent-team-types.js'
 import type {
   AgentTeamMemberLoadView,
   AgentTeamMemberView,
@@ -51,7 +53,7 @@ export interface AgentTeamHistoryEntry {
 }
 
 export interface AgentTeamProjectionState {
-  readonly teamId: SessionId | null
+  readonly teamId: TeamId | null
   readonly captainSessionId?: SessionId | null
   readonly hasTeamEvents: boolean
   readonly members: Record<string, TeamMemberSnapshot>
@@ -138,13 +140,13 @@ function isTeamEventType(type: string): boolean {
     || type === 'team/message/delivered'
 }
 
-function teamIdOf(state: AgentTeamProjectionState, event: SessionEvent): SessionId | null {
+function teamIdOf(state: AgentTeamProjectionState, event: SessionEvent): TeamId | null {
   const data = event.data as { readonly teamId?: string }
-  if (data.teamId !== undefined) return brandSessionId(data.teamId)
+  if (data.teamId !== undefined) return brandTeamId(data.teamId)
   return state.teamId
 }
 
-function sameTeamOrUnset(state: AgentTeamProjectionState, teamId: SessionId): boolean {
+function sameTeamOrUnset(state: AgentTeamProjectionState, teamId: TeamId): boolean {
   return state.teamId === null || state.teamId === teamId
 }
 

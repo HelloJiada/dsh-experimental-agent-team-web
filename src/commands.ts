@@ -7,7 +7,7 @@ import type {
   AgentTeamMessageRiskView,
   AgentTeamTaskInsightView,
 } from './contract.js'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { TeamId } from './agent-team-types.js'
 
 export type {
   AgentTeamCommandKind,
@@ -36,7 +36,7 @@ export const AGENT_TEAM_COMMAND_KINDS: readonly AgentTeamCommandKind[] = [
  * the full view object (which contains the plan itself) is assembled.
  */
 export interface AgentTeamCommandPlanSource {
-  readonly teamId: SessionId
+  readonly teamId: TeamId
   readonly members: AgentTeamMemberView[]
   readonly taskInsights: AgentTeamTaskInsightView[]
   readonly memberLoads: AgentTeamMemberLoadView[]

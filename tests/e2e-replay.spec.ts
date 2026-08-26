@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { TeamId } from '../src/agent-team-types.js'
 import {
   agentTeamProjectionDefinition,
   applyAgentTeamEvent,
@@ -33,7 +34,7 @@ describe('agentTeam end-to-end replay of the upstream lifecycle', () => {
     // Team provenance and Captain session identity remain separate.
     expect(state.teamId).toBe('team-docs')
     expect(state.captainSessionId).toBe('session-lead')
-    expect(view?.teamId).toEqual(SessionId('team-docs'))
+    expect(view?.teamId).toEqual(TeamId('team-docs'))
     expect(view?.leadMemberId).toBe('session-lead')
     expect(view?.members.find(member => member.role === 'lead')?.sessionId).toBe('session-lead')
     expect(view?.commandPlan.generatedFromTeamId).toBe('team-docs')
@@ -144,7 +145,7 @@ describe('agentTeam end-to-end replay of the upstream lifecycle', () => {
 
     // The plan envelope is stable and matches the derived suggestions.
     expect(view.commandPlan.version).toBe(1)
-    expect(view.commandPlan.generatedFromTeamId).toEqual(SessionId('team-docs'))
+    expect(view.commandPlan.generatedFromTeamId).toEqual(TeamId('team-docs'))
     expect(view.commandPlan.total).toBe(commands.length)
     expect(view.commandPlan.highPriorityCount).toBeGreaterThanOrEqual(1)
     expect(view.commandPlan.commands[0]?.kind).toBe('task:unblock')

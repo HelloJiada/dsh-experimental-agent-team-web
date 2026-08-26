@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { TeamId } from './agent-team-types.js'
 import {
   applyAgentTeamEvent,
   dependencyDepthOf,
@@ -63,7 +64,7 @@ describe('agentTeam dependency depth and intervention ranking', () => {
   })
 
   it('projects intervention priorities into the view', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
     state = applyAgentTeamEvent(state, {
       type: 'team/task',

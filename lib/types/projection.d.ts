@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
-import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from './agent-team-types.js';
+import type { TeamId, TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from './agent-team-types.js';
 import type { AgentTeamMemberLoadView, AgentTeamMemberView, AgentTeamMessageRiskView, AgentTeamMessageView, AgentTeamQuickFiltersView, AgentTeamTaskInsightView, AgentTeamTaskView, AgentTeamTimelineEntryView, AgentTeamTimelineSummaryView, AgentTeamView } from './contract.js';
 export { timelineMilestonesView } from './timeline-milestones.js';
 export { commandPlanView } from './commands.js';
@@ -21,7 +21,7 @@ export interface AgentTeamHistoryEntry {
     readonly count?: number;
 }
 export interface AgentTeamProjectionState {
-    readonly teamId: SessionId | null;
+    readonly teamId: TeamId | null;
     readonly captainSessionId?: SessionId | null;
     readonly hasTeamEvents: boolean;
     readonly members: Record<string, TeamMemberSnapshot>;

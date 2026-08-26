@@ -2,8 +2,10 @@
 import type { Branded } from '@deepseek-ai/dsh-brand';
 import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import type { SessionId } from '@deepseek-ai/dsh-session';
-/** Identifies the implicit team rooted at one top-level Session. */
+/** Identifies one upstream Team entity. */
 export type TeamId = Branded<'TeamId'>;
+/** Brand a raw Team id string without changing its runtime representation. */
+export declare function TeamId(id: string): TeamId;
 /** Stable identifier for one task in a Team. */
 export type TeamTaskId = Branded<'TeamTaskId'>;
 /** Stable identifier for one durable peer message. */

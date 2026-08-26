@@ -10,6 +10,7 @@ export type {
   AgentTeamView,
 } from './contract.js'
 export type { AgentTeamProjectionState } from './projection.js'
+export { TeamId } from './agent-team-types.js'
 
 export const inject = ['sessionProjections']
 

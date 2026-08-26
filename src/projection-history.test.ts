@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { AgentTeamProjectionState } from './projection.js'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { TeamId } from './agent-team-types.js'
 import {
   applyAgentTeamEvent,
   initAgentTeamProjection,
@@ -10,7 +11,7 @@ import {
 
 describe('agentTeam historical timeline', () => {
   it('accumulates bounded event history and surfaces it in the timeline', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
 
     state = applyAgentTeamEvent(state, {
@@ -101,7 +102,7 @@ describe('agentTeam historical timeline', () => {
   })
 
   it('falls back to snapshot-derived timeline when history is absent', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
     state = applyAgentTeamEvent(state, {
       type: 'team/task',
@@ -157,7 +158,7 @@ describe('agentTeam historical timeline', () => {
   })
 
   it('coalesces repeated events for the same entity into one entry with a running count', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
     const taskId = 'task-1'
 
@@ -193,7 +194,7 @@ describe('agentTeam historical timeline', () => {
   })
 
   it('merges message queued and delivered events into a single delivered row', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
 
     state = applyAgentTeamEvent(state, {
@@ -235,7 +236,7 @@ describe('agentTeam historical timeline', () => {
   })
 
   it('coalesces member phase changes to the latest state', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
 
     const memberEvent = (seq: number, phase: 'provisioning' | 'active' | 'failed'): SessionEvent => ({
@@ -269,7 +270,7 @@ describe('agentTeam historical timeline', () => {
   })
 
   it('bounds the retained history window to the limit', () => {
-    const teamId = SessionId('session-lead')
+    const teamId = TeamId('session-lead')
     let state = initAgentTeamProjection()
 
     for (let index = 1; index <= 150; index += 1) {

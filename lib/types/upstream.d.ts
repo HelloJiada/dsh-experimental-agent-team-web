@@ -11,35 +11,36 @@
  */
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
 import type { SessionEventMap } from '@deepseek-ai/dsh-session/types';
+import type { TeamId } from './agent-team-types.js';
 import type { AgentTeamHistoryEntry, AgentTeamProjectionState } from './projection.js';
 export type UpstreamAgentTeamEventType = keyof SessionEventMap & `agent-teams/${string}`;
 export declare const UPSTREAM_TEAM_EVENT_TYPES: readonly UpstreamAgentTeamEventType[];
 export declare function isUpstreamTeamEventType(type: string): boolean;
 interface TeamCreatedData {
-    readonly teamId: string;
+    readonly teamId: TeamId;
     readonly captainSessionId: string;
     readonly name: string;
     readonly description?: string;
 }
 interface MemberAddedData {
-    readonly teamId: string;
+    readonly teamId: TeamId;
     readonly memberId: string;
     readonly name: string;
     readonly role?: string;
 }
 interface MemberRemovedData {
-    readonly teamId: string;
+    readonly teamId: TeamId;
     readonly memberId: string;
 }
 interface TaskCreatedData {
-    readonly teamId: string;
+    readonly teamId: TeamId;
     readonly taskId: string;
     readonly subject: string;
     readonly dependencies: readonly string[];
     readonly assignee?: string;
 }
 interface TaskUpdatedData {
-    readonly teamId: string;
+    readonly teamId: TeamId;
     readonly taskId: string;
     readonly status: string;
     readonly assignee?: string;
@@ -48,7 +49,7 @@ interface TaskUpdatedData {
     readonly attemptId?: string;
 }
 interface MessageSentData {
-    readonly teamId: string;
+    readonly teamId: TeamId;
     readonly messageId: string;
     readonly from: string;
     readonly to: string;
@@ -56,7 +57,7 @@ interface MessageSentData {
     readonly ts: number;
 }
 interface TeamDeletedData {
-    readonly teamId: string;
+    readonly teamId: TeamId;
 }
 declare module '@deepseek-ai/dsh-session/types' {
     interface SessionEventMap {

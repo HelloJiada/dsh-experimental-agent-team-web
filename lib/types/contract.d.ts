@@ -1,6 +1,6 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm';
 import type { SessionId } from '@deepseek-ai/dsh-session';
-import type { TeamMessageId, TeamTaskId } from './agent-team-types.js';
+import type { TeamId, TeamMessageId, TeamTaskId } from './agent-team-types.js';
 export interface AgentTeamTimelineSummaryView {
     readonly totalEvents: number;
     readonly memberEvents: number;
@@ -120,7 +120,7 @@ export interface AgentTeamCommandSuggestion {
 }
 export interface AgentTeamCommandPlanView {
     readonly version: 1;
-    readonly generatedFromTeamId: SessionId;
+    readonly generatedFromTeamId: TeamId;
     readonly total: number;
     readonly highPriorityCount: number;
     readonly mediumPriorityCount: number;
@@ -171,7 +171,7 @@ export interface AgentTeamSummaryView {
     readonly topInterventions: string[];
 }
 export interface AgentTeamView {
-    readonly teamId: SessionId;
+    readonly teamId: TeamId;
     readonly leadMemberId: SessionId;
     readonly members: AgentTeamMemberView[];
     readonly tasks: AgentTeamTaskView[];

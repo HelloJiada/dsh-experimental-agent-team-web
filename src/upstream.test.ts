@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { TeamId } from './agent-team-types.js'
 import {
   agentTeamProjectionDefinition,
   applyAgentTeamEvent,
@@ -25,17 +26,17 @@ describe('agentTeam upstream (agent-teams/*) adapter', () => {
       captainSessionId: 'session-lead',
       name: 'Docs Crew',
     }))
-    expect(state.teamId).toEqual(SessionId('team-docs'))
+    expect(state.teamId).toEqual(TeamId('team-docs'))
     expect(state.captainSessionId).toEqual(SessionId('session-lead'))
 
     const view = viewAgentTeam(state)
-    expect(view?.teamId).toEqual(SessionId('team-docs'))
+    expect(view?.teamId).toEqual(TeamId('team-docs'))
     expect(view?.leadMemberId).toEqual(SessionId('session-lead'))
     expect(view?.members.find(member => member.role === 'lead')).toMatchObject({
       id: SessionId('session-lead'),
       sessionId: SessionId('session-lead'),
     })
-    expect(view?.commandPlan.generatedFromTeamId).toEqual(SessionId('team-docs'))
+    expect(view?.commandPlan.generatedFromTeamId).toEqual(TeamId('team-docs'))
     expect(state.hasTeamEvents).toBe(true)
   })
 
@@ -138,7 +139,7 @@ describe('agentTeam upstream (agent-teams/*) adapter', () => {
   it('falls back to legacy teamId and corrects Captain identity on team-created', () => {
     const legacy = {
       ...initAgentTeamProjection(),
-      teamId: SessionId('legacy-team'),
+      teamId: TeamId('legacy-team'),
       hasTeamEvents: true,
     }
     delete (legacy as { captainSessionId?: SessionId | null }).captainSessionId

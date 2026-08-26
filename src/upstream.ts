@@ -13,11 +13,12 @@ import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionId as brandSessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session/types'
 import type {
+  TeamId,
   TeamMemberSnapshot,
   TeamMessageSnapshot,
   TeamTaskSnapshot,
 } from './agent-team-types.js'
-import { UPSTREAM_TASK_STATUS } from './agent-team-types.js'
+import { TeamId as brandTeamId, UPSTREAM_TASK_STATUS } from './agent-team-types.js'
 import type { AgentTeamHistoryEntry, AgentTeamProjectionState } from './projection.js'
 
 export type UpstreamAgentTeamEventType = keyof SessionEventMap & `agent-teams/${string}`
@@ -37,26 +38,26 @@ export function isUpstreamTeamEventType(type: string): boolean {
 }
 
 interface TeamCreatedData {
-  readonly teamId: string
+  readonly teamId: TeamId
   readonly captainSessionId: string
   readonly name: string
   readonly description?: string
 }
 
 interface MemberAddedData {
-  readonly teamId: string
+  readonly teamId: TeamId
   readonly memberId: string
   readonly name: string
   readonly role?: string
 }
 
 interface MemberRemovedData {
-  readonly teamId: string
+  readonly teamId: TeamId
   readonly memberId: string
 }
 
 interface TaskCreatedData {
-  readonly teamId: string
+  readonly teamId: TeamId
   readonly taskId: string
   readonly subject: string
   readonly dependencies: readonly string[]
@@ -64,7 +65,7 @@ interface TaskCreatedData {
 }
 
 interface TaskUpdatedData {
-  readonly teamId: string
+  readonly teamId: TeamId
   readonly taskId: string
   readonly status: string
   readonly assignee?: string
@@ -74,7 +75,7 @@ interface TaskUpdatedData {
 }
 
 interface MessageSentData {
-  readonly teamId: string
+  readonly teamId: TeamId
   readonly messageId: string
   readonly from: string
   readonly to: string
@@ -83,7 +84,7 @@ interface MessageSentData {
 }
 
 interface TeamDeletedData {
-  readonly teamId: string
+  readonly teamId: TeamId
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -110,7 +111,10 @@ function dataOf<T>(event: SessionEvent): T {
 }
 
 export function effectiveCaptainSessionId(state: AgentTeamProjectionState): SessionId | null {
-  return state.captainSessionId ?? state.teamId
+  if (state.captainSessionId !== undefined && state.captainSessionId !== null) {
+    return state.captainSessionId
+  }
+  return state.teamId === null ? null : brandSessionId(state.teamId)
 }
 
 function memberIdForName(state: AgentTeamProjectionState, name: string): SessionId | null {
@@ -135,7 +139,7 @@ export function applyUpstreamEvent(
       const data = dataOf<TeamCreatedData>(event)
       return {
         ...state,
-        teamId: brandSessionId(data.teamId),
+        teamId: brandTeamId(data.teamId),
         captainSessionId: brandSessionId(data.captainSessionId),
         hasTeamEvents: true,
       }
@@ -152,7 +156,7 @@ export function applyUpstreamEvent(
       }
       return {
         ...state,
-        teamId: state.teamId ?? brandSessionId(data.teamId),
+        teamId: state.teamId ?? brandTeamId(data.teamId),
         hasTeamEvents: true,
         members: { ...state.members, [data.memberId]: member },
       }
@@ -163,7 +167,7 @@ export function applyUpstreamEvent(
       delete members[data.memberId]
       return {
         ...state,
-        teamId: state.teamId ?? brandSessionId(data.teamId),
+        teamId: state.teamId ?? brandTeamId(data.teamId),
         hasTeamEvents: true,
         members,
       }
@@ -182,7 +186,7 @@ export function applyUpstreamEvent(
       }
       return {
         ...state,
-        teamId: state.teamId ?? brandSessionId(data.teamId),
+        teamId: state.teamId ?? brandTeamId(data.teamId),
         hasTeamEvents: true,
         tasks: { ...state.tasks, [data.taskId]: task },
       }
@@ -206,7 +210,7 @@ export function applyUpstreamEvent(
       }
       return {
         ...state,
-        teamId: state.teamId ?? brandSessionId(data.teamId),
+        teamId: state.teamId ?? brandTeamId(data.teamId),
         hasTeamEvents: true,
         tasks: { ...state.tasks, [data.taskId]: task },
       }
@@ -224,13 +228,13 @@ export function applyUpstreamEvent(
       }
       return {
         ...state,
-        teamId: state.teamId ?? brandSessionId(data.teamId),
+        teamId: state.teamId ?? brandTeamId(data.teamId),
         hasTeamEvents: true,
         messages: { ...state.messages, [data.messageId]: message },
       }
     }
     case 'agent-teams/team-deleted': {
-      return { ...state, teamId: state.teamId ?? brandSessionId(dataOf<{ teamId: string }>(event).teamId), hasTeamEvents: true }
+      return { ...state, teamId: state.teamId ?? brandTeamId(dataOf<TeamDeletedData>(event).teamId), hasTeamEvents: true }
     }
     default:
       return null
@@ -339,7 +343,7 @@ export function upstreamHistoryEntryOf(event: SessionEvent): AgentTeamHistoryEnt
       }
     }
     case 'agent-teams/team-deleted': {
-      const data = dataOf<{ teamId: string }>(event)
+      const data = dataOf<TeamDeletedData>(event)
       return {
         id: `${event.type}:${seq}`,
         seq,

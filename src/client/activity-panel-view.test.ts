@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { TeamId } from '../agent-team-types.js'
 import {
   applyAgentTeamEvent,
   initAgentTeamProjection,
@@ -8,7 +9,7 @@ import {
 } from '../projection.js'
 import { activityPanelView, qualifiesForActivityPanel } from './activity-panel-view.js'
 
-const teamId = SessionId('activity-panel-lead')
+const teamId = TeamId('activity-panel-lead')
 const workerId = SessionId('activity-panel-worker')
 
 type FixtureTask = {
