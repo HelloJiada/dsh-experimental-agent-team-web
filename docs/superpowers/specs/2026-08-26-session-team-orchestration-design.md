@@ -4,7 +4,9 @@ Date: 2026-08-26
 
 ## Status
 
-Approved for staged implementation planning.
+**Superseded on 2026-08-26. Do not implement this design.**
+
+The approved replacement is `2026-08-26-project-command-board-design.md`. The replacement moves authority from per-session Team configuration to a Workspace-scoped project board with a fixed project commander, an independent commissar, and task-pulled execution sessions.
 
 ## Objective
 
