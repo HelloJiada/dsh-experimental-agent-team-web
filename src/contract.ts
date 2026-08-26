@@ -1,6 +1,15 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { TeamId, TeamMessageId, TeamTaskId } from './agent-team-types.js'
+import type { SessionTeamConfigView } from './session-team-config.js'
+
+export type {
+  SessionTeamConfigMutationView,
+  SessionTeamConfigSnapshot,
+  SessionTeamConfigView,
+  SessionTeamModelCatalogView,
+  SessionTeamModelPolicy,
+} from './session-team-config.js'
 
 export interface AgentTeamTimelineSummaryView {
   readonly totalEvents: number
@@ -223,5 +232,6 @@ export interface AgentTeamView {
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     agentTeam: AgentTeamView | null
+    agentTeamConfig: SessionTeamConfigView
   }
 }
