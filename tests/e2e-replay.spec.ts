@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
+  agentTeamProjectionDefinition,
   applyAgentTeamEvent,
   initAgentTeamProjection,
   viewAgentTeam,
@@ -21,6 +22,10 @@ describe('agentTeam end-to-end replay of the upstream lifecycle', () => {
     for (const event of upstreamTeamLifecycleEvents) {
       state = applyAgentTeamEvent(state, event)
     }
+
+    expect(agentTeamProjectionDefinition.stateSchema.safeParse(state)).toMatchObject({
+      success: true,
+    })
 
     const view = viewAgentTeam(state)
     expect(view).not.toBeNull()

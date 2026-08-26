@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
+  agentTeamProjectionDefinition,
   applyAgentTeamEvent,
   initAgentTeamProjection,
   viewAgentTeam,
@@ -93,6 +94,30 @@ describe('agentTeam upstream (agent-teams/*) adapter', () => {
     }))
     expect(state.tasks['t1']?.status).toBe('failed')
     expect(state.tasks['t1']?.revision).toBe(3)
+    expect(agentTeamProjectionDefinition.stateSchema.safeParse(state).success).toBe(true)
+
+    state = applyAgentTeamEvent(state, event('agent-teams/task-created', 6, {
+      teamId: 'team-docs',
+      taskId: 't2',
+      subject: 'Cancel task',
+      dependencies: [],
+    }))
+    state = applyAgentTeamEvent(state, event('agent-teams/task-updated', 7, {
+      teamId: 'team-docs',
+      taskId: 't2',
+      status: 'cancelled',
+    }))
+    expect(state.tasks['t2']?.status).toBe('cancelled')
+    expect(agentTeamProjectionDefinition.stateSchema.safeParse(state).success).toBe(true)
+  })
+
+  it('initializes version-2 Captain identity state', () => {
+    expect(initAgentTeamProjection()).toMatchObject({
+      teamId: null,
+      captainSessionId: null,
+      history: [],
+    })
+    expect(agentTeamProjectionDefinition.stateVersion).toBe(2)
   })
 
   it('folds upstream events into the view with terminal readiness', () => {

@@ -51,6 +51,7 @@ export interface AgentTeamHistoryEntry {
 
 export interface AgentTeamProjectionState {
   readonly teamId: SessionId | null
+  readonly captainSessionId?: SessionId | null
   readonly hasTeamEvents: boolean
   readonly members: Record<string, TeamMemberSnapshot>
   readonly tasks: Record<string, TeamTaskSnapshot>
@@ -74,7 +75,7 @@ const taskStateSchema = z.object({
   revision: z.number().int().positive(),
   subject: z.string(),
   description: z.string(),
-  status: z.enum(['pending', 'in_progress', 'completed', 'deleted']),
+  status: z.enum(['pending', 'in_progress', 'completed', 'failed', 'cancelled', 'deleted']),
   ownerId: z.string().min(1).optional(),
   blockedBy: z.array(z.string().min(1)),
   writeScopes: z.array(z.string()),
@@ -106,6 +107,7 @@ const messageStateSchema = z.object({
 
 const stateSchema = z.object({
   teamId: z.string().min(1).nullable(),
+  captainSessionId: z.string().min(1).nullable().optional(),
   hasTeamEvents: z.boolean(),
   members: z.record(z.string(), memberStateSchema),
   tasks: z.record(z.string(), taskStateSchema),
@@ -117,6 +119,7 @@ const stateSchema = z.object({
 export function initAgentTeamProjection(): AgentTeamProjectionState {
   return {
     teamId: null,
+    captainSessionId: null,
     hasTeamEvents: false,
     members: {},
     tasks: {},
@@ -1235,5 +1238,5 @@ export const agentTeamProjectionDefinition = {
     viewSchema,
     view: viewAgentTeam,
   },
-  stateVersion: 1,
+  stateVersion: 2,
 } satisfies ProjectionDefinition<'agentTeam', AgentTeamProjectionState>
