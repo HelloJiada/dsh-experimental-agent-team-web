@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { AgentTeamProjectionState } from './projection.js'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   applyAgentTeamEvent,
@@ -123,11 +124,36 @@ describe('agentTeam historical timeline', () => {
     } as unknown as SessionEvent)
 
     // Simulate a persisted state without history (older schema).
-    const legacyState = { ...state, history: undefined as unknown as never[] }
+    const legacyState = {
+      ...state,
+      history: undefined,
+    } as unknown as AgentTeamProjectionState
     const view = viewAgentTeam(legacyState)
     expect(view?.timeline.length).toBe(1)
     expect(view?.timeline[0]?.id).toBe('task:task-1')
     expect(view?.timeline[0]?.time).toBeUndefined()
+
+    const next = applyAgentTeamEvent(legacyState, {
+      type: 'team/task',
+      seq: 2,
+      time: 10,
+      data: {
+        version: 1,
+        teamId,
+        task: {
+          id: 'task-2',
+          revision: 1,
+          subject: 'Continued task',
+          description: '',
+          status: 'pending',
+          blockedBy: [],
+          writeScopes: [],
+        },
+      },
+    } as unknown as SessionEvent)
+
+    expect(next.history).toHaveLength(1)
+    expect(next.history[0]?.entityKey).toBe('task:task-2')
   })
 
   it('coalesces repeated events for the same entity into one entry with a running count', () => {

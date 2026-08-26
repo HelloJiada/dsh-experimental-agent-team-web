@@ -135,6 +135,58 @@ describe('agentTeam upstream (agent-teams/*) adapter', () => {
     expect(agentTeamProjectionDefinition.stateSchema.safeParse(legacyState).success).toBe(true)
   })
 
+  it('falls back to legacy teamId and corrects Captain identity on team-created', () => {
+    const legacy = {
+      ...initAgentTeamProjection(),
+      teamId: SessionId('legacy-team'),
+      hasTeamEvents: true,
+    }
+    delete (legacy as { captainSessionId?: SessionId | null }).captainSessionId
+
+    const legacyView = viewAgentTeam(legacy)
+    expect(legacyView?.leadMemberId).toBe('legacy-team')
+
+    const corrected = applyAgentTeamEvent(legacy, event('agent-teams/team-created', 10, {
+      teamId: 'legacy-team',
+      captainSessionId: 'session-real-lead',
+      name: 'Recovered Team',
+    }))
+
+    expect(corrected.captainSessionId).toBe('session-real-lead')
+    expect(viewAgentTeam(corrected)?.leadMemberId).toBe('session-real-lead')
+  })
+
+  it('accepts and continues folding plain legacy state without history or Captain identity', () => {
+    const legacyCandidate = {
+      teamId: 'legacy-team',
+      hasTeamEvents: true,
+      members: {},
+      tasks: {},
+      messages: {},
+      delivered: {},
+    }
+    const parsed = agentTeamProjectionDefinition.stateSchema.safeParse(legacyCandidate)
+    expect(parsed.success).toBe(true)
+    if (!parsed.success) return
+
+    const next = applyAgentTeamEvent(parsed.data, event('team/task', 1, {
+      version: 1,
+      teamId: 'legacy-team',
+      task: {
+        id: 'task-1',
+        revision: 1,
+        subject: 'Recovered task',
+        description: '',
+        status: 'pending',
+        blockedBy: [],
+        writeScopes: [],
+      },
+    }))
+
+    expect(next.history).toEqual(expect.any(Array))
+    expect(viewAgentTeam(next)?.leadMemberId).toBe('legacy-team')
+  })
+
   it('folds upstream events into the view with terminal readiness', () => {
     let state = initAgentTeamProjection()
     state = applyAgentTeamEvent(state, event('agent-teams/team-created', 1, {

@@ -235,10 +235,14 @@ function historyEntryOf(event: SessionEvent): AgentTeamHistoryEntry | null {
  * into a single timeline row carrying a running count. The retained window is
  * bounded by HISTORY_LIMIT (oldest distinct entities are dropped first).
  */
+function historyOf(state: AgentTeamProjectionState): readonly AgentTeamHistoryEntry[] {
+  return state.history ?? []
+}
+
 function appendHistory(state: AgentTeamProjectionState, event: SessionEvent): AgentTeamProjectionState {
   const entry = historyEntryOf(event)
   if (entry === null) return state
-  const history = [...state.history]
+  const history = [...historyOf(state)]
   const entityKey = entry.entityKey ?? entry.id
 
   let mergeIndex = -1
