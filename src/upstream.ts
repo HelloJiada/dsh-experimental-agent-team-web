@@ -128,7 +128,13 @@ export function applyUpstreamEvent(
 ): AgentTeamProjectionState | null {
   switch (event.type) {
     case 'agent-teams/team-created': {
-      return { ...state, teamId: brandSessionId(dataOf<TeamCreatedData>(event).teamId), hasTeamEvents: true }
+      const data = dataOf<TeamCreatedData>(event)
+      return {
+        ...state,
+        teamId: brandSessionId(data.teamId),
+        captainSessionId: brandSessionId(data.captainSessionId),
+        hasTeamEvents: true,
+      }
     }
     case 'agent-teams/member-added': {
       const data = dataOf<MemberAddedData>(event)

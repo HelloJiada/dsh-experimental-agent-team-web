@@ -26,6 +26,7 @@ describe('agentTeam upstream (agent-teams/*) adapter', () => {
       name: 'Docs Crew',
     }))
     expect(state.teamId).toEqual(SessionId('team-docs'))
+    expect(state.captainSessionId).toEqual(SessionId('session-lead'))
     expect(state.hasTeamEvents).toBe(true)
   })
 
@@ -118,6 +119,11 @@ describe('agentTeam upstream (agent-teams/*) adapter', () => {
       history: [],
     })
     expect(agentTeamProjectionDefinition.stateVersion).toBe(2)
+  })
+
+  it('accepts legacy state without Captain identity', () => {
+    const { captainSessionId: _, ...legacyState } = initAgentTeamProjection()
+    expect(agentTeamProjectionDefinition.stateSchema.safeParse(legacyState).success).toBe(true)
   })
 
   it('folds upstream events into the view with terminal readiness', () => {
