@@ -47,4 +47,4 @@
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.0.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.1.tgz`

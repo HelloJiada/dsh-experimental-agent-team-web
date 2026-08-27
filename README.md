@@ -60,4 +60,4 @@ The kernel keeps the team state on disk; session events are informational only, 
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.0.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.1.tgz`
