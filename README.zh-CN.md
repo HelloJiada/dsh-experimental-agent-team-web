@@ -43,11 +43,12 @@
 
 ### 1. 安装插件包
 
-在 DSH Web profile 目录,直接安装已发布的 tarball(无需构建、无需拉取 monorepo):
+在 DSH Web profile 目录,直接安装已发布的 tarball(无需构建、无需拉取 monorepo)。
+`releases/latest` 地址始终指向最新 Release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/download/v0.1.1/deepseek-ai-dsh-experimental-agent-team-web-0.1.1.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.1.tgz
 ```
 
 开发者/协作者也可用 git 或本地路径安装——仓库已提交 `lib/` 构建产物,无需构建:
@@ -85,9 +86,10 @@ pnpm add /path/to/dsh-experimental-agent-team-web
 
 ### 升级
 
-新版本发布后,用新版本号重跑第 1 步
-(`https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/download/vX.Y.Z/deepseek-ai-dsh-experimental-agent-team-web-X.Y.Z.tgz`)
-并重启 DSH。
+新版本发布后重跑第 1 步即可——`releases/latest` 地址会自动重定向到最新
+tarball,无需改 URL。(若上面文件名仍带旧版本号,到
+[Releases](https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases)
+页面查看当前资产名即可。)
 
 ---
 

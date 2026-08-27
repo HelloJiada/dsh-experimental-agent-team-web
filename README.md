@@ -56,11 +56,12 @@ The kernel keeps the team state on disk; session events are informational only, 
 
 ### 1. Install the bundle
 
-In your DSH Web profile directory, add the released tarball (no build, no monorepo fetch):
+In your DSH Web profile directory, add the released tarball (no build, no monorepo fetch).
+The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/download/v0.1.1/deepseek-ai-dsh-experimental-agent-team-web-0.1.1.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.1.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -101,9 +102,11 @@ overrun badges, and drill-down task details with retro / best-practice notes.
 
 ### Upgrading
 
-When a new release is published, re-run step 1 with the new version number
-(`https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/download/vX.Y.Z/deepseek-ai-dsh-experimental-agent-team-web-X.Y.Z.tgz`)
-and restart DSH.
+When a new release is published, re-run step 1 — the `releases/latest` URL
+redirects to the newest tarball automatically, so no URL change is needed.
+(If the filename above still carries an older version, check the
+[Releases](https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases)
+page for the current asset name.)
 
 ---
 
