@@ -2,11 +2,12 @@
 
 ## Required host packages
 
-- `@deepseek-ai/dsh-experimental-agent-team`
 - `@deepseek-ai/dsh-session-projection`
 - `@deepseek-ai/dsh-client-runtime`
 - `@deepseek-ai/dsh-client-ui-conversation`
 - `@deepseek-ai/dsh-invariants`
+
+`@deepseek-ai/dsh-experimental-agent-team-web` ships its own private runtime surface; no separate upstream Agent Teams package is required.
 
 ## Supported DSH versions
 

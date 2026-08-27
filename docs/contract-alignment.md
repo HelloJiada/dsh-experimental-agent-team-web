@@ -1,4 +1,4 @@
-# 与上游 dsh-agent-teams 的契约对齐报告
+# 历史迁移记录：私有事件契约对齐说明
 
 日期：2026-08-25
 
@@ -80,16 +80,15 @@
 
 ## 兼容性策略
 
-- 本 bundle 现在**同时消费** vendored `team/*` 事件（既有生产方/测试）与上游 `agent-teams/*` 事件（真实运行时）。
-- 适配逻辑集中在 `src/upstream.ts`（纯函数，独立可测）。
-- 事件历史（coalescing）同样覆盖上游事件。
+- 本文档保留为**历史迁移记录**：用于说明项目曾如何从上游 `agent-teams/*` 契约迁移到当前私有 `agent-team-web/*` 方案。
+- 当前主线实现已经统一发射并消费私有 `agent-team-web/*` 事件；此文不再代表现行运行时的唯一事实来源。
+- 如需查看当前对外说明，请优先参考 `README.md`、`docs/verification-checklist.md` 与 `examples/profile-patch.agent-team-web.yml`。
 
 ## 已知边界
 
-1. 上游事件为 best-effort：若宿主 harness 不识别 `agent-teams/*` 类型，运行时不会把它们写进 Session log，此时 dashboard 依赖的 committed 事件可能不存在（上游也以磁盘状态为准）。
-2. `failed` / `cancelled` 已进入我们的视图词表，但上游 `TeamTask` 的 `output` / `attempt` / `attemptId` / `handoffId` / `reassigning` / 时间戳等字段未进入视图（本 bundle 只读展示，无需执行语义）。
-3. 上游 `team-deleted` 我们只记录历史，不清空视图。
-4. 上游事件引用引用方式为 raw `SessionEventMap` 声明合并（`src/upstream.ts`），与上游 zero-import 的做法一致。
+1. 本文中的上游契约与源码链接仅用于历史对照；当前 bundle 的主线运行时不再要求额外安装上游包。
+2. `failed` / `cancelled` 已进入当前视图词表，但本文未穷尽现行运行时的全部展示字段与 UI 语义。
+3. 若后续彻底移除历史对照需求，可考虑将本文迁入 archive 或补充更明确的“已过时”标记。
 
 ## 核对来源
 

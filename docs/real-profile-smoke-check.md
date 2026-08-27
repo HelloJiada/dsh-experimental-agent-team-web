@@ -1,24 +1,21 @@
-# 真实 Profile 快速冒烟验证（AgentTeams + Team 活动监视器）
+# 真实 Profile 快速冒烟验证（本 bundle + Team 活动监视器）
 
 日期：2026-08-25
 
 这是一份**最小可执行**的真机联调流程：目标不是覆盖所有边界，而是在几分钟内确认
 
-1. 上游 `@nanmicoder/dsh-agent-teams` 已在 Web Profile 中生效；
+1. 本 bundle（`@deepseek-ai/dsh-experimental-agent-team-web`）已在 Web Profile 中生效；
 2. 本 bundle 的 Team 活动监视器已被正确注入；
-3. `agent-teams/*` best-effort session 事件已被宿主识别；
+3. `agent-team-web/*` best-effort session 事件已被宿主识别；
 4. Captain 侧的 current-session 活动入口与轻量监视器能准确反映真实数据。
 
 完整核对表见 [verification-checklist.md](verification-checklist.md)。本文件只保留最短路径。
 
 ## 0. 安装
 
-在 Web Profile 中安装上游 runtime 与本 bundle：
+在 Web Profile 中安装本 bundle（agent-team-web runtime 已内置于本 bundle，无需单独安装上游包）：
 
 ```bash
-# 安装上游 AgentTeams runtime
-dsh plugin --profile web add @nanmicoder/dsh-agent-teams@latest
-
 # 安装本 bundle（示例：release tarball）
 cd ~/.dsh/profiles/web
 pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.0.tgz
@@ -40,7 +37,6 @@ dsh --profile web --dump-config
 
 最低应能在结果里看到：
 
-- `@nanmicoder/dsh-agent-teams`
 - `@deepseek-ai/dsh-experimental-agent-team-web`
 - `sessionProjections` 注入链路里存在 `agent-team-web`
 
@@ -83,15 +79,15 @@ Use AgentTeams to review the last 20 commits from performance, security, and pro
 3. **监视器摘要**：健康度 / 成员数 / active/blocked 任务数不是空值；若存在 blocked/stalled 工作，Top Interventions 不为空；
 4. **布局**：宽屏默认停靠，可切换为可拖动、可缩放的悬浮面板；在 ≤960px 下为紧凑安全边距 overlay；
 5. **成员导航**：点击成员会打开其已有 session；
-6. **内容边界**：默认面板不显示完整 timeline、筛选器、DAG 或 command explorer；这些仍可作为 projection/detail DTO 供宿主消费。
+6. **内容边界**：默认面板不显示完整 timeline、筛选器、DAG 或 command explorer；这些与 `commandPlan` envelope 仍可作为 projection/detail DTO 供宿主消费。
 
 ## 5. 若 Team 视图为空，先排查这三个问题
 
-### A. 宿主没有识别 `agent-teams/*`
+### A. 宿主没有识别 `agent-team-web/*`
 
-上游 runtime 的 session 事件是 **best-effort**。如果宿主的 `KNOWN_SESSION_EVENT_TYPES` 不包含 `agent-teams/*`，那么：
+runtime 的 session 事件是 **best-effort**。如果宿主的 `KNOWN_SESSION_EVENT_TYPES` 不包含 `agent-team-web/*`，那么：
 
-- `.agent-teams/` 磁盘状态可能存在；
+- `.agent-team-web/` 磁盘状态可能存在；
 - 但本 bundle 读不到 committed event log；
 - 活动入口不会显示。
 
@@ -105,14 +101,10 @@ Use AgentTeams to review the last 20 commits from performance, security, and pro
 
 ## 6. 无真机时的替代验证
 
-如果当前没有真实 Profile 环境，可先跑仓库内的确定性回放：
+如果当前没有真实 Profile 环境，可先跑仓库内的测试套件（骨架断言、包布局、客户端 surface 注册）：
 
 ```bash
-pnpm vitest run --configLoader runner tests/e2e-replay.spec.ts
+pnpm test
 ```
 
-这不会替代真机联调，但能确认：
-
-- upstream `agent-teams/*` 事件折叠正常；
-- quiet 消息 low-risk 语义正常；
-- 时间线摘要 / 里程碑窗口 / `commandPlan` envelope 都能正确产出。
+这不会替代真机联调，但能保证示例 patch、文档与构建产物的引用一致（详见 `tests/profile-skeleton.spec.ts` 等）。

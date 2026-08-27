@@ -97,7 +97,6 @@ export default defineConfig([
     name: `${pluginId}/host`,
     entry: {
       index: 'src/index.ts',
-      invariant: 'src/invariant.ts',
     },
     format: 'esm',
     platform: 'node',
@@ -109,7 +108,7 @@ export default defineConfig([
   },
   {
     name: `${pluginId}/client`,
-    entry: { client: 'src/client/index.ts' },
+    entry: { client: 'src/client/index.tsx' },
     format: 'cjs',
     platform: 'browser',
     dts: false,

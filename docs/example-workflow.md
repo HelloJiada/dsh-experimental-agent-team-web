@@ -83,7 +83,7 @@
 - [ ] 验证宽屏停靠/可选悬浮与 ≤960px 紧凑 overlay；点击成员会打开已有 session
 - [ ] 验证默认监视器不嵌入完整 timeline、筛选、DAG 或 command explorer，`commandPlan` DTO 仍可供宿主消费
 
-真实 Profile + 上游 `dsh-agent-teams` 的逐项联调核对见 [docs/verification-checklist.md](verification-checklist.md)；无真实 Profile 时可用 `pnpm vitest run --configLoader runner tests/e2e-replay.spec.ts` 做确定性回放验证。
+真实 Profile 中本 bundle 的逐项联调核对见 [docs/verification-checklist.md](verification-checklist.md)；无真实 Profile 时可用 `pnpm test` 跑仓库内测试套件做替代验证。
 
 ## 边界说明
 

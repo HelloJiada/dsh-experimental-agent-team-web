@@ -10,7 +10,7 @@
 
 - `commandPlan` 由 host projection 从 committed Team facts 推导，是纯函数 `commandPlanView(source)` 的输出；
 - 每次视图刷新都会重新推导，`total`/优先级计数/`commands` 始终与当前 committed 状态一致；
-- 宿主侧执行必须**先获得授权**，且执行产生的变更应通过上游 runtime 的正常通道（不是本 bundle）写回；
+- 宿主侧执行必须**先获得授权**，且执行产生的变更应通过 runtime 的正常通道（本 bundle 内置的 agent-team-web runtime）写回；
 - 执行后应触发新的 committed 事件（如 `task-updated`），dashboard 会在下一轮 projection 中自动反映。
 
 ## 2. Envelope 字段
@@ -39,7 +39,7 @@
 
 词表是单一事实来源：`AGENT_TEAM_COMMAND_KINDS`（`src/commands.ts`），与类型 `AgentTeamCommandKind` 编译期一致，共有 6 种：
 
-| kind | 触发条件（bundle 推导） | 建议的宿主执行语义（需上游 runtime 支持） |
+| kind | 触发条件（bundle 推导） | 建议的宿主执行语义（需 runtime 支持） |
 | --- | --- | --- |
 | `task:claim` | stalled 且无 owner 的任务 | 为 `targetId` 任务声明 owner（如 Captain 认领或指派给某成员） |
 | `task:reassign` | orphaned 任务（owner 不在成员快照）或成员过载 | 把 `targetId` 任务重新分配给可见成员 |

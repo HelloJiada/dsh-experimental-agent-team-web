@@ -73,6 +73,10 @@ function createClientRequire(options: {
       return { useState: vi.fn(() => [undefined, vi.fn()]), useMemo: vi.fn((fn: () => unknown) => fn()) }
     }
     if (id === '@deepseek-ai/dsh-client-ui-layout/client') return {}
+    if (id === '@deepseek-ai/dsh-client-ui-primitives') return {}
+    if (id === '@deepseek-ai/dsh-client-ui-slots') return {}
+    if (id === '@deepseek-ai/dsh-client-runtime/client') return {}
+    if (id === '@deepseek-ai/dsh-client-locale/client') return {}
     throw new Error(`missing test stub for declared client external: ${id}`)
   }
 }
@@ -106,22 +110,23 @@ describe('client bundle protocol', () => {
     expect(requested).toEqual(new Set([
       'react',
       'react/jsx-runtime',
-      '@deepseek-ai/dsh-client-ui-layout/client',
+      '@deepseek-ai/dsh-client-ui-primitives',
     ]))
     expect([...requested].every(id => available.has(id))).toBe(true)
     expect(exports).toMatchObject({
-      inject: ['slots'],
+      inject: ['conversationEvents', 'slots', 'sessions', 'locale'],
       apply: expect.any(Function),
-      AgentTeamActivityPanel: expect.any(Function),
-      AgentTeamConversationSummary: expect.any(Function),
     })
 
     const bundle = exports as unknown as ClientBundleExports
     const registeredSlots: RegisteredSlot[] = []
     let injectedSlotName: string | undefined
-    bundle.apply({
+    (bundle.apply as unknown as (ctx: Record<string, unknown>) => void)({
+      effect: (): void => undefined,
+      locale: { register: (): void => undefined },
+      conversationEvents: { register: (): void => undefined },
       slots: {
-        inject(slotName, register): void {
+        inject(slotName: string, register: () => void): void {
           injectedSlotName = slotName
           try {
             register()
@@ -129,32 +134,28 @@ describe('client bundle protocol', () => {
             injectedSlotName = undefined
           }
         },
-        register(registration, component): SlotRegistration {
+        register(registration: SlotRegistration, component: unknown): SlotRegistration {
           registeredSlots.push({ injectedSlotName, registration, component })
           return registration
         },
       },
       sessions: {
+        list: ((): [] => []) as never,
+        currentProvideInfo: ((): undefined => undefined) as never,
+        searchResultLimit: 0,
         subagentAddress: () => undefined,
         openSubagent: () => undefined,
         open: () => undefined,
+        refreshSubagents: () => Promise.resolve(),
       },
-    })
+    } as never)
 
-    expect(registeredSlots).toEqual([
-      expect.objectContaining({
-        injectedSlotName: 'shell.overlay',
-        registration: expect.objectContaining({ id: 'agent-team-activity' }),
-        component: bundle.AgentTeamActivityPanel,
-      }),
-      expect.objectContaining({
-        injectedSlotName: 'conversation.view',
-        registration: expect.objectContaining({ id: 'agent-team' }),
-        component: bundle.AgentTeamConversationSummary,
-      }),
+    expect(registeredSlots.map(slot => [slot.injectedSlotName, slot.registration.id ?? (slot.registration as { key?: string }).key])).toEqual([
+      ['shell.overlay', 'agent-teams-activity'],
+      ['conversation.chat.commandview', 'agent-teams'],
+      ['conversation.chat.node', 'agent-teams'],
     ])
-    expect(registeredSlots.find(slot => slot.injectedSlotName === 'conversation.view')?.component)
-      .not.toBe(bundle.AgentTeamActivityPanel)
+    expect(registeredSlots[0]?.component).toEqual(expect.any(Function))
   })
 
   it('installs the bundled CSS module once when the factory runs in a DOM', async () => {
@@ -179,14 +180,14 @@ describe('client bundle protocol', () => {
       registrations[0]!.factory(require)
       registrations[0]!.factory(require)
 
-      const tagId = '@deepseek-ai/dsh-experimental-agent-team-web/AgentTeamActivityPanel.module.css'
+      const tagId = '@deepseek-ai/dsh-experimental-agent-team-web/ActivityPanel.module.css'
       const selector = `style[data-plugin-css=${JSON.stringify(tagId)}]`
       expect(dom.window.document.querySelectorAll(selector)).toHaveLength(1)
       const style = dom.window.document.querySelector<HTMLStyleElement>(selector)!
       expect(style.dataset.plugin).toBe('@deepseek-ai/dsh-experimental-agent-team-web')
       expect(style.dataset.pluginCss).toBe(tagId)
-      expect(style.textContent).toContain('_root')
-      expect(style.textContent).toMatch(/@media \((?:max-width:\s*960px|width\s*<=\s*960px)\)/)
+      expect(style.textContent).toContain('data-agent-team-web-panel-open')
+      expect(style.textContent).toMatch(/@media \(width\s*<=\s*960px\)/)
       expect(style.textContent).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)/)
     } finally {
       dom.window.close()

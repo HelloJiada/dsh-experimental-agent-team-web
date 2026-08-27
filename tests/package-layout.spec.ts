@@ -16,10 +16,8 @@ async function listFiles(directory: string): Promise<string[]> {
 const expected = [
   'lib/index.js',
   'lib/client.js',
-  'lib/invariant.js',
   'lib/types/index.d.ts',
   'lib/types/client/index.d.ts',
-  'lib/types/invariant.d.ts',
 ]
 
 describe('package layout', () => {

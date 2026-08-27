@@ -1,29 +1,27 @@
+/** Pure persisted geometry rules for the AgentTeams shell-overlay panel. */
+
 export type PanelMode = 'docked' | 'floating'
+export type PanelHeightMode = 'auto' | 'manual'
 export type PanelResizeEdge = 'left' | 'bottom' | 'corner'
 
-export interface PanelBounds {
-  readonly width: number
-  readonly height: number
-  readonly anchorRight: number
-}
-
+/** User-owned panel state persisted between browser sessions. */
 export interface PanelLayout {
   readonly mode: PanelMode
   readonly x: number
   readonly y: number
   readonly width: number
   readonly height: number
-  readonly manualHeight: boolean
+  readonly heightMode: PanelHeightMode
 }
 
-export interface PanelGeometry {
-  readonly x: number
-  readonly y: number
+/** The shell-overlay box and the right edge of its current conversation. */
+export interface PanelBounds {
   readonly width: number
   readonly height: number
+  readonly anchorRight: number
 }
 
-export const PANEL_LAYOUT_STORAGE_KEY = 'dsh-agent-team:activity-panel:v1'
+export const PANEL_LAYOUT_STORAGE_KEY = 'agent-team-web:activity-panel:v1'
 export const PANEL_COMPACT_BREAKPOINT = 960
 export const PANEL_DEFAULT_WIDTH = 388
 export const PANEL_DEFAULT_HEIGHT = 640
@@ -35,141 +33,180 @@ export const PANEL_DOCK_RIGHT = 18
 export const PANEL_DOCK_BOTTOM = 48
 export const PANEL_FLOAT_MARGIN = 12
 
-export const DEFAULT_PANEL_LAYOUT: PanelLayout = {
+export const DEFAULT_PANEL_LAYOUT: PanelLayout = Object.freeze({
   mode: 'docked',
   x: 0,
-  y: 0,
+  y: PANEL_DOCK_TOP,
   width: PANEL_DEFAULT_WIDTH,
   height: PANEL_DEFAULT_HEIGHT,
-  manualHeight: false,
+  heightMode: 'auto',
+})
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(Math.max(value, minimum), maximum)
 }
 
-const isFiniteNumber = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isFinite(value)
+function finite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.min(Math.max(value, min), Math.max(min, max))
-
-export function parsePanelLayout(value: string): PanelLayout {
+/** Decode one versioned localStorage value, rejecting partial/corrupt state. */
+export function parsePanelLayout(value: string | null): PanelLayout {
+  if (value === null) return DEFAULT_PANEL_LAYOUT
   try {
     const parsed: unknown = JSON.parse(value)
-    if (parsed === null || typeof parsed !== 'object') return DEFAULT_PANEL_LAYOUT
-    const candidate = parsed as Record<string, unknown>
-    if (
-      (candidate.mode !== 'docked' && candidate.mode !== 'floating') ||
-      !isFiniteNumber(candidate.x) ||
-      !isFiniteNumber(candidate.y) ||
-      !isFiniteNumber(candidate.width) ||
-      !isFiniteNumber(candidate.height) ||
-      typeof candidate.manualHeight !== 'boolean'
-    ) return DEFAULT_PANEL_LAYOUT
+    if (typeof parsed !== 'object' || parsed === null) return DEFAULT_PANEL_LAYOUT
+    const record = parsed as Record<string, unknown>
+    if ((record.mode !== 'docked' && record.mode !== 'floating')
+      || !finite(record.x) || !finite(record.y)
+      || !finite(record.width) || !finite(record.height)) {
+      return DEFAULT_PANEL_LAYOUT
+    }
     return {
-      mode: candidate.mode,
-      x: candidate.x,
-      y: candidate.y,
-      width: candidate.width,
-      height: candidate.height,
-      manualHeight: candidate.manualHeight,
+      mode: record.mode,
+      x: record.x,
+      y: record.y,
+      width: record.width,
+      height: record.height,
+      // v1 values written before content-fit height existed have no mode.
+      // Treat them as automatic so the upgrade removes legacy blank space.
+      heightMode: record.mode === 'floating' && record.heightMode === 'manual' ? 'manual' : 'auto',
     }
   } catch {
     return DEFAULT_PANEL_LAYOUT
   }
 }
 
+/** Whether the panel should become a simple inset overlay with no gestures. */
 export function compactPanelForBounds(bounds: PanelBounds): boolean {
   return bounds.width <= PANEL_COMPACT_BREAKPOINT
 }
 
-export function panelUsesAutoHeight(layout: PanelLayout): boolean {
-  return layout.mode === 'docked' || !layout.manualHeight
+/** Docked and compact panels always fit content; floating panels may be user-sized. */
+export function panelUsesAutoHeight(layout: PanelLayout, bounds: PanelBounds): boolean {
+  return compactPanelForBounds(bounds) || layout.mode === 'docked' || layout.heightMode === 'auto'
 }
 
+/**
+ * Docked-panel right anchor: the settled conversation's right edge, or —
+ * while no conversation is settled (hero/settling phases, session switch) —
+ * the previous anchor clamped to the shell. Falling back to the shell's own
+ * right edge here would dock the panel on top of an open details column,
+ * because the shell overlay spans the sidebar|center|details tracks while the
+ * conversation only spans the center one.
+ */
+export function panelDockAnchor(
+  previousAnchor: number,
+  overlayWidth: number,
+  conversationRight: number | null,
+): number {
+  const width = Math.max(1, overlayWidth)
+  if (conversationRight === null) return clamp(previousAnchor, 0, width)
+  return clamp(conversationRight, 0, width)
+}
+
+/** CSS max-height ceiling that keeps an auto-height panel inside its shell. */
 export function panelMaximumHeight(layout: PanelLayout, bounds: PanelBounds): number {
-  if (compactPanelForBounds(bounds)) return Math.max(1, bounds.height - PANEL_FLOAT_MARGIN * 2)
-  if (layout.mode === 'docked') return Math.max(1, bounds.height - PANEL_DOCK_TOP - PANEL_DOCK_BOTTOM - PANEL_FLOAT_MARGIN)
-  return Math.max(1, bounds.height - PANEL_FLOAT_MARGIN * 2)
+  const bottomInset = compactPanelForBounds(bounds) || layout.mode === 'floating'
+    ? PANEL_FLOAT_MARGIN
+    : PANEL_DOCK_BOTTOM
+  return Math.max(1, bounds.height - layout.y - bottomInset)
 }
 
-function visibleGeometry(geometry: PanelGeometry, bounds: PanelBounds): PanelGeometry {
-  const maxWidth = Math.max(1, bounds.width - PANEL_FLOAT_MARGIN * 2)
-  const maxHeight = Math.max(1, bounds.height - PANEL_FLOAT_MARGIN * 2)
-  const width = clamp(geometry.width, 1, maxWidth)
-  const height = clamp(geometry.height, 1, maxHeight)
-  return {
-    width,
-    height,
-    x: clamp(geometry.x, PANEL_FLOAT_MARGIN, bounds.width - PANEL_FLOAT_MARGIN - width),
-    y: clamp(geometry.y, PANEL_FLOAT_MARGIN, bounds.height - PANEL_FLOAT_MARGIN - height),
-  }
-}
+/** Resolve persisted state into a visible rectangle inside the current shell. */
+export function resolvePanelGeometry(layout: PanelLayout, bounds: PanelBounds): PanelLayout {
+  const boundsWidth = Math.max(1, bounds.width)
+  const boundsHeight = Math.max(1, bounds.height)
 
-export function resolvePanelGeometry(layout: PanelLayout, bounds: PanelBounds): PanelGeometry {
   if (compactPanelForBounds(bounds)) {
-    const marginX = Math.min(PANEL_FLOAT_MARGIN, Math.floor(bounds.width / 2))
-    const marginY = Math.min(PANEL_FLOAT_MARGIN, Math.floor(bounds.height / 2))
     return {
-      x: marginX,
-      y: marginY,
-      width: Math.max(1, bounds.width - marginX * 2),
-      height: Math.max(1, bounds.height - marginY * 2),
+      ...layout,
+      x: PANEL_FLOAT_MARGIN,
+      y: PANEL_FLOAT_MARGIN,
+      width: Math.max(1, boundsWidth - PANEL_FLOAT_MARGIN * 2),
+      height: Math.max(1, boundsHeight - PANEL_FLOAT_MARGIN * 2),
     }
   }
+
+  const maximumWidth = Math.max(1, Math.min(PANEL_MAX_WIDTH, boundsWidth - PANEL_FLOAT_MARGIN * 2))
+  const minimumWidth = Math.min(PANEL_MIN_WIDTH, maximumWidth)
+  const width = clamp(layout.width, minimumWidth, maximumWidth)
+  const maximumHeight = Math.max(1, boundsHeight - PANEL_FLOAT_MARGIN * 2)
+  const minimumHeight = Math.min(PANEL_MIN_HEIGHT, maximumHeight)
+
   if (layout.mode === 'docked') {
-    const width = clamp(layout.width, PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, bounds.width - PANEL_FLOAT_MARGIN * 2))
-    const height = panelUsesAutoHeight(layout)
-      ? Math.max(1, bounds.height - PANEL_DOCK_TOP - PANEL_DOCK_BOTTOM - PANEL_FLOAT_MARGIN)
-      : clamp(layout.height, PANEL_MIN_HEIGHT, panelMaximumHeight(layout, bounds))
-    return visibleGeometry({
-      x: bounds.anchorRight - PANEL_DOCK_RIGHT - width,
-      y: PANEL_DOCK_TOP,
-      width,
-      height,
-    }, bounds)
+    const y = clamp(PANEL_DOCK_TOP, PANEL_FLOAT_MARGIN, Math.max(PANEL_FLOAT_MARGIN, boundsHeight - minimumHeight - PANEL_FLOAT_MARGIN))
+    const availableHeight = Math.max(1, boundsHeight - y - PANEL_DOCK_BOTTOM)
+    const height = clamp(availableHeight, Math.min(minimumHeight, availableHeight), maximumHeight)
+    const anchorRight = clamp(bounds.anchorRight, 0, boundsWidth)
+    const maximumX = Math.max(PANEL_FLOAT_MARGIN, boundsWidth - width - PANEL_FLOAT_MARGIN)
+    const x = clamp(anchorRight - PANEL_DOCK_RIGHT - width, PANEL_FLOAT_MARGIN, maximumX)
+    return { mode: 'docked', x, y, width, height, heightMode: layout.heightMode }
   }
-  const width = clamp(layout.width, PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, bounds.width - PANEL_FLOAT_MARGIN * 2))
-  const height = panelUsesAutoHeight(layout)
-    ? Math.max(1, bounds.height - PANEL_FLOAT_MARGIN * 2)
-    : clamp(layout.height, PANEL_MIN_HEIGHT, panelMaximumHeight(layout, bounds))
-  return visibleGeometry({ x: layout.x, y: layout.y, width, height }, bounds)
+
+  const height = clamp(layout.height, minimumHeight, maximumHeight)
+  return {
+    mode: 'floating',
+    x: clamp(layout.x, PANEL_FLOAT_MARGIN, Math.max(PANEL_FLOAT_MARGIN, boundsWidth - width - PANEL_FLOAT_MARGIN)),
+    y: clamp(layout.y, PANEL_FLOAT_MARGIN, Math.max(PANEL_FLOAT_MARGIN, boundsHeight - height - PANEL_FLOAT_MARGIN)),
+    width,
+    height,
+    heightMode: layout.heightMode,
+  }
 }
 
-export function floatPanelLayout(layout: PanelLayout, bounds: PanelBounds): PanelLayout {
-  const geometry = resolvePanelGeometry(layout, bounds)
-  return { ...layout, mode: 'floating', ...geometry }
+/** Undock without a visual jump by adopting the panel's resolved rectangle. */
+export function floatPanelLayout(geometry: PanelLayout, bounds: PanelBounds): PanelLayout {
+  return resolvePanelGeometry({ ...geometry, mode: 'floating' }, bounds)
 }
 
+/** Return to the right dock, preserving width and restoring content-fit height. */
 export function dockPanelLayout(layout: PanelLayout, bounds: PanelBounds): PanelLayout {
-  const geometry = resolvePanelGeometry({ ...layout, mode: 'docked' }, bounds)
-  return { ...layout, mode: 'docked', manualHeight: false, x: geometry.x, y: geometry.y, width: geometry.width, height: geometry.height }
+  return resolvePanelGeometry({ ...layout, mode: 'docked', heightMode: 'auto' }, bounds)
 }
 
-export function movePanelLayout(layout: PanelLayout, dx: number, dy: number, bounds: PanelBounds): PanelLayout {
-  const current = resolvePanelGeometry(layout, bounds)
-  const geometry = visibleGeometry({ ...current, x: current.x + dx, y: current.y + dy }, bounds)
-  return { ...layout, mode: 'floating', ...geometry }
+/** Translate a floating panel and clamp it back into the visible shell. */
+export function movePanelLayout(
+  start: PanelLayout,
+  dx: number,
+  dy: number,
+  bounds: PanelBounds,
+): PanelLayout {
+  return resolvePanelGeometry({ ...start, mode: 'floating', x: start.x + dx, y: start.y + dy }, bounds)
 }
 
+/** Resize while keeping the edge opposite the active handle stationary. */
 export function resizePanelLayout(
-  layout: PanelLayout,
+  start: PanelLayout,
   edge: PanelResizeEdge,
   dx: number,
   dy: number,
   bounds: PanelBounds,
 ): PanelLayout {
-  const current = resolvePanelGeometry({ ...layout, mode: 'floating' }, bounds)
-  let geometry: PanelGeometry
-  if (edge === 'left') {
-    const right = current.x + current.width
-    const width = clamp(current.width - dx, 1, Math.min(PANEL_MAX_WIDTH, right - PANEL_FLOAT_MARGIN))
-    geometry = { x: right - width, y: current.y, width, height: current.height }
-  } else if (edge === 'bottom') {
-    geometry = { ...current, height: clamp(current.height + dy, 1, bounds.height - PANEL_FLOAT_MARGIN - current.y) }
-  } else {
-    geometry = {
-      ...current,
-      width: clamp(current.width + dx, 1, Math.min(PANEL_MAX_WIDTH, bounds.width - PANEL_FLOAT_MARGIN - current.x)),
-      height: clamp(current.height + dy, 1, bounds.height - PANEL_FLOAT_MARGIN - current.y),
-    }
+  if (start.mode === 'docked') {
+    if (edge !== 'left') return resolvePanelGeometry(start, bounds)
+    return resolvePanelGeometry({ ...start, width: start.width - dx }, bounds)
   }
-  return { ...layout, mode: 'floating', manualHeight: edge !== 'left' || layout.manualHeight, ...visibleGeometry(geometry, bounds) }
+
+  const resolved = resolvePanelGeometry(start, bounds)
+  const minimumWidth = Math.min(PANEL_MIN_WIDTH, resolved.x + resolved.width - PANEL_FLOAT_MARGIN)
+  const minimumHeight = Math.min(PANEL_MIN_HEIGHT, bounds.height - resolved.y - PANEL_FLOAT_MARGIN)
+
+  if (edge === 'left') {
+    const right = resolved.x + resolved.width
+    const maximumWidth = Math.max(1, Math.min(PANEL_MAX_WIDTH, right - PANEL_FLOAT_MARGIN))
+    const width = clamp(resolved.width - dx, Math.min(minimumWidth, maximumWidth), maximumWidth)
+    return { ...resolved, x: right - width, width }
+  }
+
+  const maximumHeight = Math.max(1, bounds.height - resolved.y - PANEL_FLOAT_MARGIN)
+  const height = clamp(resolved.height + dy, Math.min(minimumHeight, maximumHeight), maximumHeight)
+  if (edge === 'bottom') return { ...resolved, height, heightMode: 'manual' }
+
+  const maximumWidth = Math.max(1, Math.min(
+    PANEL_MAX_WIDTH,
+    bounds.width - resolved.x - PANEL_FLOAT_MARGIN,
+  ))
+  const width = clamp(resolved.width + dx, Math.min(minimumWidth, maximumWidth), maximumWidth)
+  return { ...resolved, width, height, heightMode: 'manual' }
 }

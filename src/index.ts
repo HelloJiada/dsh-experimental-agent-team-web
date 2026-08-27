@@ -1,27 +1,281 @@
+/**
+ * AgentTeams for DeepSeek Harness.
+ *
+ * A host-plane plugin that registers the `agent_teams_*` tools and one usage
+ * section into the global system prompt. After installation any session can
+ * run multi-agent teamwork through natural language (e.g. "use AgentTeams to research X"):
+ * the model creates a team (it becomes the captain), spawns members as
+ * durable continuable subagents, breaks the goal into tasks with
+ * dependencies, wakes members with messages, relays reports, and collects
+ * results.
+ *
+ * Installation (bundle): `dsh plugin --profile <name> add @deepseek-ai/dsh-experimental-agent-team-web`
+ * (or a local path). The bundle patch mounts this plugin row into the host
+ * composition; the tools register into the shared `tools` registry and the
+ * usage section into the global system prompt, so the plugin needs no realm.
+ *
+ * @module agent-team-web
+ */
+
 import type { Context } from '@deepseek-ai/cordis'
-import { agentTeamProjectionDefinition } from './projection.js'
-import { sessionTeamConfigProjectionDefinition } from './session-team-config-projection.js'
-import { registerSessionTeamConfigEventTypes } from './session-team-config-events.js'
-import { registerUpstreamAgentTeamEventTypes } from './upstream-event-registration.js'
+import z from '@deepseek-ai/schemastery'
+// Declaration merge only: makes ctx.llm, ctx.subagents and ctx.systemPrompt visible.
+import type {} from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-subagent'
+import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
+import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
+import { handleCloseTeam } from './close-route.ts'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { collectArchivedTeamsActivity, collectTeamsActivity } from './snapshot.ts'
 
-export { agentTeamProjectionDefinition } from './projection.js'
-export { sessionTeamConfigProjectionDefinition } from './session-team-config-projection.js'
-export type {
-  AgentTeamMemberView,
-  AgentTeamMessageView,
-  AgentTeamTaskView,
-  AgentTeamView,
-} from './contract.js'
-export type { AgentTeamProjectionState } from './projection.js'
-export { TeamId } from './agent-team-types.js'
+/**
+ * Structural slice of the web server service, compatible with both the
+ * published `dsh-host-webserver@0.0.1-rc.1` (`ctx.httpServer` /
+ * `HttpServerService`) and the renamed `webServer` / `WebServer` in later
+ * builds: the beta transition renames the service without changing the route
+ * registration shape.
+ */
+interface WebRouteHost {
+  register(route: {
+    kind: 'exact' | 'prefix'
+    path: string
+    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  }): () => void
+}
 
-export const inject = ['sessionProjections']
+/** Web-server service key candidates, newest first. */
+const WEB_SERVER_KEYS = ['webServer', 'httpServer'] as const
+/** Workspace registry service key candidates, newest first. */
+const WORKSPACE_KEYS = ['workspaceRegistry', 'workspace'] as const
 
-export function apply(ctx: Context): void {
-  registerUpstreamAgentTeamEventTypes()
-  registerSessionTeamConfigEventTypes()
-  ctx.inject(['sessionProjections'], (projectionCtx) => {
-    projectionCtx.sessionProjections.register(agentTeamProjectionDefinition)
-    projectionCtx.sessionProjections.register(sessionTeamConfigProjectionDefinition)
+export const name = 'agent-team-web'
+export const inject = ['tools', 'llm', 'subagents', 'systemPrompt', 'agents']
+
+/** Plugin configuration. */
+export interface Config {
+  /**
+   * State directory name under the captain's workspace; team state lives at
+   * `<workspace>/<stateDir>/<teamId>/` (default `.agent-team-web`).
+   */
+  stateDir?: string
+  /** `ctx.subagents` provider used to spawn members; must support continuable children and personas (default `spawn`). */
+  memberProvider?: string
+  /** Optional model override applied to every member. */
+  memberModel?: string
+  /** Member delegation depth cap (default `1`; `0` forbids delegation entirely). */
+  memberMaxDepth?: number
+  /** Team size cap in members, including captain and commissar (default `18`). */
+  maxMembers?: number
+  /** Per executing-role member cap (default `2`): each executing role
+   * (engineer/researcher/data/qa/designer/security/docs/operator/reviewer)
+   * may have up to this many members; captain and commissar are exempt
+   * (captain fixed at 1, commissar auto-created and uniqueness-gated). */
+  maxExecPerRole?: number
+  /** A member-owned claimed/in-progress task is considered stalled (and
+   * eligible for a teammate's self-organizing help) after this many
+   * milliseconds without an update (default `120_000` = 2 minutes). */
+  stallThresholdMs?: number
+  /** Prompt-section order for the usage policy (default `117`, after delegation policy). */
+  promptSectionOrder?: number
+  /**
+   * Register the deterministic `/agent-teams` activation surfaces (the
+   * closed-namespace slash command and the plain-text gesture boundary).
+   * Disable to keep the natural-language trigger as the only entry point.
+   */
+  slashCommand?: boolean
+}
+
+export const Config: z<Config> = z.object({
+  stateDir: z.string().default('.agent-team-web'),
+  memberProvider: z.string().default('spawn'),
+  memberModel: z.string(),
+  memberMaxDepth: z.natural().default(1),
+  maxMembers: z.natural().min(1).default(18),
+  maxExecPerRole: z.natural().min(1).default(2),
+  stallThresholdMs: z.natural().default(120_000),
+  promptSectionOrder: z.natural().default(117),
+  slashCommand: z.boolean().default(true),
+})
+
+/** The model-facing usage policy: when and how to drive AgentTeams. */
+function usageSectionText(toolNames: string): string {
+  return `When the user asks to run something with AgentTeams (e.g. "use AgentTeams to do X"), or an activation message from the /agent-teams slash command arrives, you are the captain of a multi-agent team. Follow this protocol:
+1. Call agent_teams_create with a team name and the goal as description. You become the captain and may lead one team at a time.
+2. Call agent_teams_add_member for each executing role the goal needs, per the military-role system (侦察参谋 researcher / 情报分析员 data / 技术员 engineer / 质检员 qa / 文宣干事 designer / 警卫员 security / 文书 docs / 后勤保障员 operator); a reviewer (审查员) is a task-level dynamic role — add one when dedicated review is needed. A commissar (政委) member for independent oversight is auto-created with the team; do not add a second one. The captain is fixed at 1 and the commissar at 1; each executing role may have up to 2 members (每个执行角色最多 2 名成员: 技术员 一号/二号), and the team total is capped at 18 members (队长 1 + 政委 1 + 8 职位 × 2 执行成员) — exceeding either cap is rejected. Members are durable subagents: they wait for your messages, then work a full turn. By default a member on your current provider/model snapshots your current reasoning effort; a member routed to a different provider or model automatically uses that target model's default effort. Never ask the user to choose these per member; only pass provider/model when the user explicitly requests a different route for that role, and reasoning_effort only when the user explicitly requests a particular effort ("default" explicitly selects the target model's default).
+3. Break the goal into tasks with agent_teams_create_task and wire dependencies. Assign role-specific work when useful; unassigned ready work belongs to the shared pool. The scheduler automatically claims one ready task for each truly idle member and wakes it, including across later rounds. Tasks marked risk=high/critical or milestone=true fall under the commissar gate: they can only be marked completed after the commissar passes them with agent_teams_review_task (verdict=pass); a rejected completion notifies the commissar automatically.
+4. Lead by delegation: monitor with agent_teams_status, send guidance with agent_teams_send_message, and let idle teammates execute ready work. Do not duplicate a teammate's work merely because its turn is slow. If the user requires every member to contribute or report, create one task per required contribution (or message each member directly); never wait for an unassigned member to produce work it was never given.
+5. If the user explicitly asks to pause a running member, its open attempt remains parked after interruption; after answering the user, send that same member guidance with agent_teams_send_message so it continues the same attempt. Do not interrupt members for an ordinary user question that did not request a pause. If work must change owner, restart from scratch, or be taken over, call agent_teams_reassign_task first. Reassign to another idle member, retry with the same member, or use assignee=captain before doing it yourself. Reassignment revokes the old attempt and waits for that member to quiesce, preventing late results from overwriting the new attempt.
+6. Tasks carry attempt_id capabilities. Members must use the current attempt_id for updates; stale-attempt errors mean ownership changed. Check status after progress notifications until every required task is terminal and every member is idle/ready; do not busy-poll or require reports from members with no assigned work.
+7. Present the team's results to the user, then agent_teams_delete the team unless the user wants to keep working with it.
+
+Tools: ${toolNames}`
+}
+
+export function apply(ctx: Context, config: Config): void {
+  const resolved: ToolsConfig = {
+    stateDir: config.stateDir ?? '.agent-team-web',
+    memberProvider: config.memberProvider ?? 'spawn',
+    memberModel: config.memberModel,
+    memberMaxDepth: config.memberMaxDepth ?? 1,
+    maxMembers: config.maxMembers ?? 18,
+    maxExecPerRole: config.maxExecPerRole ?? 2,
+    stallThresholdMs: config.stallThresholdMs ?? 120_000,
+  }
+
+  // Provider registration is a sibling plugin's effect (`subagent-spawn` /
+  // `subagent-fork` rows), which can land after this mount under the Loader's
+  // concurrent activation — so capability validation happens at the first
+  // member spawn (`spawnMember`), the earliest point the provider list is
+  // settled, rather than here.
+
+  const toolNames = [
+    'agent_teams_create',
+    'agent_teams_add_member',
+    'agent_teams_remove_member',
+    'agent_teams_create_task',
+    'agent_teams_reassign_task',
+    'agent_teams_claim_task',
+    'agent_teams_update_task',
+    'agent_teams_review_task',
+    'agent_teams_send_message',
+    'agent_teams_status',
+    'agent_teams_retro_review',
+    'agent_teams_best_practices',
+    'agent_teams_delete',
+  ].join(', ')
+  ctx.systemPrompt.section({
+    name: 'agent-teams:usage',
+    order: config.promptSectionOrder ?? 117,
+    text: usageSectionText(toolNames),
+  })
+
+  registerAgentTeamsTools(ctx, resolved)
+
+  // Deterministic activation surfaces: the closed-namespace `/agent-teams`
+  // host command (surfaces in the Web GUI slash menu via the Harness
+  // ui-commands client) and the plain-text gesture boundary for surfaces
+  // without command adjudication (headless CLI). Both default on; a profile
+  // can disable them to keep the natural-language trigger exclusive.
+  //
+  // `commands` is registered lazily (not a required inject): it ships in the
+  // base bundle of every standard profile, but a minimal composition that
+  // omits the command registry keeps the plugin fully functional — the fiber
+  // never pends on it and simply never gains the slash command.
+  if (config.slashCommand ?? true) {
+    ctx.inject(['commands'], (commandCtx) => {
+      registerAgentTeamsCommand(commandCtx)
+    })
+    installAgentTeamsGestureBoundary(ctx)
+  }
+
+  // The activity panel data/artwork routes need the Web server and the
+  // workspace registry, which headless profiles do not mount; under
+  // concurrent activation they may also bind after this plugin. Register the
+  // routes lazily: try now, then on each service binding event. In a webless
+  // profile the plugin stays tool-only and never blocks boot.
+  let webRegistered = false
+  const registerWebSurface = (): void => {
+    if (webRegistered) return
+    const webServer = (ctx.get(WEB_SERVER_KEYS[0]) ?? ctx.get(WEB_SERVER_KEYS[1])) as WebRouteHost | undefined
+    const workspaceRegistry = (ctx.get(WORKSPACE_KEYS[0]) ?? ctx.get(WORKSPACE_KEYS[1])) as WorkspaceRegistry | undefined
+    if (webServer === undefined || workspaceRegistry === undefined) return
+    webRegistered = true
+
+    // Activity panel data route: the browser floater polls this for team
+    // snapshots (disk truth + live subagent activity). Mirrors the Claude
+    // Code desktop watcher's server-side snapshot pattern.
+    ctx.effect(() => webServer.register({
+    kind: 'exact',
+    path: '/plugins/agent-team-web/state',
+    handler: async (req, res) => {
+      const url = new URL(req.url ?? '/', 'http://x')
+      const roots = workspaceRegistry.list().map((workspace) => ({
+        workspace: workspace.title,
+        stateRoot: join(workspace.path, resolved.stateDir),
+      }))
+      // ?archived=1 serves teams moved to archive/ (post-delete review).
+      const snapshots = url.searchParams.get('archived') === '1'
+        ? await collectArchivedTeamsActivity(ctx, roots)
+        : await collectTeamsActivity(ctx, roots)
+      const body = JSON.stringify({ teams: snapshots })
+      res.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      })
+      res.end(body)
+    },
+  }), 'agent-teams: activity route')
+
+  // Team close route: the panel's "end & archive team" button POSTs here. The
+  // handler is the host-side authority — it re-checks ownership and that all
+  // tasks are completed before archiving (defense in depth over the client's
+  // disabled state). Method-agnostic webServer routing means POST is enforced
+  // inside the handler.
+  ctx.effect(() => webServer.register({
+    kind: 'exact',
+    path: '/plugins/agent-team-web/close',
+    handler: (req, res) => handleCloseTeam(ctx, resolved, workspaceRegistry, req, res),
+  }), 'agent-teams: close route')
+
+  // Whale mascot artwork: serve the packaged V2 role/action images to the
+  // activity panel. An explicit allowlist guards the route (no path
+  // traversal); the images ship with the bundle (files: assets/).
+  const artDir = fileURLToPath(new URL('../assets/agent-team-web/', import.meta.url))
+  const ART_ALLOWLIST = new Set([
+    'team-lead-v2.png',
+    'member-commissar-v2.png',
+    'member-researcher-v2.png', 'member-engineer-v2.png',
+    'member-qa-v2.png', 'member-designer-v2.png',
+    'member-security-v2.png', 'member-docs-v2.png',
+    'member-data-v2.png', 'member-operator-v2.png',
+    'action-working-v2.png', 'action-thinking-v2.png',
+    'action-reporting-v2.png', 'action-celebrating-v2.png',
+    'action-sleeping-v2.png', 'action-sending-v2.png',
+  ])
+    ctx.effect(() => webServer.register({
+      kind: 'prefix',
+      path: '/plugins/agent-team-web/assets',
+    handler: async (req, res) => {
+      let name: string
+      try {
+        name = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname.split('/').pop() ?? '')
+      } catch {
+        // Malformed percent-encoding: treat as an unknown asset, not a 400.
+        res.writeHead(404)
+        res.end()
+        return
+      }
+      if (!ART_ALLOWLIST.has(name)) {
+        res.writeHead(404)
+        res.end()
+        return
+      }
+      try {
+        const data = await readFile(join(artDir, name))
+        res.writeHead(200, {
+          'content-type': 'image/png',
+          'cache-control': 'public, max-age=86400',
+        })
+        res.end(data)
+      } catch (error: unknown) {
+        ctx.logger.warn(`agent-teams: artwork read failed for ${name}: ${String(error)}`)
+        res.writeHead(404)
+        res.end()
+      }
+      },
+    }), 'agent-teams: artwork route')
+  }
+
+  registerWebSurface()
+  ctx.on('internal/service', (name) => {
+    if (WEB_SERVER_KEYS.includes(name as (typeof WEB_SERVER_KEYS)[number])
+      || WORKSPACE_KEYS.includes(name as (typeof WORKSPACE_KEYS)[number])) {
+      registerWebSurface()
+    }
   })
 }

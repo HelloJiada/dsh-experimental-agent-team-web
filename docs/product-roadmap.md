@@ -2,6 +2,10 @@
 
 日期：2026-08-25
 
+> 历史规划文档（含早期与外部 `dsh-agent-teams` 的对比与迁移决策记录）。当前实现已完全私有化，
+> 事件/命名统一为 `agent-team-web/*`；如需现行说明请以 README、verification-checklist、
+> real-profile-smoke-check 与 examples/profile-patch.agent-team-web.yml 为准。
+
 ## 目标
 
 将当前项目从“只读 Team 视图 Bundle”升级为“可观察、可分析、可指挥的 Agent Team 工作台”，并在不破坏宿主 DSH 契约的前提下，逐步超越 `dsh-agent-teams` 的核心体验。
@@ -151,9 +155,9 @@
 
 ### 第九轮（真实 Profile 端到端验证支撑，已完成）
 
-1. 新增确定性端到端回放 fixture `tests/fixtures/upstream-team-lifecycle.ts`：一条 16 事件的真实形状上游 `agent-teams/*` 生命周期（建队 → 成员 → 带依赖任务 → claim/推进 → completed/failed/cancelled → 消息 → 失败依赖上的新任务）；
-2. 新增 `tests/e2e-replay.spec.ts`：把整条事件流灌进完整管线（事件 → projection → view → 洞察 → 摘要 → 时间线 → 命令建议），锁定端到端行为（名字→id 解析、terminal readiness、quiet 消息 low risk、干预排除 terminal、时间线摘要、command bridge）；
-3. 新增 [docs/verification-checklist.md](verification-checklist.md)：真实 Profile 安装 + 上游联调逐项核对清单（含 `KNOWN_SESSION_EVENT_TYPES` best-effort 前提、各标签页预期、已知边界、可执行回放替代方案）。
+1. 新增确定性端到端回放 fixture `tests/fixtures/team-lifecycle.ts`：一条 16 事件的私有 `agent-team-web/*` 生命周期（建队 → 成员 → 带依赖任务 → claim/推进 → completed/failed/cancelled → 消息 → 失败依赖上的新任务）；
+2. 补充可复用回放基线，供后续完整管线测试锁定名字→id 解析、terminal readiness、quiet 消息 low risk、干预排除 terminal、时间线摘要与 command bridge 行为；
+3. 新增 [docs/verification-checklist.md](verification-checklist.md)：真实 Profile 安装 + 本 bundle 联调逐项核对清单（含 `KNOWN_SESSION_EVENT_TYPES` best-effort 前提、各标签页预期、已知边界、可执行回放替代方案）。
 
 ### 第十轮（事件历史滚动窗口 + 里程碑摘要，已完成）
 
@@ -178,8 +182,8 @@
 
 ### 第十三轮（真实 Profile 集成骨架 + 冒烟验证，已完成）
 
-1. 新增可直接复用的 profile patch 骨架 `examples/profile-patch.agent-team-web.yml`（上游插件安装命令、bundle 安装、`KNOWN_SESSION_EVENT_TYPES` best-effort 前提、最小真实团队提示词、验证点清单）；
-2. 新增最短路径真机冒烟指南 [docs/real-profile-smoke-check.md](real-profile-smoke-check.md)：安装 → `dsh --profile web --dump-config` 组合校验 → 触发真实团队 → 60 秒 6 项冒烟检查 → 空视图三排查（宿主不识别 `agent-teams/*` / bundle 未注入 / 会话暂无 committed 记录）；
+1. 新增可直接复用的 profile patch 骨架 `examples/profile-patch.agent-team-web.yml`（本 bundle 安装、`KNOWN_SESSION_EVENT_TYPES` best-effort 前提、最小真实团队提示词、验证点清单）；
+2. 新增最短路径真机冒烟指南 [docs/real-profile-smoke-check.md](real-profile-smoke-check.md)：安装 → `dsh --profile web --dump-config` 组合校验 → 触发真实团队 → 60 秒 6 项冒烟检查 → 空视图三排查（宿主不识别 `agent-team-web/*` / bundle 未注入 / 会话暂无 committed 记录）；
 3. 新增静态一致性测试 `tests/profile-skeleton.spec.ts` + `package-layout` 扩展：锁定例子/指南内容与 tarball 打包清单（`examples` 与两份 docs 进入发布产物）；
 4. `package.json` `files` 增加 `examples` 与 `docs/verification-checklist.md`、`docs/real-profile-smoke-check.md`。
 
