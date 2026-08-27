@@ -26,6 +26,8 @@ export interface TeamActivityMember {
     readonly currentTask: string;
     /** 当前进行中任务的已用耗时(ms);无当前任务或未记认领时间为 0。 */
     readonly currentTaskElapsedMs: number;
+    /** 已耗时为近似值(缺 claimedAt,以 updatedAt 回退推算;旧团队/跨版本升级)。 */
+    readonly currentTaskElapsedApprox: boolean;
     /** The id of a task this member is helping on, when any (self-organizing). */
     readonly helpingTask?: string;
     readonly unread: number;

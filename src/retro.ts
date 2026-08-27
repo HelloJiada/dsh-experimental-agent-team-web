@@ -76,13 +76,18 @@ export function taskOverran(
   return actualMs > budget
 }
 
-/** 任务的已用/实际耗时(ms):已完成取 actualMs,进行中取 now - claimedAt。 */
+/**
+ * 任务的已用/实际耗时(ms):已完成取 actualMs;进行中优先 now - claimedAt,
+ * 缺 claimedAt(旧团队/跨版本升级)时回退 now - updatedAt 作为近似起点,
+ * 仍缺失则 0。
+ */
 export function taskElapsedMs(
-  task: Pick<TeamTask, 'claimedAt' | 'completedAt' | 'actualMs'>,
+  task: Pick<TeamTask, 'claimedAt' | 'completedAt' | 'actualMs'> & { readonly updatedAt?: number },
   now: number,
 ): number {
   if (task.actualMs !== undefined && task.actualMs >= 0) return task.actualMs
   if (task.claimedAt !== undefined) return Math.max(0, now - task.claimedAt)
+  if (task.updatedAt !== undefined) return Math.max(0, now - task.updatedAt)
   return 0
 }
 
@@ -95,6 +100,19 @@ export function currentTaskElapsedMs(
   const current = tasks.find(task => task.status === 'in_progress' && task.assignee === memberName)
   if (current === undefined) return 0
   return taskElapsedMs(current, now)
+}
+
+/**
+ * 当前进行中任务的耗时是否为近似值:任务缺 claimedAt(旧团队/跨版本升级)而
+ * 回退到 updatedAt 推算时为 true;无当前任务恒为 false。
+ */
+export function currentTaskElapsedApprox(
+  memberName: string,
+  tasks: readonly TeamTask[],
+): boolean {
+  const current = tasks.find(task => task.status === 'in_progress' && task.assignee === memberName)
+  if (current === undefined) return false
+  return current.claimedAt === undefined && current.updatedAt !== undefined
 }
 
 /** 生成一次复盘需要的最小任务耗时/边界信息。 */

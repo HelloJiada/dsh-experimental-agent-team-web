@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentTeamsTranslate } from './locales.ts'
 import {
+  memberElapsedText,
   memberTimingState,
   taskElapsedMs,
   taskSignalsText,
@@ -16,6 +17,7 @@ const t: AgentTeamsTranslate = (key, params = {}) => {
     'timing.elapsed': '已用 {value}',
     'timing.overrun': '超时 {value}',
     'timing.memberElapsed': '已耗时 {value}',
+    'timing.memberElapsedApprox': '已耗时 {value}（近似）',
     'timing.signals': '产出信号：回合 {turns} 次 · 工具 {toolCalls} · 输出 {bytes} 字符',
     'timing.selfReport': '成员自报：{note}',
   }
@@ -66,9 +68,22 @@ describe('taskElapsedMs / memberTimingState', () => {
     const member: ActivityMember = {
       id: 'm1', name: '技术员一号', role: 'engineer', status: 'working',
       activity: 'working', progress: 0, done: 0, total: 1,
-      currentTask: 't1', currentTaskElapsedMs: 60_000, unread: 0,
+      currentTask: 't1', currentTaskElapsedMs: 60_000, currentTaskElapsedApprox: false, unread: 0,
     }
     expect(memberTimingState(member, [task({ estimateLevel: 'S', claimedAt: 0 })], 20 * 60_000)).toBe('warn')
+  })
+
+  it('memberElapsedText:近似标志显示"（近似）",精确则不带', () => {
+    const exact: ActivityMember = {
+      id: 'm1', name: '技术员一号', role: 'engineer', status: 'working',
+      activity: 'working', progress: 0, done: 0, total: 1,
+      currentTask: 't1', currentTaskElapsedMs: 60_000, currentTaskElapsedApprox: false, unread: 0,
+    }
+    const approx: ActivityMember = { ...exact, currentTaskElapsedApprox: true }
+    const zero: ActivityMember = { ...exact, currentTaskElapsedMs: 0 }
+    expect(memberElapsedText(exact, t)).toBe('已耗时 1m')
+    expect(memberElapsedText(approx, t)).toBe('已耗时 1m（近似）')
+    expect(memberElapsedText(zero, t)).toBeNull()
   })
 })
 

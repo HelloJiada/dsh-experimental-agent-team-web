@@ -71,6 +71,7 @@ export declare const zh: {
     'timing.elapsed': string;
     'timing.overrun': string;
     'timing.memberElapsed': string;
+    'timing.memberElapsedApprox': string;
     'timing.deviation': string;
     'timing.signals': string;
     'timing.selfReport': string;
@@ -210,6 +211,7 @@ export declare const en: {
     'timing.elapsed': string;
     'timing.overrun': string;
     'timing.memberElapsed': string;
+    'timing.memberElapsedApprox': string;
     'timing.deviation': string;
     'timing.signals': string;
     'timing.selfReport': string;

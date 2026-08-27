@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildTaskRetro,
+  currentTaskElapsedApprox,
   currentTaskElapsedMs,
   resolveTaskTiming,
   retroCalibrationHint,
@@ -67,6 +68,11 @@ describe('taskElapsedMs / currentTaskElapsedMs — 耗时取值', () => {
     expect(taskElapsedMs({}, 61_000)).toBe(0)
   })
 
+  it('缺 claimedAt 的旧任务回退 updatedAt 近似', () => {
+    expect(taskElapsedMs({ updatedAt: 1000 }, 61_000)).toBe(60_000)
+    expect(taskElapsedMs({ updatedAt: 0 }, 61_000)).toBe(61_000)
+  })
+
   it('currentTaskElapsedMs 只统计成员 in_progress 任务', () => {
     const tasks = [
       task('t1', { status: 'completed', assignee: 'alice', claimedAt: 0, completedAt: 50_000, actualMs: 50_000 }),
@@ -76,6 +82,17 @@ describe('taskElapsedMs / currentTaskElapsedMs — 耗时取值', () => {
     expect(currentTaskElapsedMs('alice', tasks, 70_000)).toBe(60_000)
     expect(currentTaskElapsedMs('bob', tasks, 70_000)).toBe(50_000)
     expect(currentTaskElapsedMs('nobody', tasks, 70_000)).toBe(0)
+  })
+
+  it('currentTaskElapsedApprox:缺 claimedAt 的 in_progress 为近似,否则精确', () => {
+    const legacy = [task('t1', { status: 'in_progress', assignee: 'alice', updatedAt: 10_000 })]
+    const fresh = [task('t2', { status: 'in_progress', assignee: 'alice', claimedAt: 10_000 })]
+    // task() 默认带 updatedAt:无 claimedAt 也无显式 updatedAt 时仍是近似(有默认 updatedAt)。
+    const noTimestamps = [task('t3', { status: 'in_progress', assignee: 'alice', claimedAt: undefined, updatedAt: undefined })]
+    expect(currentTaskElapsedApprox('alice', legacy)).toBe(true)
+    expect(currentTaskElapsedApprox('alice', fresh)).toBe(false)
+    expect(currentTaskElapsedApprox('alice', noTimestamps)).toBe(false)
+    expect(currentTaskElapsedApprox('nobody', legacy)).toBe(false)
   })
 })
 

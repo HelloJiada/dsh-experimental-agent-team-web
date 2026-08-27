@@ -708,6 +708,7 @@ function historicCardTeam(data: AgentTeamsCardData, owner: string): ActivityTeam
       total: 0,
       currentTask: '',
       currentTaskElapsedMs: 0,
+      currentTaskElapsedApprox: false,
       unread: 0,
     })),
     tasks: [],

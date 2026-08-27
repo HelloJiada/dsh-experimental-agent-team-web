@@ -86,7 +86,10 @@ export function taskTimingDetailText(task: ActivityTask, t: AgentTeamsTranslate,
 /** 成员状态行的"已耗时"文本;无当前任务或未计时返回 null。 */
 export function memberElapsedText(member: ActivityMember, t: AgentTeamsTranslate): string | null {
   if (member.currentTaskElapsedMs <= 0) return null
-  return t('timing.memberElapsed', { value: formatDuration(member.currentTaskElapsedMs) })
+  const value = formatDuration(member.currentTaskElapsedMs)
+  return member.currentTaskElapsedApprox === true
+    ? t('timing.memberElapsedApprox', { value })
+    : t('timing.memberElapsed', { value })
 }
 
 /** 成员当前任务的超时档位(用于已耗时文本的警示着色)。 */

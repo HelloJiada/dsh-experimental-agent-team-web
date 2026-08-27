@@ -13,7 +13,7 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { memberActivity } from './members.ts'
 import { analyzeTeamSnapshot, type TeamIntelligence } from './intelligence.ts'
-import { currentTaskElapsedMs, summarizeTeamRetro } from './retro.ts'
+import { currentTaskElapsedApprox, currentTaskElapsedMs, summarizeTeamRetro } from './retro.ts'
 import { readBestPractices } from './best-practices.ts'
 import {
   CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readMailbox, readUnreadMailbox, readTeam,
@@ -38,6 +38,8 @@ export interface TeamActivityMember {
   readonly currentTask: string
   /** 当前进行中任务的已用耗时(ms);无当前任务或未记认领时间为 0。 */
   readonly currentTaskElapsedMs: number
+  /** 已耗时为近似值(缺 claimedAt,以 updatedAt 回退推算;旧团队/跨版本升级)。 */
+  readonly currentTaskElapsedApprox: boolean
   /** The id of a task this member is helping on, when any (self-organizing). */
   readonly helpingTask?: string
   readonly unread: number
@@ -236,7 +238,9 @@ export async function assembleTeamSnapshot(
       total: owned.length,
       currentTask: currentTaskOf(member.name, tasks),
       // 面板"当前任务已耗时":以磁盘为准源,实时快照按当前时刻计算。
+      // 缺 claimedAt 的旧任务以 updatedAt 近似,并标记近似标志供面板提示。
       currentTaskElapsedMs: currentTaskElapsedMs(member.name, tasks, Date.now()),
+      currentTaskElapsedApprox: currentTaskElapsedApprox(member.name, tasks),
       helpingTask: tasks.find(task => task.helper === member.name
         && task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')?.id,
       unread: unreadByMember.get(member.name) ?? 0,

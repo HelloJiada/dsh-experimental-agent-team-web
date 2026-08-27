@@ -30,10 +30,21 @@ export declare function estimateBudgetMs(estimateLevel: EstimateLevel | undefine
 export declare function taskTimingState(estimateLevel: EstimateLevel | undefined, estimatedMs: number | undefined, actualOrElapsedMs: number | undefined): TaskTimingState;
 /** 是否超预算(实际 > 预估预算);无预算恒为 false。 */
 export declare function taskOverran(estimateLevel: EstimateLevel | undefined, estimatedMs: number | undefined, actualMs: number | undefined): boolean;
-/** 任务的已用/实际耗时(ms):已完成取 actualMs,进行中取 now - claimedAt。 */
-export declare function taskElapsedMs(task: Pick<TeamTask, 'claimedAt' | 'completedAt' | 'actualMs'>, now: number): number;
+/**
+ * 任务的已用/实际耗时(ms):已完成取 actualMs;进行中优先 now - claimedAt,
+ * 缺 claimedAt(旧团队/跨版本升级)时回退 now - updatedAt 作为近似起点,
+ * 仍缺失则 0。
+ */
+export declare function taskElapsedMs(task: Pick<TeamTask, 'claimedAt' | 'completedAt' | 'actualMs'> & {
+    readonly updatedAt?: number;
+}, now: number): number;
 /** 成员当前进行中任务的已用耗时(ms);无当前任务或未记认领时间时为 0。 */
 export declare function currentTaskElapsedMs(memberName: string, tasks: readonly TeamTask[], now: number): number;
+/**
+ * 当前进行中任务的耗时是否为近似值:任务缺 claimedAt(旧团队/跨版本升级)而
+ * 回退到 updatedAt 推算时为 true;无当前任务恒为 false。
+ */
+export declare function currentTaskElapsedApprox(memberName: string, tasks: readonly TeamTask[]): boolean;
 /** 生成一次复盘需要的最小任务耗时/边界信息。 */
 export interface RetroTaskFacts {
     readonly attempt?: number;

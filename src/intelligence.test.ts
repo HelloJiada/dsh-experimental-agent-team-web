@@ -27,6 +27,7 @@ const member = (name: string, overrides: Record<string, unknown> = {}) => ({
   total: 2,
   currentTask: '',
   currentTaskElapsedMs: 0,
+  currentTaskElapsedApprox: false,
   unread: 0,
   ...overrides,
 })
