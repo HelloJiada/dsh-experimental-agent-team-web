@@ -52,11 +52,58 @@ visibility and lets the framework learn from every task:
 
 The kernel keeps the team state on disk; session events are informational only, and teams are archived (not deleted) so the panel can restore history.
 
-## Usage
+## Installation
 
-1. Install the bundle into a web profile (`dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-web` or a path build) and restart DSH.
-2. Type `/agent-teams <goal>` in the GUI (or ask in natural language) to activate the captain protocol.
-3. Create a team, add members, and break the goal into tasks — the activity panel tracks everything live.
+### 1. Install the bundle
+
+In your DSH Web profile directory, add the released tarball (no build, no monorepo fetch):
+
+```bash
+cd ~/.dsh/profiles/web
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/download/v0.1.1/deepseek-ai-dsh-experimental-agent-team-web-0.1.1.tgz
+```
+
+For developers / contributors, a direct git or path install also works — the repository
+commits `lib/`, so no build step is needed:
+
+```bash
+# path install (workspace checkout)
+cd ~/.dsh/profiles/web
+pnpm add /path/to/dsh-experimental-agent-team-web
+```
+
+### 2. Enable the bundle in the profile patch
+
+Add this row to your profile patch (e.g. `cordis.patch.yml`; see
+`examples/profile-patch.agent-team-web.yml` for the full skeleton):
+
+```yaml
+- insert:
+    - id: agent-team-web
+      name: "@deepseek-ai/dsh-experimental-agent-team-web"
+      inject:
+        - sessionProjections
+```
+
+### 3. Restart DSH
+
+Restart the DSH web process (the GUI), then activate the captain protocol:
+
+```
+/agent-teams <goal>
+```
+
+Example: `/agent-teams review the last 20 commits from performance, security, and product perspectives`
+
+A floating **activity panel** appears at the top right: member status, task
+progress, **each member's current-task elapsed time**, estimate-vs-actual with
+overrun badges, and drill-down task details with retro / best-practice notes.
+
+### Upgrading
+
+When a new release is published, re-run step 1 with the new version number
+(`https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/download/vX.Y.Z/deepseek-ai-dsh-experimental-agent-team-web-X.Y.Z.tgz`)
+and restart DSH.
 
 ---
 

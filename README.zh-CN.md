@@ -39,11 +39,55 @@
 
 内核以磁盘为真源;会话事件仅信息性;团队删除即归档(而非物理删除),面板可恢复历史。
 
-## 用法
+## 安装
 
-1. 将本包装入 web profile(`dsh plugin --profile web add @deepseek-ai/dsh-experimental-agent-team-web` 或本地路径构建)并重启 DSH。
-2. 在 GUI 输入 `/agent-teams <目标>`(或用自然语言提出)激活队长协议。
-3. 建团队、加成员、把目标拆成任务——活动面板实时跟踪全过程。
+### 1. 安装插件包
+
+在 DSH Web profile 目录,直接安装已发布的 tarball(无需构建、无需拉取 monorepo):
+
+```bash
+cd ~/.dsh/profiles/web
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/download/v0.1.1/deepseek-ai-dsh-experimental-agent-team-web-0.1.1.tgz
+```
+
+开发者/协作者也可用 git 或本地路径安装——仓库已提交 `lib/` 构建产物,无需构建:
+
+```bash
+# 本地路径安装(工作区 checkout)
+cd ~/.dsh/profiles/web
+pnpm add /path/to/dsh-experimental-agent-team-web
+```
+
+### 2. 在 profile patch 中启用
+
+在 profile patch(如 `cordis.patch.yml`)中加入以下条目(完整骨架见
+`examples/profile-patch.agent-team-web.yml`):
+
+```yaml
+- insert:
+    - id: agent-team-web
+      name: "@deepseek-ai/dsh-experimental-agent-team-web"
+      inject:
+        - sessionProjections
+```
+
+### 3. 重启 DSH
+
+重启 DSH Web 进程(GUI),然后激活队长协议:
+
+```
+/agent-teams <目标>
+```
+
+示例:`/agent-teams review the last 20 commits from performance, security, and product perspectives`
+
+右上角会浮出**活动面板**:成员状态、任务进度、**每个成员当前任务已耗时**、预估 vs 实际与超时徽标,点击任务详情可下钻查看复盘与最佳实践经验。
+
+### 升级
+
+新版本发布后,用新版本号重跑第 1 步
+(`https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/download/vX.Y.Z/deepseek-ai-dsh-experimental-agent-team-web-X.Y.Z.tgz`)
+并重启 DSH。
 
 ---
 
