@@ -14,7 +14,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { deliverToMember } from './members.ts'
 import { appendMailbox, CAPTAIN_KEY, createMessage } from './state.ts'
-import type { TeamMember, TeamState, TeamTask } from './types.ts'
+import type { TeamMember, TeamMessage, TeamState, TeamTask } from './types.ts'
 
 /** Whether a role string denotes the commissar oversight role (any spelling). */
 export function isCommissarRole(role: string | undefined): boolean {
@@ -42,6 +42,11 @@ export function gateBlocksCompletion(task: TeamTask): boolean {
  * same two channels as `agent_teams_send_message`: a durable mailbox append
  * (always, so offline members still see it via agent_teams_status) plus a
  * best-effort live wake through the captain's continuable parent.
+ *
+ * R-26:拆成两段——`appendCommissarReviewNotice`(锁内,仅持久化,快)与
+ * `wakeCommissarReview`(锁外,网络 live 唤醒)。本函数保留为组合版,
+ * 供直接调用方/测试使用;工具侧在 update_task 门禁里只锁内 append,
+ * 释放团队锁后再 wake,避免秒级 followup 阻塞同队所有工具。
  * @param ctx - the plugin context (injects `agents`).
  * @param stateRoot - resolved absolute state root directory.
  * @param team - the team record (membership authority).
@@ -56,17 +61,51 @@ export async function notifyCommissarPendingReview(
   task: TeamTask,
   signal: AbortSignal,
 ): Promise<boolean> {
+  const notice = await appendCommissarReviewNotice(stateRoot, team, task)
+  if (notice === undefined) return false
+  await wakeCommissarReview(ctx, stateRoot, team, notice, signal)
+  return true
+}
+
+/** 门禁通知的内容与目标(锁内 append 的产物,供锁外 wake 使用)。 */
+export interface CommissarReviewNotice {
+  readonly commissar: TeamMember
+  readonly message: TeamMessage
+}
+
+/**
+ * R-26:锁内持久化门禁通知——只写政委 mailbox(本地文件,快),不做网络调用。
+ * 无活跃政委时返回 undefined(调用方按"无政委"处理)。
+ */
+export async function appendCommissarReviewNotice(
+  stateRoot: string,
+  team: TeamState,
+  task: TeamTask,
+): Promise<CommissarReviewNotice | undefined> {
   const commissar = team.members.find(isActiveCommissar)
-  if (commissar === undefined) return false
+  if (commissar === undefined) return undefined
   const message = createMessage(
     CAPTAIN_KEY,
     commissar.name,
     `门禁通知：任务 ${task.id}「${task.subject}」等待政委复核（risk=${task.riskLevel ?? '-'}${task.milestone === true ? ', milestone' : ''}）。请用 agent_teams_review_task 给出 verdict=pass|reject。`,
   )
   await appendMailbox(stateRoot, team.id, commissar.name, message)
+  return { commissar, message }
+}
+
+/**
+ * R-26:锁外 live 唤醒——把已持久化的门禁通知实时推给政委(网络,可能秒级)。
+ * 失败静默:mailbox 已落盘,政委下次 status 仍能看到。
+ */
+export async function wakeCommissarReview(
+  ctx: Context,
+  stateRoot: string,
+  team: TeamState,
+  notice: CommissarReviewNotice,
+  signal: AbortSignal,
+): Promise<void> {
   const captain = ctx.agents.get(team.captainSessionId as SessionId)
-  if (captain !== undefined && commissar.id !== '') {
-    await deliverToMember(ctx, captain, commissar.id, `AgentTeams 门禁通知：\n\n${message.content}`, signal)
+  if (captain !== undefined && notice.commissar.id !== '') {
+    await deliverToMember(ctx, captain, notice.commissar.id, `AgentTeams 门禁通知：\n\n${notice.message.content}`, signal)
   }
-  return true
 }

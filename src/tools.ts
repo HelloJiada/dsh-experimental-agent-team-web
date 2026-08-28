@@ -19,10 +19,11 @@ import { join } from 'node:path'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import { renderBestPractices, renderStatus, serializeRetro, serializeSignals } from './render.ts'
 import {
+  appendCommissarReviewNotice,
   gateBlocksCompletion,
   isActiveCommissar,
   isCommissarRole,
-  notifyCommissarPendingReview,
+  wakeCommissarReview,
 } from './commissar-gate.ts'
 import {
   countActiveExecRoleMembers,
@@ -493,7 +494,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const workspace = workspaceOf(captain)
       const stateRoot = stateRootOf(workspace, config)
       const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
-      const created = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
+      // R-26:两段式——锁内只做校验与落盘(spawn/LLM 网络操作移到锁外)。
+      // 锁内准备:校验全部入队守卫并锁定成员名,释放锁后再做网络操作。
+      const prepared = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
         // Role-based naming: an omitted or role-only name becomes the role
         // title itself (技术员) — no ordinal, since each role defaults to a
@@ -528,37 +531,63 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             throw new Error(`executing role "${args.role}" already has ${execCap} active members — 该执行角色已达上限（每个执行角色最多 ${execCap} 名成员）`)
           }
         }
-        const selection = await resolveMemberLlmSelection(ctx, captain, {
-          provider: args.provider,
-          model: args.model,
-          defaultModel: config.memberModel,
-          reasoningEffort: args.reasoning_effort,
-        }, exec.signal)
-        const member: TeamMember = {
-          id: '',
-          name: memberName,
-          role: args.role,
-          provider: selection.provider,
-          model: selection.model,
-          reasoningEffort: selection.reasoningEffort,
-          joinedAt: Date.now(),
-          status: 'idle',
+        return { fresh, memberName, memberKey, roleText }
+      })
+
+      // 锁外执行:LLM 选型 + 团队记忆读取 + 子代理 spawn(网络/慢,不占团队锁)。
+      const selection = await resolveMemberLlmSelection(ctx, captain, {
+        provider: args.provider,
+        model: args.model,
+        defaultModel: config.memberModel,
+        reasoningEffort: args.reasoning_effort,
+      }, exec.signal)
+      const member: TeamMember = {
+        id: '',
+        name: prepared.memberName,
+        role: args.role,
+        provider: selection.provider,
+        model: selection.model,
+        reasoningEffort: selection.reasoningEffort,
+        joinedAt: Date.now(),
+        status: 'idle',
+      }
+      // 自成长团队记忆注入:按成员角色从全局 best-practices 库取经验,
+      // 冷启动守卫(角色样本 <2)时返回空,memberPersona 不注入。
+      const memories = await roleMemoriesFor(stateRoot, args.role)
+      await spawnMember(
+        ctx,
+        memberRuntime(config),
+        memberSelections,
+        selection,
+        captain,
+        prepared.fresh,
+        member,
+        config.stateDir,
+        exec.signal,
+        memories,
+      )
+
+      // 锁内校验提交:重读最新状态,复核成员名/上限未被并发 add 抢占,
+      // 通过后 push + 落盘;失败则退休孤儿子代理(与旧 write 失败路径一致)。
+      const created = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
+        const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
+        const conflicting = fresh.members.some((candidate) => sanitizeKey(candidate.name) === prepared.memberKey)
+        const atMemberCap = fresh.members.filter((candidate) => candidate.status !== 'removed').length >= config.maxMembers
+        const execCap = config.maxExecPerRole ?? DEFAULT_MAX_EXEC_PER_ROLE
+        const atExecCap = prepared.roleText !== '' && !isCommissarRole(prepared.roleText)
+          && countActiveExecRoleMembers(fresh.members, prepared.roleText) >= execCap
+        if (conflicting || atMemberCap || atExecCap) {
+          // 并发 add 抢先占用了名字/名额:退休刚 spawn 的孤儿子代理,拒绝覆盖新状态。
+          if (member.id !== '') {
+            await recordRetiredMemberIds(stateRoot, [member.id]).catch(() => undefined)
+            interruptMember(ctx, captain, member.id)
+          }
+          throw conflicting
+            ? new Error(`member name "${args.name}" has already been used in team "${fresh.name}"`)
+            : atMemberCap
+              ? new Error(`team "${fresh.name}" is at its member cap (${config.maxMembers})`)
+              : new Error(`executing role "${args.role}" already has ${execCap} active members — 该执行角色已达上限（每个执行角色最多 ${execCap} 名成员）`)
         }
-        // 自成长团队记忆注入:按成员角色从全局 best-practices 库取经验,
-        // 冷启动守卫(角色样本 <2)时返回空,memberPersona 不注入。
-        const memories = await roleMemoriesFor(stateRoot, args.role)
-        await spawnMember(
-          ctx,
-          memberRuntime(config),
-          memberSelections,
-          selection,
-          captain,
-          fresh,
-          member,
-          config.stateDir,
-          exec.signal,
-          memories,
-        )
         fresh.members.push(member)
         try {
           await writeTeam(stateRoot, fresh)
@@ -1110,13 +1139,13 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           if (!sameStatus || !sameOutput) {
             throw new Error(`terminal task ${task.id} is immutable; use agent_teams_reassign_task to retry failed/cancelled work`)
           }
-          return {
+          return { kind: 'updated' as const, value: {
             task_id: task.id,
             status: task.status,
             attempt: task.attempt ?? 0,
             ...task.attemptId === undefined ? {} : { attempt_id: task.attemptId },
             ...task.output !== undefined ? { output: task.output } : {},
-          }
+          } }
         }
         // Commissar gate: a task under review (high/critical risk or
         // milestone) may only be marked completed after the commissar passed
@@ -1124,15 +1153,14 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         // commissar; without an active commissar the gate still holds hard.
         // 改进 4:被拦截的完成请求置位中间态 blockedByReview(等待政委复核),
         // 并先落盘再抛错,让面板/快照能立即看到任务的"待复核"阻塞态。
+        // R-26:锁内只做状态落盘 + 政委邮箱持久化(append,快);live 唤醒
+        // (网络,可能秒级)移到锁外,避免阻塞同队所有工具。
         if (args.status === 'completed' && gateBlocksCompletion(task)) {
           task.blockedByReview = true
           task.updatedAt = Date.now()
           await writeTeam(stateRoot, fresh)
-          const notified = await notifyCommissarPendingReview(ctx, stateRoot, fresh, task, exec.signal)
-          if (!notified) {
-            throw new Error(`task ${task.id} requires commissar review (需要政委复核) before completing, but the team has no active commissar — add one with agent_teams_add_member(role=commissar) first`)
-          }
-          throw new Error(`task ${task.id} requires commissar review (需要政委复核) before completing — the commissar has been notified; retry after agent_teams_review_task(verdict=pass)`)
+          const notice = await appendCommissarReviewNotice(stateRoot, fresh, task)
+          return { kind: 'gate-blocked' as const, team: fresh, taskId: task.id, notice }
         }
         if (args.status !== undefined) {
           const transition = transitionError(task.status, args.status)
@@ -1236,7 +1264,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           ...task.actualMs !== undefined ? { actualMs: task.actualMs } : {},
           ...task.retro !== undefined ? { retroCause: task.retro.cause, overran: task.retro.overran } : {},
         })
-        return {
+        return { kind: 'updated' as const, value: {
           task_id: task.id,
           status: task.status,
           attempt: task.attempt ?? 0,
@@ -1249,10 +1277,20 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           ...task.estimatedMs !== undefined ? { estimated_ms: task.estimatedMs } : {},
           ...task.overrunMs !== undefined ? { overrun_ms: task.overrunMs } : {},
           ...serializeRetro(task.retro),
-        }
+        } }
       })
+      // R-26:门禁被拦截时,锁内已持久化 blockedByReview + 政委邮箱;
+      // 锁外再补 live 唤醒(网络,不占锁),然后抛出门禁错误。
+      if (updated.kind === 'gate-blocked') {
+        if (updated.notice !== undefined) {
+          await wakeCommissarReview(ctx, stateRoot, updated.team, updated.notice, exec.signal)
+          throw new Error(`task ${updated.taskId} requires commissar review (需要政委复核) before completing — the commissar has been notified; retry after agent_teams_review_task(verdict=pass)`)
+        }
+        throw new Error(`task ${updated.taskId} requires commissar review (需要政委复核) before completing, but the team has no active commissar — add one with agent_teams_add_member(role=commissar) first`)
+      }
+      const result = updated.value
       await scheduler.kickTeam(workspace, team.id, team.captainSessionId === caller.id ? caller : undefined)
-      return updated
+      return result
     },
   }))
 
@@ -1555,6 +1593,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const visibleMembers = identity.kind === 'captain'
         ? members
         : members.filter((member) => member.name === identity.name)
+      // R-24:ack 只针对"展示过的那批"消息——复用展示读的数组,不再二次读取,
+      // 消除「展示读」与「ack 重读」之间到达的新消息被 ack 却从未展示的竞态。
+      let callerUnreadIds: string[] = []
       for (const member of visibleMembers) {
         const messages = await readUnreadMailbox(
           stateRoot,
@@ -1562,6 +1603,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           member.name,
           reportMalformed(member.name),
         )
+        if (identity.kind === 'member' && member.name === identity.name) {
+          callerUnreadIds = messages.map(message => message.id)
+        }
         if (messages.length > 0) {
           memberInboxes[member.name] = {
             count: messages.length,
@@ -1587,7 +1631,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       }
       const acknowledged = identity.kind === 'captain'
         ? captainInbox.map(message => message.id)
-        : await readUnreadMailbox(stateRoot, team.id, identity.name).then(messages => messages.map(message => message.id))
+        : callerUnreadIds
       if (acknowledged.length > 0) {
         await withTeamLock(teamLockKey(stateRoot, team.id), () => (
           acknowledgeMailbox(stateRoot, team.id, identity.kind === 'captain' ? CAPTAIN_KEY : identity.name, acknowledged)

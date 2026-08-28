@@ -285,6 +285,67 @@ describe('agent_teams_add_member — 添加成员', () => {
       execOf(agent(workspace, CAPTAIN_ID)),
     )).rejects.toThrow(/已达上限/)
   })
+
+  it('R-26:spawn(网络)在锁外——add_member 进行中,同队 status 不被阻塞', async () => {
+    // 让 startContinuable 挂起 300ms,模拟慢网络 spawn。
+    let releaseSpawn!: () => void
+    const spawnGate = new Promise<void>((resolve) => { releaseSpawn = resolve })
+    const tools = new Map<string, CapturedTool>()
+    let childSeq = 0
+    // 团队 fixture 只有政委成员(session-commissar);running 使其 kick 短路。
+    const runningIds = new Set(['session-commissar'])
+    const fakeCtx = {
+      tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
+      agents: {
+        get: (id: string) => runningIds.has(id)
+          ? { id, status: 'running', whenIdle: async () => undefined }
+          : undefined,
+      },
+      llm: { resolveCallConfig: async () => ({ provider: 'p', model: 'm' }) },
+      logger: { warn: () => undefined, debug: () => undefined },
+      on: () => undefined,
+      effect: () => () => undefined,
+      subagents: {
+        registerContinuableSetup: () => undefined,
+        followup: async () => undefined,
+        interrupt: () => undefined,
+        list: () => ['spawn'],
+        getProvider: () => ({
+          prepareContinuable: {},
+          capabilities: { persona: true, toolFilter: true },
+        }),
+        startContinuable: async () => {
+          await spawnGate
+          return { childId: `child-${++childSeq}` }
+        },
+      },
+    } as unknown as Context
+    registerAgentTeamsTools(fakeCtx, config)
+    const localTool = (name: string) => {
+      const def = tools.get(name)
+      if (def === undefined) throw new Error(`tool "${name}" not registered`)
+      return def
+    }
+
+    // 启动 add_member(内部 spawn 挂起);同时立即调用 status(政委视角,同队)。
+    const addPromise = localTool('agent_teams_add_member').execute(
+      { role: 'engineer' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    )
+    const statusPromise = localTool('agent_teams_status').execute(
+      {},
+      execOf(agent(workspace, 'session-commissar')),
+    )
+    // R-26 修复前:add_member 持有团队锁期间 await spawn,status 排队等锁,
+    // 300ms 内无法完成;修复后 spawn 在锁外,status 立即完成。
+    const statusResult = await Promise.race([
+      statusPromise.then(value => ({ value, blocked: false })),
+      new Promise<{ blocked: true }>((resolve) => setTimeout(() => resolve({ blocked: true }), 150)),
+    ])
+    expect(statusResult.blocked).toBe(false)
+    releaseSpawn()
+    await addPromise
+  })
 })
 
 describe('add_member spawnMember 前置校验失败分支(4 种残缺 provider)', () => {

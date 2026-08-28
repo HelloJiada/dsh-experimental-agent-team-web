@@ -10,12 +10,13 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
-import type { TeamState, TeamTask } from './types.ts'
+import { appendMailbox } from './state.ts'
+import type { TeamMessage, TeamState, TeamTask } from './types.ts'
 
 const config: ToolsConfig = {
   stateDir: '.agent-team-web',
@@ -166,6 +167,78 @@ describe('agent_teams_status — R-21/L-1 attempt_id 裁剪', () => {
       execOf(agent(workspace, CAPTAIN_ID)),
     ) as { tasks: { id: string; attempt_id: string }[] }
     expect(result.tasks.find(t => t.id === 't1')?.attempt_id).toBe('att-1')
+  })
+})
+
+describe('agent_teams_status — R-24 邮箱 ack 只覆盖展示过的那批消息', () => {
+  let workspace: string
+  let stateRoot: string
+  const tool = harness()
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-ack-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(stateRoot, { recursive: true })
+  })
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true })
+  })
+
+  const message = (id: string, from = '质检员', content = `消息${id}`): TeamMessage => ({
+    id,
+    from,
+    to: '技术员',
+    content,
+    ts: 1000 + Number(id.slice(1)),
+  })
+
+  it('成员 status 的 ack 集合 == 展示集合:后到消息不被静默 ack、跨调用保持未读', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    // 第一次 status 前已有 m1 未读:展示 m1 并 ack m1。
+    await appendMailbox(stateRoot, 'team-trim', '技术员', message('m1'))
+    const first = await tool('agent_teams_status').execute(
+      {},
+      execOf(agent(workspace, ENGINEER_ID)),
+    ) as { member_inboxes: Record<string, { count: number; latest: string }> }
+    expect(first.member_inboxes['技术员']?.count).toBe(1)
+    expect(first.member_inboxes['技术员']?.latest).toContain('消息m1')
+
+    // 展示之后到达的 m2:若实现把"ack 集合"做成二次读取/全量未读,
+    // m2 会在下一次展示前被静默 ack(未展示即已读);修复后 m2 保持
+    // 未读、照常由下一次调用展示。
+    await appendMailbox(stateRoot, 'team-trim', '技术员', message('m2'))
+    const second = await tool('agent_teams_status').execute(
+      {},
+      execOf(agent(workspace, ENGINEER_ID)),
+    ) as { member_inboxes: Record<string, { count: number; latest: string }> }
+    expect(second.member_inboxes['技术员']?.count).toBe(1)
+    expect(second.member_inboxes['技术员']?.latest).toContain('消息m2')
+
+    // m1 已被第一次 status ack(readAt 置位);m2 由第二次 status 展示后 ack。
+    const raw = await readFile(join(stateRoot, 'team-trim', 'inbox', '技术员.jsonl'), 'utf8')
+    const m1Line = raw.trim().split('\n').find(line => line.includes('"m1"'))
+    const m2Line = raw.trim().split('\n').find(line => line.includes('"m2"'))
+    expect(m1Line).toContain('"readAt"')
+    expect(m2Line).toContain('"readAt"')
+  })
+
+  it('队长 status 同样只 ack 自己的邮箱,不触碰成员邮箱', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    await appendMailbox(stateRoot, 'team-trim', 'captain', message('c1', '技术员', '给队长'))
+    await appendMailbox(stateRoot, 'team-trim', '技术员', message('m1'))
+
+    const result = await tool('agent_teams_status').execute(
+      {},
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { captain_inbox: { from: string; content: string }[] }
+    expect(result.captain_inbox).toHaveLength(1)
+    expect(result.captain_inbox[0]?.content).toBe('给队长')
+
+    // 技术员的 m1 未被队长 status 触碰。
+    const raw = await readFile(join(stateRoot, 'team-trim', 'inbox', '技术员.jsonl'), 'utf8')
+    expect(raw).toContain('"m1"')
+    expect(raw).not.toContain('"readAt"')
   })
 })
 

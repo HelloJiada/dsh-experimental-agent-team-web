@@ -373,6 +373,63 @@ describe('门禁拦截链路 — blockedByReview → pass/reject 放行(改进4 
     expect(persisted?.tasks.find(t => t.id === 't1')?.blockedByReview).toBe(true)
   })
 
+  it('R-26:门禁 live 唤醒在锁外——慢 followup 不阻塞同队并发 status', async () => {
+    // 场景:成员完成被门禁拦截,需要实时唤醒政委;若唤醒(followup,网络)
+    // 在团队锁内 await,慢唤醒期间同队 status 会被锁阻塞。
+    // 修复后:锁内只落盘 blockedByReview + 政委邮箱,唤醒在锁外执行。
+    const tools = new Map<string, CapturedTool>()
+    let releaseWake!: () => void
+    const wakeGate = new Promise<void>((resolve) => { releaseWake = resolve })
+    const MEMBER_IDS = new Set([COMMISSAR_ID, ENGINEER_ID])
+    const fakeCtx = {
+      tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
+      agents: {
+        get: (id: string) => MEMBER_IDS.has(id)
+          ? { id, status: 'running', session: { header: { cwd: '' } } }
+          : // 队长在线(需要走 live 唤醒路径)。
+            id === CAPTAIN_ID
+            ? { id, status: 'running', session: { header: { cwd: '' } } }
+            : undefined,
+      },
+      logger: { warn: () => undefined, debug: () => undefined },
+      on: () => undefined,
+      effect: () => () => undefined,
+      subagents: {
+        registerContinuableSetup: () => undefined,
+        followup: async () => { await wakeGate },
+      },
+    } as unknown as Context
+    registerAgentTeamsTools(fakeCtx, config)
+    const localTool = (name: string) => {
+      const def = tools.get(name)
+      if (def === undefined) throw new Error(`tool "${name}" not registered`)
+      return def
+    }
+    await writeTeamToDisk(stateRoot, team({ tasks: [gatedTask('t1')] }))
+
+    // 成员尝试完成 → 门禁拦截,进入唤醒(挂起);同时立即并发 status。
+    const gatePromise = localTool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: 'att-1' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    )
+    const statusPromise = localTool('agent_teams_status').execute(
+      {},
+      execOf(agent(workspace, ENGINEER_ID)),
+    )
+    const statusResult = await Promise.race([
+      statusPromise.then(value => ({ value, blocked: false })),
+      new Promise<{ blocked: true }>((resolve) => setTimeout(() => resolve({ blocked: true }), 150)),
+    ])
+    expect(statusResult.blocked).toBe(false)
+    releaseWake()
+    await expect(gatePromise).rejects.toThrow(/requires commissar review/)
+    // 锁内已落盘:blockedByReview + 政委邮箱通知。
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    expect(persisted?.tasks.find(t => t.id === 't1')?.blockedByReview).toBe(true)
+    const mailbox = await readFile(join(stateRoot, 'team-tools', 'inbox', '政委.jsonl'), 'utf8')
+    expect(mailbox).toContain('门禁通知')
+  })
+
   it('队长不能复核(独立监督);仅活跃政委可复核', async () => {
     await writeTeamToDisk(stateRoot, team({ tasks: [gatedTask('t1')] }))
     await expect(tool('agent_teams_review_task').execute(
