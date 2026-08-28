@@ -206,6 +206,22 @@ export function invalidateTaskAttempt(
 }
 
 /**
+ * 移除成员时清理其遗留的 helper 标记(R-06):从所有任务上摘除该成员
+ * 作为 helper 的引用(helper 与 helperSince 一并清除),避免
+ * `isHelppableTask` 因 stale helper 永远拒绝再帮助该任务。
+ * helperEver 保留作复盘审计(hasHelper 标注);attempt 级轮换语义由
+ * invalidateTaskAttempt/activateTaskAttempt 处理,此处只清引用。
+ */
+export function clearMemberHelperMarks(tasks: TeamTask[], memberName: string): void {
+  for (const task of tasks) {
+    if (task.helper === memberName) {
+      task.helper = undefined
+      task.helperSince = undefined
+    }
+  }
+}
+
+/**
  * Create the team directory structure and the initial team record.
  * @param stateRoot - resolved absolute state root directory.
  * @param state - the initial team record.

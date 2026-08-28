@@ -361,3 +361,188 @@ describe('R-04 — create_task 依赖环检测(工具级)', () => {
     expect(findTaskCycle(withUnknown)).toBeUndefined()
   })
 })
+
+describe('R-06 — helper 标记清理(工具级)', () => {
+  let workspace: string
+  let stateRoot: string
+  const tool = harness()
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-r06-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(stateRoot, { recursive: true })
+  })
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true })
+  })
+
+  it('remove_member 摘除被移除成员在其他任务上的 helper 引用(helperEver 保留作审计)', async () => {
+    const withHelper = team({
+      members: [
+        { id: COMMISSAR_ID, name: '政委', role: 'commissar', provider: 'p', model: 'm', joinedAt: 1000, status: 'idle' },
+        { id: ENGINEER_ID, name: '技术员', role: 'engineer', provider: 'p', model: 'm', joinedAt: 1001, status: 'idle' },
+        { id: 'session-qa', name: '质检员一号', role: 'qa', provider: 'p', model: 'm', joinedAt: 1002, status: 'idle' },
+      ],
+      tasks: [task('t1', {
+        subject: '被帮助的任务',
+        status: 'in_progress',
+        assignee: '技术员',
+        attempt: 1,
+        attemptId: 'att-1',
+        updatedAt: 1000,
+        helper: '质检员一号',
+        helperSince: 2000,
+        helperEver: true,
+      })],
+    })
+    await writeTeamToDisk(stateRoot, withHelper)
+
+    // 移除作为 helper 的质检员一号:任务不归其所有(assignee=技术员),不 requeue,
+    // 但 helper 引用必须摘除(R-06 修复前残留,isHelppableTask 将永远拒绝再帮助 t1)。
+    const removed = await tool('agent_teams_remove_member').execute(
+      { name: '质检员一号' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { requeued_tasks: string[] }
+    expect(removed.requeued_tasks).toEqual([])
+
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    const t1 = persisted?.tasks.find(t => t.id === 't1')
+    expect(t1?.helper).toBeUndefined()
+    expect(t1?.helperSince).toBeUndefined()
+    // helperEver 保留作复盘审计(hasHelper 标注),不被移除路径误伤。
+    expect(t1?.helperEver).toBe(true)
+    expect(persisted?.members.find(m => m.name === '质检员一号')?.status).toBe('removed')
+  })
+
+  it('任务终结时清除 helper 引用但保留 helperEver(R-06)', async () => {
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', {
+        subject: '普通任务',
+        status: 'in_progress',
+        assignee: '技术员',
+        attempt: 1,
+        attemptId: 'att-1',
+        claimedAt: 10_000,
+        startedAt: 15_000,
+        updatedAt: 20_000,
+        helper: '质检员一号',
+        helperSince: 16_000,
+        helperEver: true,
+      })],
+    }))
+
+    const updated = await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: 'att-1', output: '完成' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    ) as { status: string }
+    expect(updated.status).toBe('completed')
+
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    const t1 = persisted?.tasks.find(t => t.id === 't1')
+    expect(t1?.helper).toBeUndefined()
+    expect(t1?.helperSince).toBeUndefined()
+    expect(t1?.helperEver).toBe(true) // 复盘 hasHelper 标注不受清理误伤
+    expect(t1?.retro?.hasHelper).toBe(true)
+  })
+})
+
+describe('R-07 — signals.turns 保真(工具级)', () => {
+  let workspace: string
+  let stateRoot: string
+  const tool = harness()
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-r07-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(stateRoot, { recursive: true })
+  })
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true })
+  })
+
+  it('output-only 更新不重置 turns;组合序列 turns 正确累计(R-07)', async () => {
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', {
+        subject: '普通任务',
+        status: 'claimed',
+        assignee: '技术员',
+        attempt: 1,
+        attemptId: 'att-1',
+        claimedAt: 10_000,
+      })],
+    }))
+    const engineer = agent(workspace, ENGINEER_ID)
+
+    // in_progress → turns=1
+    await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'in_progress', attempt_id: 'att-1' },
+      execOf(engineer),
+    )
+    // 仅 output(两次):R-07 修复前 turns 被整体重置为 undefined。
+    await tool('agent_teams_update_task').execute(
+      { task_id: 't1', output: '第一版', attempt_id: 'att-1' },
+      execOf(engineer),
+    )
+    await tool('agent_teams_update_task').execute(
+      { task_id: 't1', output: '第二版', attempt_id: 'att-1' },
+      execOf(engineer),
+    )
+    // completed → turns=2;outputBytes=最后一次 output 长度
+    const done = await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: 'att-1', output: '最终版' },
+      execOf(engineer),
+    ) as { signals?: { turns?: number; output_bytes: number } }
+    expect(done.signals?.turns).toBe(2)
+    expect(done.signals?.output_bytes).toBe('最终版'.length)
+
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    const t1 = persisted?.tasks.find(t => t.id === 't1')
+    expect(t1?.signals?.turns).toBe(2)
+    expect(t1?.signals?.outputBytes).toBe('最终版'.length)
+  })
+
+  it('signal_note 分支保留 turns 与 outputBytes;无先验 signals 时 output-only 语义明确', async () => {
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', {
+        subject: '普通任务',
+        status: 'in_progress',
+        assignee: '技术员',
+        attempt: 1,
+        attemptId: 'att-1',
+        claimedAt: 10_000,
+        startedAt: 10_000,
+        signals: { turns: 3, outputBytes: 12, selfReport: '已有自报' },
+      })],
+    }))
+    const engineer = agent(workspace, ENGINEER_ID)
+
+    const withNote = await tool('agent_teams_update_task').execute(
+      { task_id: 't1', output: '补充输出', signal_note: '深挖了 1400 行 CSS', attempt_id: 'att-1' },
+      execOf(engineer),
+    ) as { signals?: { turns?: number; output_bytes: number; self_report?: string } }
+    expect(withNote.signals?.turns).toBe(3) // 保留
+    expect(withNote.signals?.output_bytes).toBe('补充输出'.length)
+    expect(withNote.signals?.self_report).toBe('深挖了 1400 行 CSS')
+
+    // 无先验 signals 的任务:仅 output → turns 键缺省(undefined 语义),outputBytes 正常。
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t2', {
+        subject: '无信号任务',
+        status: 'in_progress',
+        assignee: '技术员',
+        attempt: 1,
+        attemptId: 'att-2',
+        claimedAt: 10_000,
+        startedAt: 10_000,
+      })],
+    }))
+    const bare = await tool('agent_teams_update_task').execute(
+      { task_id: 't2', output: '首次输出', attempt_id: 'att-2' },
+      execOf(engineer),
+    ) as { signals?: { turns?: number; output_bytes: number } }
+    expect(bare.signals?.turns).toBeUndefined()
+    expect(bare.signals?.output_bytes).toBe('首次输出'.length)
+  })
+})

@@ -26,6 +26,7 @@ import {
   claimMailboxDelivery,
   createMessage,
   findTeamByParticipant,
+  invalidateTaskAttempt,
   readTeam,
   readUnreadMailbox,
   releaseMailboxDelivery,
@@ -463,18 +464,20 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
             if (task?.helper !== ticket.memberName || task?.helperSince !== ticket.helperSince) return
             task.helper = undefined
             task.helperSince = undefined
+            // R-06:投递失败 = helper 从未真正介入,复位本 attempt 的 helperEver,
+            // 避免复盘 hasHelper 虚标(与 dispatch 前置位对称)。
+            task.helperEver = undefined
             task.updatedAt = Date.now()
             if (currentMember !== undefined && currentMember.status !== 'removed') currentMember.status = 'idle'
             await writeTeam(stateRoot, fresh)
             return
           }
           if (task?.attemptId !== ticket.attemptId) return
-          task.status = 'pending'
-          task.assignee = ticket.previousAssignee
-          task.attemptId = undefined
-          task.handoffId = undefined
-          task.reassigning = false
-          task.updatedAt = Date.now()
+          // R-05:复用 invalidateTaskAttempt 完整复位 attempt 级字段
+          // (claimedAt/startedAt/helper/helperEver/中间态等),而不是只还原
+          // status/assignee——避免 pending 任务残留过早 claimedAt,
+          // 使后续 actualMs = completedAt - claimedAt 含入派发死时间、复盘失真。
+          invalidateTaskAttempt(task, ticket.previousAssignee)
           if (currentMember !== undefined && currentMember.status !== 'removed') currentMember.status = 'idle'
           await writeTeam(stateRoot, fresh)
         })

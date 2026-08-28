@@ -34,6 +34,7 @@ import {
   archiveTeamDir,
   beginTaskAttempt,
   CAPTAIN_KEY,
+  clearMemberHelperMarks,
   createMessage,
   createTeamDir,
   descriptionAwaitingInput,
@@ -600,6 +601,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           task.reassigning = false
           requeued.push(task.id)
         }
+        // R-06:该成员作为 helper 协助的其他任务也要摘除引用,否则
+        // isHelppableTask 永远拒绝再帮助这些任务。
+        clearMemberHelperMarks(fresh.tasks, member.name)
         member.status = 'removed'
         await writeTeam(stateRoot, fresh)
         appendTeamEvent(ctx, captainSessionOf(ctx, fresh.captainSessionId, captain.session), 'agent-team-web/member-removed', {
@@ -1123,16 +1127,21 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             ...selfReport !== undefined ? { selfReport } : {},
           }
         } else if (args.output !== undefined) {
-          const selfReport = task.signals?.selfReport
+          // R-07:output-only 更新改为"在原 signals 上合并覆盖",保留 turns
+          // (此前整体重建把 turns 重置为 undefined,系统性低估状态变更次数)。
+          const prior = task.signals
           task.signals = {
-            ...selfReport !== undefined ? { selfReport } : {},
+            ...prior?.turns !== undefined ? { turns: prior.turns } : {},
             outputBytes: args.output.length,
+            ...prior?.selfReport !== undefined ? { selfReport: prior.selfReport } : {},
           }
         }
         if (args.signal_note !== undefined && args.signal_note.trim() !== '') {
+          // R-07:signal_note 分支同样合并覆盖,不写 undefined 键、不丢 turns。
+          const prior = task.signals
           task.signals = {
-            turns: task.signals?.turns,
-            outputBytes: task.signals?.outputBytes ?? 0,
+            ...prior?.turns !== undefined ? { turns: prior.turns } : {},
+            outputBytes: prior?.outputBytes ?? 0,
             selfReport: args.signal_note.trim(),
           }
         }
@@ -1140,6 +1149,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           // 改进 4:终结状态不存在"等待复核/等待输入"中间态,兜底清除脏标记。
           task.blockedByReview = false
           task.awaitingInput = false
+          // R-06:终结任务不残留 helper 引用(helperEver 保留作复盘审计)。
+          task.helper = undefined
+          task.helperSince = undefined
           finalizeTaskTiming(task)
           if (task.retro === undefined && task.actualMs !== undefined && task.claimedAt !== undefined) {
             const facts: RetroTaskFacts = {
@@ -1843,6 +1855,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           for (const task of fresh.tasks) {
             if (task.assignee === member.name && task.status !== 'completed') invalidateTaskAttempt(task)
           }
+          // R-06:摘除该成员在其他任务上的 helper 引用(与 remove_member 一致)。
+          clearMemberHelperMarks(fresh.tasks, member.name)
         }
         await writeTeam(stateRoot, fresh)
         return roster

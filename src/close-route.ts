@@ -25,6 +25,7 @@ import { appendTeamEvent } from './events.ts'
 import { interruptMember } from './members.ts'
 import {
   archiveTeamDir,
+  clearMemberHelperMarks,
   invalidateTaskAttempt,
   readTeam,
   recordRetiredMemberIds,
@@ -131,6 +132,8 @@ export async function prepareTeamForArchive(stateRoot: string, teamId: string): 
       for (const task of fresh.tasks) {
         if (task.assignee === member.name && task.status !== 'completed') invalidateTaskAttempt(task)
       }
+      // R-06:摘除该成员在其他任务上的 helper 引用(与 remove_member/delete 一致)。
+      clearMemberHelperMarks(fresh.tasks, member.name)
     }
     await writeTeam(stateRoot, fresh)
     return roster

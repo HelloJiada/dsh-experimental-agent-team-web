@@ -235,6 +235,58 @@ describe('kickMember 集成 — 自组织帮助派发', () => {
     expect(fresh.members.find(m => m.name === 'A')?.status).toBe('idle')
   })
 
+  it('帮助派发失败时复位 helperEver(R-06:投递失败=从未介入,复盘不虚标 hasHelper)', async () => {
+    const state = team({ tasks: [task('t1')] })
+    await writeState(state)
+    const scheduler = installTeamScheduler(context({
+      live: { 'session-captain': { status: 'idle' } },
+      followupThrows: true,
+    }), config)
+
+    await scheduler.kickMember(workspace, 'team-sched', 'A')
+
+    const fresh = await readState()
+    expect(fresh.tasks.find(t => t.id === 't1')?.helperEver).toBeUndefined()
+  })
+
+  it('普通派发失败时完整复位 attempt 级字段(R-05:claimedAt/attemptId 清除,任务回 pending)', async () => {
+    const state = team({
+      members: [member('A')],
+      tasks: [task('t-pending', {
+        subject: '待派任务',
+        status: 'pending',
+        assignee: undefined,
+        attempt: 0,
+        attemptId: undefined,
+        claimedAt: undefined,
+        startedAt: undefined,
+        updatedAt: 1,
+      })],
+    })
+    await writeState(state)
+    const scheduler = installTeamScheduler(context({
+      live: { 'session-captain': { status: 'idle' } },
+      followupThrows: true,
+    }), config)
+
+    // 派发前:任务干净 pending,无 claimedAt。
+    let fresh = await readState()
+    expect(fresh.tasks[0]?.claimedAt).toBeUndefined()
+
+    await scheduler.kickMember(workspace, 'team-sched', 'A')
+
+    // R-05 修复前:回滚只还原 status/assignee/attemptId,claimedAt 残留,
+    // 后续 actualMs = completedAt - claimedAt 会含入派发死时间。
+    fresh = await readState()
+    const rolled = fresh.tasks[0]
+    expect(rolled?.status).toBe('pending')
+    expect(rolled?.claimedAt).toBeUndefined()
+    expect(rolled?.startedAt).toBeUndefined()
+    expect(rolled?.attemptId).toBeUndefined()
+    expect(rolled?.assignee).toBeUndefined()
+    expect(fresh.members.find(m => m.name === 'A')?.status).toBe('idle')
+  })
+
   it('Owner 恢复时清除 helper（Owner 接管回）', async () => {
     const state = team({
       members: [member('A'), member('B')],
