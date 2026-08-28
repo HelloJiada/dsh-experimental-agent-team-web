@@ -57,6 +57,14 @@ describe('memberPersona — 角色差异化行为模板注入', () => {
     expect(persona).toContain('reviewable report')
   })
 
+  it('docs 成员注入"写明白"行为模板(R-16:4a182f2 恢复 docs 后补用例)', () => {
+    const persona = memberPersona(team([]), member('文书', 'docs'), '.agent-team-web')
+    expect(persona).toContain('Your role is 文书 (docs) — you write it down clearly')
+    expect(persona).toContain('STRUCTURE FIRST')
+    expect(persona).toContain('WRITE WITH SPEC')
+    expect(persona).toContain('SYNC CHECK')
+  })
+
   it('reviewer 成员注入审查模板', () => {
     const persona = memberPersona(team([]), member('审查员', 'reviewer'), '.agent-team-web')
     expect(persona).toContain('Your role is 审查员 (reviewer, task-level)')

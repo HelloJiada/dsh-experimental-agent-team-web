@@ -163,24 +163,24 @@ const TASK_STATUS_LABEL: Record<string, AgentTeamsLocaleKey> = {
   cancelled: 'task.status.cancelled',
 }
 
-function taskStatusLabel(status: string, t: AgentTeamsTranslate): string {
+export function taskStatusLabel(status: string, t: AgentTeamsTranslate): string {
   const key = TASK_STATUS_LABEL[status]
   return key === undefined ? status : t(key)
 }
 
-function formatTaskIds(ids: readonly string[], t: AgentTeamsTranslate): string {
+export function formatTaskIds(ids: readonly string[], t: AgentTeamsTranslate): string {
   return ids.join(t('format.listSeparator'))
 }
 
 /** Badge/bar coloring key: visual state, widened for terminal statuses. */
-function taskTone(state: ActivityTask['state'], status: string): string {
+export function taskTone(state: ActivityTask['state'], status: string): string {
   if (status === 'failed') return 'failed'
   if (status === 'cancelled') return 'cancelled'
   return state
 }
 
 /** 任务耗时超时档位(ok 不输出警示;warn/over 分别黄/红)。 */
-function timingData(task: ActivityTask): 'ok' | 'warn' | 'over' {
+export function timingData(task: ActivityTask): 'ok' | 'warn' | 'over' {
   return taskTimingState(task, Date.now())
 }
 
@@ -259,13 +259,13 @@ function memberStatusText(
   return t(member.activity === 'idle' ? 'member.status.idle' : 'member.status.unknown')
 }
 
-function compactTaskLabel(subject: string): string {
+export function compactTaskLabel(subject: string): string {
   const withoutVerb = subject.replace(/^开发\s*/u, '').replace(/^\d+[-_.、\s]*/u, '')
   const head = withoutVerb.split(/[（(·：:]/u)[0]?.trim() ?? withoutVerb
   return head.length > 18 ? `${head.slice(0, 17)}…` : head
 }
 
-function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate): string {
+export function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate): string {
   const completed = team.tasks.filter((task) => task.status === 'completed')
   const running = team.tasks.filter((task) => task.state === 'running')
   const blocked = team.tasks.filter((task) => task.state === 'blocked')
@@ -485,19 +485,19 @@ function DependencyMap({ tasks, t, compact = false }: {
 }
 
 /** 健康档位:0-49 需要立即干预,50-79 存在风险,80+ 运行平稳。 */
-function healthLevel(score: number): 'critical' | 'warn' | 'ok' {
+export function healthLevel(score: number): 'critical' | 'warn' | 'ok' {
   if (score < 50) return 'critical'
   if (score < 80) return 'warn'
   return 'ok'
 }
 
 /** 高风险消息计数(融合分析层)。 */
-function healthRiskCount(team: ActivityTeam): number {
+export function healthRiskCount(team: ActivityTeam): number {
   return team.intelligence?.messageRisks.filter(risk => risk.riskLevel === 'high').length ?? 0
 }
 
 /** 成员负载条:active / pending / stalled / orphaned 四段。 */
-function loadBarFor(team: ActivityTeam, member: ActivityMember): JSX.Element | null {
+export function loadBarFor(team: ActivityTeam, member: ActivityMember): JSX.Element | null {
   const load = team.intelligence?.memberLoads.find(entry => entry.memberName === member.name)
   if (load === undefined) return null
   const total = load.activeTaskCount + load.pendingOwnedTaskCount + load.stalledTaskCount + load.orphanedTaskCount
