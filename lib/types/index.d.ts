@@ -39,8 +39,13 @@ export interface Config {
      * (the 7 preset behavioral roles engineer/researcher/data/qa/designer/docs/security,
      * the task-level reviewer, and any custom role string) may have up to this many
      * members; captain and commissar are exempt (captain fixed at 1, commissar
-     * auto-created and uniqueness-gated). */
+     * auto-created and uniqueness-gated). `maxExecPerRoleByRole` overrides this
+     * per canonical role key (e.g. `{ engineer: 2 }` allows two engineers). */
     maxExecPerRole?: number;
+    /** Per-role overrides for the executing-role cap, keyed by canonical role
+     * (e.g. `{ engineer: 2 }`). A role not listed falls back to `maxExecPerRole`
+     * (default 1). Values must be ≥ 1. */
+    maxExecPerRoleByRole?: Record<string, number>;
     /** A member-owned claimed/in-progress task is considered stalled (and
      * eligible for a teammate's self-organizing help) after this many
      * milliseconds without an update (default `120_000` = 2 minutes). */

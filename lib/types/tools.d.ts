@@ -26,8 +26,10 @@ export interface ToolsConfig {
     /** Per executing-role member cap (default `1`): each executing role
      * (the 7 preset behavioral roles, the task-level reviewer, and any custom
      * role string) may have up to this many active members; captain/commissar
-     * exempt. */
+     * exempt. `maxExecPerRoleByRole` overrides per canonical role key. */
     maxExecPerRole?: number;
+    /** Per-role cap overrides keyed by canonical role (e.g. `{ engineer: 2 }`). */
+    maxExecPerRoleByRole?: Record<string, number>;
     /** A member-owned open task is "stalled" (helppable) after this many ms. */
     stallThresholdMs: number;
 }

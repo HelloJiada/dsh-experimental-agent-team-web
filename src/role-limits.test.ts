@@ -3,6 +3,7 @@ import {
   canonicalExecRole,
   countActiveExecRoleMembers,
   DEFAULT_MAX_EXEC_PER_ROLE,
+  execRoleCap,
 } from './role-limits.ts'
 import type { TeamMember } from './types.ts'
 
@@ -81,5 +82,35 @@ describe('DEFAULT_MAX_EXEC_PER_ROLE — 每角色默认上限', () => {
       member('技术员 二号', 'engineer'),
     ]
     expect(countActiveExecRoleMembers(twoEngineers, 'engineer')).toBeGreaterThan(DEFAULT_MAX_EXEC_PER_ROLE)
+  })
+})
+
+describe('execRoleCap — 按角色覆盖上限（全局默认 + per-role override）', () => {
+  it('无覆盖时回退全局默认 1', () => {
+    expect(execRoleCap('engineer', undefined, 1)).toBe(1)
+    expect(execRoleCap('engineer', {}, 1)).toBe(1)
+    expect(execRoleCap('技术员', {}, 1)).toBe(1) // 中文军职归一化后同样回退
+  })
+
+  it('engineer 覆盖为 2、其他角色保持默认 1（技术员展开 2 个）', () => {
+    const byRole = { engineer: 2 }
+    expect(execRoleCap('engineer', byRole, 1)).toBe(2)
+    expect(execRoleCap('技术员', byRole, 1)).toBe(2) // 中文军职命中同一 canonical key
+    expect(execRoleCap('技术员-v2', byRole, 1)).toBe(2) // 版本后缀归一化
+    expect(execRoleCap('qa', byRole, 1)).toBe(1) // 未列出的角色保持默认
+    expect(execRoleCap('researcher', byRole, 1)).toBe(1)
+    expect(execRoleCap('security', byRole, 1)).toBe(1)
+  })
+
+  it('全局默认非 1 时覆盖与回退都正确', () => {
+    const byRole = { qa: 3 }
+    expect(execRoleCap('qa', byRole, 2)).toBe(3) // 覆盖优先
+    expect(execRoleCap('engineer', byRole, 2)).toBe(2) // 未覆盖回退全局
+  })
+
+  it('空/未知角色回退全局默认', () => {
+    expect(execRoleCap(undefined, { engineer: 2 }, 1)).toBe(1)
+    expect(execRoleCap('', { engineer: 2 }, 1)).toBe(1)
+    expect(execRoleCap('custom-role', { engineer: 2 }, 1)).toBe(1)
   })
 })

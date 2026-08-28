@@ -286,6 +286,49 @@ describe('agent_teams_add_member — 添加成员', () => {
     )).rejects.toThrow(/已达上限/)
   })
 
+  it('maxExecPerRoleByRole:engineer 覆盖为 2(第 2 人放行),qa 保持默认 1(第 2 人被拒)', async () => {
+    // 独立 config + 独立 harness:engineer cap=2,其余角色回退默认 1。
+    const tools = new Map<string, CapturedTool>()
+    const capCtx = {
+      tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
+      agents: { get: () => undefined },
+      logger: { warn: () => undefined, debug: () => undefined },
+      on: () => undefined,
+      effect: () => () => undefined,
+      llm: { resolveCallConfig: async (args: { provider?: string }) => ({ provider: args.provider ?? 'p', model: 'm' }) },
+      subagents: {
+        registerContinuableSetup: () => undefined,
+        followup: async () => undefined,
+        getProvider: () => ({
+          prepareContinuable: {},
+          capabilities: { persona: true, toolFilter: true },
+        }),
+        list: () => ['spawn'],
+        startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
+      },
+    } as unknown as Context
+    registerAgentTeamsTools(capCtx, {
+      ...config,
+      maxExecPerRoleByRole: { engineer: 2 },
+    })
+    const capTool = (name: string): CapturedTool => {
+      const def = tools.get(name)
+      if (def === undefined) throw new Error(`tool "${name}" not registered`)
+      return def
+    }
+
+    // 第 1 个 engineer 放行,第 2 个 engineer 放行(覆盖生效)。
+    await capTool('agent_teams_add_member').execute({ role: 'engineer' }, execOf(agent(workspace, CAPTAIN_ID)))
+    await capTool('agent_teams_add_member').execute({ role: 'engineer' }, execOf(agent(workspace, CAPTAIN_ID)))
+
+    // qa 未在覆盖中 → 第 1 个放行、第 2 个拒绝(回退默认 1)。
+    await capTool('agent_teams_add_member').execute({ role: 'qa' }, execOf(agent(workspace, CAPTAIN_ID)))
+    await expect(capTool('agent_teams_add_member').execute(
+      { role: 'qa' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    )).rejects.toThrow(/已达上限/)
+  })
+
   it('R-26:spawn(网络)在锁外——add_member 进行中,同队 status 不被阻塞', async () => {
     // 让 startContinuable 挂起 300ms,模拟慢网络 spawn。
     let releaseSpawn!: () => void

@@ -22,6 +22,13 @@ export declare const DEFAULT_MAX_EXEC_PER_ROLE = 1;
  */
 export declare function canonicalExecRole(role: string | undefined): string;
 /**
+ * Resolve the executing-role member cap for one role: the per-role override
+ * (`maxExecPerRoleByRole[canonicalKey]`) wins when present, else the global
+ * `maxExecPerRole` default (1). Lets the captain raise one role (e.g.
+ * `{ engineer: 2 }` — two engineers) while every other role stays at 1.
+ */
+export declare function execRoleCap(role: string | undefined, byRole: Readonly<Record<string, number>> | undefined, globalCap?: number): number;
+/**
  * Count of active (non-removed) non-commissar members whose canonical
  * executing role equals the given role's canonical key. Members without a
  * role canonicalize to `''` and never match an executing role.

@@ -28,6 +28,7 @@ import {
 import {
   countActiveExecRoleMembers,
   DEFAULT_MAX_EXEC_PER_ROLE,
+  execRoleCap,
 } from './role-limits.ts'
 import { resolveMemberName } from './member-naming.ts'
 import {
@@ -108,8 +109,10 @@ export interface ToolsConfig {
   /** Per executing-role member cap (default `1`): each executing role
    * (the 7 preset behavioral roles, the task-level reviewer, and any custom
    * role string) may have up to this many active members; captain/commissar
-   * exempt. */
+   * exempt. `maxExecPerRoleByRole` overrides per canonical role key. */
   maxExecPerRole?: number
+  /** Per-role cap overrides keyed by canonical role (e.g. `{ engineer: 2 }`). */
+  maxExecPerRoleByRole?: Record<string, number>
   /** A member-owned open task is "stalled" (helppable) after this many ms. */
   stallThresholdMs: number
 }
@@ -541,9 +544,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         // here (the maxMembers cap still applies).
         const roleText = args.role?.trim() ?? ''
         if (roleText !== '' && !isCommissarRole(roleText)) {
-          const execCap = config.maxExecPerRole ?? DEFAULT_MAX_EXEC_PER_ROLE
+          const execCap = execRoleCap(roleText, config.maxExecPerRoleByRole, config.maxExecPerRole ?? DEFAULT_MAX_EXEC_PER_ROLE)
           if (countActiveExecRoleMembers(fresh.members, roleText) >= execCap) {
-            throw new Error(`executing role "${args.role}" already has ${execCap} active members — 该执行角色已达上限（每个执行角色最多 ${execCap} 名成员）`)
+            throw new Error(`executing role "${args.role}" already has ${execCap} active members — 该执行角色已达上限（${args.role} 最多 ${execCap} 名成员）`)
           }
         }
         return { fresh, memberName, memberKey, roleText }
@@ -588,7 +591,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
         const conflicting = fresh.members.some((candidate) => sanitizeKey(candidate.name) === prepared.memberKey)
         const atMemberCap = fresh.members.filter((candidate) => candidate.status !== 'removed').length >= config.maxMembers
-        const execCap = config.maxExecPerRole ?? DEFAULT_MAX_EXEC_PER_ROLE
+        const execCap = execRoleCap(prepared.roleText, config.maxExecPerRoleByRole, config.maxExecPerRole ?? DEFAULT_MAX_EXEC_PER_ROLE)
         const atExecCap = prepared.roleText !== '' && !isCommissarRole(prepared.roleText)
           && countActiveExecRoleMembers(fresh.members, prepared.roleText) >= execCap
         if (conflicting || atMemberCap || atExecCap) {
