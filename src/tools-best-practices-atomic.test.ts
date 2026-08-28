@@ -285,7 +285,8 @@ describe('R-10 — 帮助派发 owner 通知 appendMailbox 串行化(集成回�
       on: (): void => undefined,
     } as unknown as Context, config)
 
-    // A 帮助 t1、C 帮助 t2,并发派发 → 两条 owner 通知都应落到 B 的邮箱。
+    // A 与 C 并发为同一 owner(B)的两个停滞任务派发帮助;谁帮哪个任务属竞态,
+    // 但两条 owner 通知都必须落到 B 的邮箱(R-10 串行化核心断言,见下)。
     await Promise.all([
       scheduler.kickMember(workspace, 'team-sched', 'A'),
       scheduler.kickMember(workspace, 'team-sched', 'C'),
@@ -297,10 +298,11 @@ describe('R-10 — 帮助派发 owner 通知 appendMailbox 串行化(集成回�
     expect(ownerMail).toContain('t1')
     expect(ownerMail).toContain('t2')
 
-    // 两个任务确实分别由 A、C 协助。
+    // 两个帮助者并发抢单:谁先获得团队锁处理哪个任务属竞态,不保证固定配对
+    // (A→t1/C→t2 只是常见顺序)——用集合断言"两任务各有 helper 且 helper 集合={A,C}"。
     const fresh = JSON.parse(await readFile(join(stateRoot, 'team-sched', 'team.json'), 'utf8')) as TeamState
-    expect(fresh.tasks.find(t => t.id === 't1')?.helper).toBe('A')
-    expect(fresh.tasks.find(t => t.id === 't2')?.helper).toBe('C')
+    const helpers = ['t1', 't2'].map(id => fresh.tasks.find(t => t.id === id)?.helper).sort()
+    expect(helpers).toEqual(['A', 'C'])
     expect(fresh.tasks.find(t => t.id === 't1')?.assignee).toBe('B')
     expect(fresh.tasks.find(t => t.id === 't2')?.assignee).toBe('B')
   })
