@@ -359,7 +359,16 @@ export async function findTeamByCaptain(
   let found: TeamState | undefined
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
-    const team = await readTeam(stateRoot, entry.name)
+    // R-23: 单团队损坏(坏 JSON/半截写)只应让该团队不可见,不应毒化整个
+    // 工作区。与面板侧 collectTeamsActivity(snapshot.ts) 的 skip 容错语义
+    // 一致:readTeam 失败即跳过继续遍历。state.ts 为纯函数层无 logger 注入,
+    // 此处静默跳过,损坏团队对工具侧表现为"不存在"。
+    let team: TeamState | undefined
+    try {
+      team = await readTeam(stateRoot, entry.name)
+    } catch {
+      continue
+    }
     if (team?.captainSessionId === captainSessionId) {
       if (found !== undefined && found.id !== team.id) {
         throw new Error(`captain session leads multiple active teams ("${found.id}", "${team.id}"); archive one before continuing`)
@@ -394,7 +403,14 @@ export async function findTeamByParticipant(
   let found: TeamState | undefined
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
-    const team = await readTeam(stateRoot, entry.name)
+    // R-23: 与 findTeamByCaptain 相同的容错——单团队损坏跳过继续遍历,
+    // 损坏团队对工具侧不可见,不毒化整个工作区。
+    let team: TeamState | undefined
+    try {
+      team = await readTeam(stateRoot, entry.name)
+    } catch {
+      continue
+    }
     const participates = team?.captainSessionId === agentSessionId
       || team?.members.some((member) => member.id === agentSessionId && member.status !== 'removed') === true
     if (participates && team !== undefined) {
