@@ -72,30 +72,55 @@ export async function readBestPractices(stateRoot: string): Promise<BestPractice
   }
 }
 
-/** 持久化全局经验库(在调用方锁内或自行加锁)。 */
+/** 无锁持久化全局经验库(调用方必须已持有 `best-practices:${stateRoot}` 锁)。 */
+async function persistBestPractices(stateRoot: string, entries: readonly BestPracticeEntry[]): Promise<void> {
+  const temporary = join(stateRoot, `${BEST_PRACTICES_FILE}.${process.pid}.${randomUUID()}.tmp`)
+  const { writeFile, rm, rename, mkdir } = await import('node:fs/promises')
+  await mkdir(stateRoot, { recursive: true })
+  await writeFile(temporary, `${JSON.stringify(entries, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+  await replaceFileAtomicOrDirect(
+    temporary,
+    join(stateRoot, BEST_PRACTICES_FILE),
+    `${JSON.stringify(entries, null, 2)}\n`,
+    {
+      rename: (from, to) => rename(from, to),
+      writeFile: (target, payload) => writeFile(target, payload, 'utf8'),
+      remove: (path) => rm(path, { force: true }),
+    },
+  )
+}
+
+/** 持久化全局经验库(自行加锁;锁内调用请用 mutateBestPractices)。 */
 export async function writeBestPractices(
   stateRoot: string,
   entries: readonly BestPracticeEntry[],
 ): Promise<void> {
+  await withTeamLock(`best-practices:${stateRoot}`, () => persistBestPractices(stateRoot, entries))
+}
+
+/**
+ * R-08:原子"读-改-写"全局经验库。把「读取当前条目 → fn 变换 → 写回」整体放入
+ * `best-practices:${stateRoot}` 锁内,消除跨团队/跨会话并发的 TOCTOU 丢条目
+ * (修复前:readBestPractices 无锁,writeBestPractices 只护写入段,两团队并发
+ * 终结任务时后写覆盖先写)。fn 返回 undefined 表示不修改(跳过写盘)。
+ * 注意:withTeamLock 不可重入,fn 内不得再调用 writeBestPractices。
+ */
+export async function mutateBestPractices(
+  stateRoot: string,
+  fn: (entries: readonly BestPracticeEntry[]) => readonly BestPracticeEntry[] | undefined,
+): Promise<void> {
   await withTeamLock(`best-practices:${stateRoot}`, async () => {
-    const temporary = join(stateRoot, `${BEST_PRACTICES_FILE}.${process.pid}.${randomUUID()}.tmp`)
-    const { writeFile, rm, rename, mkdir } = await import('node:fs/promises')
-    await mkdir(stateRoot, { recursive: true })
-    await writeFile(temporary, `${JSON.stringify(entries, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
-    await replaceFileAtomicOrDirect(
-      temporary,
-      join(stateRoot, BEST_PRACTICES_FILE),
-      `${JSON.stringify(entries, null, 2)}\n`,
-      {
-        rename: (from, to) => rename(from, to),
-        writeFile: (target, payload) => writeFile(target, payload, 'utf8'),
-        remove: (path) => rm(path, { force: true }),
-      },
-    )
+    const entries = await readBestPractices(stateRoot)
+    const next = fn(entries)
+    if (next === undefined || next === entries) return
+    await persistBestPractices(stateRoot, next)
   })
 }
 
-/** 新增或更新一条经验(同 sourceTaskId 幂等更新,不重复新增)。 */
+/** 新增或更新一条经验(同 sourceTaskId 幂等更新,不重复新增)。
+ * R-09:practice 文本变化(任务重试/新 attempt 重新提炼)时,旧校准结论
+ * (useful/useless/revised)不再适用于新经验——verdict 重置为 pending 重新走
+ * 校准闭环,避免被旧 useless 静默过滤、或被旧 useful 未经复核即注入成员 persona。 */
 export function upsertBestPractice(
   entries: readonly BestPracticeEntry[],
   next: BestPracticeEntry,
@@ -104,6 +129,7 @@ export function upsertBestPractice(
     entry.sourceTaskId === next.sourceTaskId && entry.sourceTeamId === next.sourceTeamId)
   if (existingIndex >= 0) {
     const existing = entries[existingIndex]!
+    const practiceChanged = existing.practice !== next.practice
     const merged: BestPracticeEntry = {
       ...existing,
       cause: next.cause,
@@ -111,6 +137,7 @@ export function upsertBestPractice(
       level: next.level,
       role: next.role,
       sourceTaskSubject: next.sourceTaskSubject,
+      ...practiceChanged ? { verdict: 'pending' as const } : {},
       updatedAt: Date.now(),
     }
     return entries.map((entry, index) => index === existingIndex ? merged : entry)

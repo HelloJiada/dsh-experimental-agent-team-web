@@ -441,7 +441,14 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
               ticket.ownerName,
               `成员 ${ticket.memberName} 正在协助你的任务 ${ticket.taskId}「${ticket.subject}」；所有权不变，完成后仍由你标记 completed。如你已恢复推进，请通知队长撤回帮助。`,
             )
-            await appendMailbox(stateRoot, team.id, ticket.ownerName, message)
+            // R-10:appendMailbox 是"读整文件→拼→原子写"的读-改-写,此处位于
+            // 团队锁外(对比 331 行锁内调用点);并发 send_message(锁内)同时
+            // append 同一邮箱会读到同一旧内容、后写覆盖先写丢消息。
+            // 包一层团队锁与其它写路径串行化。ownerName 先捕获供闭包使用。
+            const ownerName = ticket.ownerName
+            await withTeamLock(teamLockKey(stateRoot, team.id), () => (
+              appendMailbox(stateRoot, team.id, ownerName, message)
+            ))
             if (ticket.ownerId !== undefined && ticket.ownerId !== '') {
               const ownerLive = ctx.agents.get(ticket.ownerId as SessionId)
               if (ownerLive !== undefined) {

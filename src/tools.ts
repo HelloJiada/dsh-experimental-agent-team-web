@@ -78,11 +78,11 @@ import {
 } from './retro.ts'
 import {
   distillBestPractice,
+  mutateBestPractices,
   readBestPractices,
   selectBestPracticesForRole,
   updateBestPracticeVerdict,
   upsertBestPractice,
-  writeBestPractices,
   type BestPracticeEntry,
 } from './best-practices.ts'
 import { formatDuration } from './duration.ts'
@@ -1181,8 +1181,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
                   role: roleOfTask(fresh, task),
                 })
                 if (practice !== undefined) {
-                  const entries = upsertBestPractice(await readBestPractices(stateRoot), practice)
-                  await writeBestPractices(stateRoot, entries)
+                  // R-08:原子读-改-写(读→upsert→写整体在 bp 锁内),避免
+                  // 跨团队并发终结时 TOCTOU 丢条目。
+                  await mutateBestPractices(stateRoot, entries => upsertBestPractice(entries, practice))
                 }
               }
             }
@@ -1664,32 +1665,31 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         task.updatedAt = Date.now()
         await writeTeam(stateRoot, fresh)
         // 同步全局经验库:useless 剔除;useful/revised 更新(重新提炼)。
-        const library = await readBestPractices(stateRoot)
-        const entryIndex = library.findIndex(entry =>
-          entry.sourceTeamId === fresh.id && entry.sourceTaskId === task.id)
+        // R-08:读→变换→写整体放入 bp 锁(原子 RMW),消除跨团队并发丢条目。
+        const retro = task.retro // 闭包内 TS 不再窄化可变属性,先捕获
         let practiceUpdated = false
-        if (entryIndex >= 0) {
-          let next: BestPracticeEntry[] = library
-          if (args.verdict === 'useless') {
-            next = library.filter((entry, index) => index !== entryIndex)
-          } else {
-            next = updateBestPracticeVerdict(library, library[entryIndex]!.id, args.verdict, task.retro.cause)
+        await mutateBestPractices(stateRoot, (library) => {
+          const entryIndex = library.findIndex(entry =>
+            entry.sourceTeamId === fresh.id && entry.sourceTaskId === task.id)
+          if (entryIndex >= 0) {
+            if (args.verdict === 'useless') {
+              return library.filter((entry, index) => index !== entryIndex)
+            }
+            practiceUpdated = true
+            return updateBestPracticeVerdict(library, library[entryIndex]!.id, args.verdict, retro.cause)
           }
-          await writeBestPractices(stateRoot, next)
-          practiceUpdated = true
-        } else if (args.verdict !== 'useless') {
           // 库里没有(可能被剔过或从未入库):revised/useful 时按当前 retro 补建。
-          const practice = distillBestPractice(task.retro, {
+          if (args.verdict === 'useless') return undefined
+          const practice = distillBestPractice(retro, {
             sourceTeamId: fresh.id,
             sourceTaskId: task.id,
             sourceTaskSubject: task.subject,
             role: roleOfTask(fresh, task),
           })
-          if (practice !== undefined) {
-            await writeBestPractices(stateRoot, upsertBestPractice(library, { ...practice, verdict: args.verdict }))
-            practiceUpdated = true
-          }
-        }
+          if (practice === undefined) return undefined
+          practiceUpdated = true
+          return upsertBestPractice(library, { ...practice, verdict: args.verdict })
+        })
         appendTeamEvent(ctx, captainSessionOf(ctx, fresh.captainSessionId, caller.session), 'agent-team-web/retro-reviewed', {
           teamId: fresh.id,
           taskId: task.id,
