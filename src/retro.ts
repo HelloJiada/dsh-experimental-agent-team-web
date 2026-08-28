@@ -133,7 +133,11 @@ export interface RetroTaskFacts {
   readonly hasHelper?: boolean
 }
 
-/** 结算一次任务耗时(幂等):补记 completedAt 与 actualMs,并算 overrunMs。 */
+/**
+ * 结算一次任务耗时(幂等):补记 completedAt 与 actualMs,并算 overrunMs。
+ * R-25:overrunMs 与超时判定同源——统一用等级优先预算
+ * (estimateBudgetMs)而非原始 estimatedMs,避免等级+毫秒双口径打架。
+ */
 export function resolveTaskTiming(task: RetroTaskFacts, now: number): {
   readonly completedAt: number
   readonly actualMs?: number
@@ -143,8 +147,9 @@ export function resolveTaskTiming(task: RetroTaskFacts, now: number): {
   const actualMs = task.actualMs ?? (
     task.claimedAt !== undefined ? Math.max(0, completedAt - task.claimedAt) : undefined
   )
-  const overrunMs = actualMs !== undefined && task.estimatedMs !== undefined
-    ? actualMs - task.estimatedMs
+  const budget = estimateBudgetMs(task.estimateLevel, task.estimatedMs)
+  const overrunMs = actualMs !== undefined && budget !== undefined
+    ? actualMs - budget
     : undefined
   return { completedAt, ...actualMs !== undefined ? { actualMs } : {}, ...overrunMs !== undefined ? { overrunMs } : {} }
 }
@@ -207,10 +212,13 @@ export function buildTaskRetro(facts: RetroTaskFacts, cause?: TaskRetroCause, no
   const levelText = estimateLevel !== undefined
     ? `${estimateLevel}(${ESTIMATE_LEVEL_RANGES[estimateLevel].label})`
     : estimatedMs !== undefined ? formatDuration(estimatedMs) : '未预估'
-  const deviation = timing.actualMs !== undefined && estimatedMs !== undefined
-    ? timing.actualMs > estimatedMs
-      ? `超出预估 ${formatDuration(timing.actualMs - estimatedMs)}`
-      : `提前 ${formatDuration(estimatedMs - timing.actualMs)}`
+  // R-25:摘要偏差与超时判定同源——统一用等级优先预算(budget)而非原始
+  // estimatedMs,避免"S 预算 15m + estimate_ms=20m,实际 18m"时
+  // overran=true 但摘要却写"提前 2 分钟"的自相矛盾。
+  const deviation = timing.actualMs !== undefined && budget !== undefined
+    ? timing.actualMs > budget
+      ? `超出预估 ${formatDuration(timing.actualMs - budget)}`
+      : `提前 ${formatDuration(budget - timing.actualMs)}`
     : undefined
   const levelDeviation = estimateLevel !== undefined && timing.actualMs !== undefined
     ? estimateLevelDeviation(timing.actualMs, estimateLevel)
@@ -226,7 +234,13 @@ export function buildTaskRetro(facts: RetroTaskFacts, cause?: TaskRetroCause, no
       ? `任务按预期完成:实际 ${actualText},预估 ${levelText}${deviation !== undefined ? `(${deviation})` : ''}${boundaryText}。`
       : `任务完成:实际耗时 ${actualText}${estimatedMs !== undefined || estimateLevel !== undefined ? `,预估 ${levelText}` : '(未设预估)'}${boundaryText}。`
   // cancelled:记耗时不强推经验 —— recommendation 留空,不入经验库。
-  const recommendation = cancelled ? '' : CAUSE_RECOMMENDATION[resolvedCause]
+  // R-30:纯 on_time 且无成员经验(retro_note)时同样留空——通用按时建议
+  // 低价值(恒非空会让任何带认领+耗时的完成任务都自动入库一条噪音经验),
+  // 只在"有成员 retro_note 或非 on_time 归因"时才产生可入库内容。
+  const noNote = facts.retroNote === undefined || facts.retroNote.trim() === ''
+  const recommendation = cancelled || (resolvedCause === 'on_time' && noNote)
+    ? ''
+    : CAUSE_RECOMMENDATION[resolvedCause]
   return {
     attempt: facts.attempt ?? 0,
     actualMs: timing.actualMs ?? 0,

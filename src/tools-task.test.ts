@@ -378,4 +378,69 @@ describe('agent_teams_update_task — 正常终结分支(R-14)', () => {
     const library = await readBestPractices(stateRoot)
     expect(library.some(e => e.practice === '先写测试再动手')).toBe(true)
   })
+
+  it('R-30:纯 on_time 完成且无 retro_note → 不入经验库(通用按时建议低价值)', async () => {
+    // claimedAt 取当前时刻前 1 分钟 + S 级预算 15m → actualMs≈1m < 15m → on_time。
+    const freshClaimed = claimedTask('t1', {
+      estimateLevel: 'S',
+      claimedAt: Date.now() - 60_000,
+    })
+    await writeTeamToDisk(stateRoot, team({ tasks: [freshClaimed] }))
+    await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'in_progress', attempt_id: 'att-1' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    )
+    const result = await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: 'att-1', output: '完成' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    ) as { status: string }
+    expect(result.status).toBe('completed')
+
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    const t1 = persisted?.tasks.find(t => t.id === 't1')
+    expect(t1?.retro?.cause).toBe('on_time')
+    expect(t1?.retro?.recommendation).toBe('') // 无 note 的按时完成不留通用建议
+    expect(await readBestPractices(stateRoot)).toHaveLength(0) // 不入库
+  })
+
+  it('R-30:on_time 但有 retro_note → 成员经验入库(retroNote 优先)', async () => {
+    await writeTeamToDisk(stateRoot, team({ tasks: [claimedTask('t1', {
+      estimateLevel: 'S',
+      claimedAt: Date.now() - 60_000,
+    })] }))
+    await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'in_progress', attempt_id: 'att-1' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    )
+    await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: 'att-1', output: '完成', retro_note: '按时完成的秘诀:先拆步骤' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    )
+    const library = await readBestPractices(stateRoot)
+    expect(library.some(e => e.practice === '按时完成的秘诀:先拆步骤')).toBe(true)
+  })
+
+  it('R-30:超预算完成(underestimated)无 note → 通用建议入库(非 on_time 归因)', async () => {
+    // claimedAt 取 30 分钟前 + S 级预算 15m → actualMs≈30m > 15m → underestimated。
+    await writeTeamToDisk(stateRoot, team({ tasks: [claimedTask('t1', {
+      estimateLevel: 'S',
+      claimedAt: Date.now() - 30 * 60_000,
+    })] }))
+    await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'in_progress', attempt_id: 'att-1' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    )
+    const result = await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: 'att-1', output: '完成' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    ) as { status: string }
+    expect(result.status).toBe('completed')
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    const t1 = persisted?.tasks.find(t => t.id === 't1')
+    expect(t1?.retro?.cause).toBe('underestimated')
+    expect(t1?.retro?.overran).toBe(true)
+    const library = await readBestPractices(stateRoot)
+    expect(library.length).toBeGreaterThan(0)
+    expect(library.some(e => e.cause === 'underestimated' && e.practice !== '')).toBe(true)
+  })
 })

@@ -121,6 +121,25 @@ describe('resolveTaskTiming — 结算耗时', () => {
     expect(timing.actualMs).toBeUndefined()
     expect(timing.overrunMs).toBeUndefined()
   })
+
+  it('R-25:overrunMs 与超时判定同源——等级预算优先,而非原始 estimate_ms', () => {
+    // S 预算 15m + estimate_ms=20m,实际 18m:旧实现 overrunMs=18m-20m=-2m(提前),
+    // 与 overran=true 矛盾;修复后 overrunMs=18m-15m=+3m(超出预算)。
+    const timing = resolveTaskTiming(
+      { estimateLevel: 'S', estimatedMs: 20 * 60_000, claimedAt: 0, completedAt: 18 * 60_000 },
+      999_999,
+    )
+    expect(timing.actualMs).toBe(18 * 60_000)
+    expect(timing.overrunMs).toBe(3 * 60_000)
+  })
+
+  it('R-25:仅等级无毫秒时同样按等级预算结算 overrunMs', () => {
+    const timing = resolveTaskTiming(
+      { estimateLevel: 'M', claimedAt: 0, completedAt: 50 * 60_000 },
+      999_999,
+    )
+    expect(timing.overrunMs).toBe(5 * 60_000) // 50m - M 预算 45m
+  })
 })
 
 describe('buildTaskRetro — 自动复盘生成', () => {
@@ -208,6 +227,67 @@ describe('buildTaskRetro — 自动复盘生成', () => {
     expect(retro.overran).toBe(false)
     expect(retro.estimatedMs).toBeUndefined()
     expect(retro.summary).toContain('未设预估')
+  })
+
+  it('R-25:等级+毫秒双口径时,摘要偏差与 overran 同源(等级预算优先)', () => {
+    // S 预算 15m + estimate_ms=20m,实际 18m:旧实现 overran=true(18m>15m)
+    // 但摘要写"提前 2 分钟"(18m-20m),自相矛盾;修复后摘要写"超出预估 3m"。
+    const retro = buildTaskRetro(
+      { estimateLevel: 'S', estimatedMs: 20 * 60_000, claimedAt: 0, completedAt: 18 * 60_000 },
+      undefined,
+      18 * 60_000,
+    )
+    expect(retro.overran).toBe(true)
+    expect(retro.overrunMs).toBe(3 * 60_000)
+    expect(retro.summary).toContain('超时完成')
+    expect(retro.summary).toContain('超出预估 3m')
+    expect(retro.summary).not.toContain('提前')
+  })
+
+  it('R-25:等级+毫秒双口径下,按时完成时摘要写"提前"且 overran=false', () => {
+    // S 预算 15m + estimate_ms=20m,实际 10m:未超等级预算 → on_time,
+    // 摘要按等级预算写"提前 5m"而非按 estimate_ms 写"提前 10m"。
+    const retro = buildTaskRetro(
+      { estimateLevel: 'S', estimatedMs: 20 * 60_000, claimedAt: 0, completedAt: 10 * 60_000 },
+      undefined,
+      10 * 60_000,
+    )
+    expect(retro.overran).toBe(false)
+    expect(retro.cause).toBe('on_time')
+    expect(retro.summary).toContain('按预期完成')
+    expect(retro.summary).toContain('提前 5m')
+  })
+
+  it('R-30:纯 on_time 且无 retro_note → recommendation 留空(通用按时建议低价值)', () => {
+    const retro = buildTaskRetro(
+      { estimateLevel: 'S', claimedAt: 0, completedAt: 10 * 60_000 },
+      undefined,
+      10 * 60_000,
+    )
+    expect(retro.cause).toBe('on_time')
+    expect(retro.recommendation).toBe('')
+    expect(retro.retroNote).toBeUndefined()
+  })
+
+  it('R-30:on_time 但有 retro_note → 仍给出建议(成员经验为原始素材)', () => {
+    const retro = buildTaskRetro(
+      { estimateLevel: 'S', claimedAt: 0, completedAt: 10 * 60_000, retroNote: '先读测试再动手,省一半时间' },
+      undefined,
+      10 * 60_000,
+    )
+    expect(retro.cause).toBe('on_time')
+    expect(retro.retroNote).toBe('先读测试再动手,省一半时间')
+    expect(retro.recommendation).not.toBe('')
+  })
+
+  it('R-30:非 on_time 归因(如 underestimated)无 note 也保留建议(可入库)', () => {
+    const retro = buildTaskRetro(
+      { estimateLevel: 'S', claimedAt: 0, completedAt: 30 * 60_000 },
+      undefined,
+      30 * 60_000,
+    )
+    expect(retro.cause).toBe('underestimated')
+    expect(retro.recommendation).not.toBe('')
   })
 })
 
