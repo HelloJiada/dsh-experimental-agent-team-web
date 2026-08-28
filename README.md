@@ -52,6 +52,31 @@ visibility and lets the framework learn from every task:
 
 The kernel keeps the team state on disk; session events are informational only, and teams are archived (not deleted) so the panel can restore history.
 
+## Concurrency model
+
+AgentTeams assumes that **one harness process** owns a workspace's team-state
+directory (`.agent-team-web/`). All mutations of one team are serialized by an
+**in-process** per-team promise-chain lock (`withTeamLock` in `src/state.ts`),
+so read-modify-write cycles (`team.json`, mailboxes, the best-practices and
+retired-members indexes) stay serial within that process.
+
+Two properties follow from this assumption:
+
+- **Atomic rename protects integrity, not lost updates.** `atomicWriteText`
+  writes a temp file and renames it into place, so a crash never leaves a
+  half-written `team.json`. But if *two* harness processes share the same
+  workspace, their in-process locks do not see each other: a later write can
+  overwrite an earlier one and the update is silently lost (the file is still
+  valid JSON, just missing the other process's change).
+- **Multi-process sharing requires your own file lock.** If you must run more
+  than one harness process against one workspace, add an OS-level file lock
+  (e.g. a `mkdir` sentinel directory with an expiry/retry policy) around all
+  AgentTeams activity; the in-process locks alone are not sufficient.
+
+This is a documented assumption, not a defect: single-process operation is the
+supported deployment, and the atomic-write layer guarantees you never see
+corrupted state even if a process crashes mid-write.
+
 ## Installation
 
 ### 1. Install the bundle

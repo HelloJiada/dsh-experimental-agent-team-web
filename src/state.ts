@@ -28,7 +28,15 @@ const MAILBOX_DELIVERY_LEASE_MS = 60_000
 /** Durable deny-list for AgentTeams members that must never be resumed. */
 const RETIRED_MEMBERS_FILE = 'retired-members.json'
 
-/** In-process per-team mutation queues (promise chains). */
+/**
+ * In-process per-team mutation queues (promise chains).
+ *
+ * 单进程假设(R-11):这些锁是进程本地 Map,只保证"同一 harness 进程内"
+ * 读-改-写串行。atomicWriteText 的原子改名保证文件不会被写坏,但**不保证**
+ * 两个 harness 进程共享同一 workspace 时"后写不覆盖先写"——进程间锁互不
+ * 可见,更新可能被静默丢失(文件仍合法)。多进程共享需调用方自行加 OS 级
+ * 文件锁(如 mkdir 哨兵目录 + 过期重试),详见 README「Concurrency model」。
+ */
 const locks = new Map<string, Promise<unknown>>()
 
 /**
