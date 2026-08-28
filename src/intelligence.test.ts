@@ -218,4 +218,44 @@ describe('analyzeTeamSnapshot — 融合智能分析层', () => {
     }))
     expect(intelligence.health.alerts.some(alert => alert.includes('超时'))).toBe(false)
   })
+
+  it('R-35:owner 正在工作(activity=working)的 in_progress 任务不算停滞', () => {
+    const intelligence = analyzeTeamSnapshot(snapshot({
+      members: [member('alice', { activity: 'working' })],
+      tasks: [
+        task('t1', { status: 'in_progress', state: 'running', assignee: 'alice' }),
+      ],
+    }))
+    const insight = intelligence.priorities.find(p => p.taskId === 't1')
+    expect(insight?.readiness).toBe('ready')
+    expect(insight?.severity).toBe('low')
+    expect(insight?.reasons.join(' ')).toContain('正在工作')
+    // 健康分不因"正常推进"扣分(修复前一律 stalled 会触发停滞告警)。
+    expect(intelligence.health.score).toBe(100)
+    expect(intelligence.health.alerts.some(alert => alert.includes('stalled'))).toBe(false)
+  })
+
+  it('R-35:owner 闲置/离线的 in_progress 任务仍判停滞', () => {
+    const intelligence = analyzeTeamSnapshot(snapshot({
+      members: [member('alice', { activity: 'idle' })],
+      tasks: [
+        task('t1', { status: 'in_progress', state: 'running', assignee: 'alice' }),
+      ],
+    }))
+    const insight = intelligence.priorities.find(p => p.taskId === 't1')
+    expect(insight?.readiness).toBe('stalled')
+    expect(insight?.severity).toBe('medium')
+    expect(insight?.reasons.join(' ')).toContain('未在工作')
+    expect(intelligence.health.score).toBeLessThan(100)
+  })
+
+  it('R-35:owner 活动未知(unknown)的 in_progress 任务判停滞(无法确认推进)', () => {
+    const intelligence = analyzeTeamSnapshot(snapshot({
+      members: [member('alice', { activity: 'unknown' })],
+      tasks: [
+        task('t1', { status: 'in_progress', state: 'running', assignee: 'alice' }),
+      ],
+    }))
+    expect(intelligence.priorities.find(p => p.taskId === 't1')?.readiness).toBe('stalled')
+  })
 })

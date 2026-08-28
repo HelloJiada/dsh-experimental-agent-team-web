@@ -547,6 +547,88 @@ describe('agent_teams_remove_member — 移除成员', () => {
   })
 })
 
+describe('R-31 — 调度扇出不占工具关键路径(kick fire-and-forget)', () => {
+  it('慢 kickMember(挂起 followup)不阻塞 create_task 响应', async () => {
+    let workspace: string
+    let stateRoot: string
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-kickff-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(stateRoot, { recursive: true })
+    try {
+      await writeTeamToDisk(stateRoot, {
+        name: '测试团队',
+        id: 'team-tools',
+        description: 'demo',
+        captainSessionId: 'session-captain',
+        createdAt: 1000,
+        members: [
+          { id: 'session-commissar', name: '政委', role: 'commissar', provider: 'p', model: 'm', joinedAt: 1000, status: 'idle' },
+          // 技术员 idle:create_task 后 kickTeam → kickMember → deliverToMember。
+          member('技术员', { id: 'session-eng', role: 'engineer' }),
+        ],
+        tasks: [],
+        taskSeq: 0,
+      })
+      // 自定义 harness:followup(实时唤醒)挂起 300ms 模拟慢网络派发。
+      let releaseFollowup!: () => void
+      const followupGate = new Promise<void>((resolve) => { releaseFollowup = resolve })
+      const tools = new Map<string, CapturedTool>()
+      let childSeq = 0
+      const fakeCtx = {
+        tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
+        agents: {
+          get: (id: string) => id === 'session-eng' || id === 'session-commissar'
+            ? { id, status: 'idle', whenIdle: async () => undefined }
+            : undefined,
+        },
+        llm: { resolveCallConfig: async () => ({ provider: 'p', model: 'm' }) },
+        logger: { warn: () => undefined, debug: () => undefined },
+        on: () => undefined,
+        effect: () => () => undefined,
+        subagents: {
+          registerContinuableSetup: () => undefined,
+          followup: async () => { await followupGate },
+          interrupt: () => undefined,
+          list: () => ['spawn'],
+          getProvider: () => ({
+            prepareContinuable: {},
+            capabilities: { persona: true, toolFilter: true },
+          }),
+          startContinuable: async () => ({ childId: `child-${++childSeq}` }),
+        },
+      } as unknown as Context
+      registerAgentTeamsTools(fakeCtx, config)
+      const localTool = (name: string) => {
+        const def = tools.get(name)
+        if (def === undefined) throw new Error(`tool "${name}" not registered`)
+        return def
+      }
+      // create_task 结尾 kickTeam(逐成员 kickMember → 挂起 followup)。
+      // 修复前 await kick → 300ms 后返回;修复后 fire-and-forget,立即返回。
+      const createPromise = localTool('agent_teams_create_task').execute(
+        { subject: '实现调度器建议' },
+        execOf(agent(workspace, 'session-captain')),
+      )
+      const raced = await Promise.race([
+        createPromise.then(value => ({ value, blocked: false as const })),
+        new Promise<{ blocked: true }>((resolve) => setTimeout(() => resolve({ blocked: true }), 150)),
+      ])
+      expect(raced.blocked).toBe(false)
+      if (!raced.blocked) {
+        expect((raced.value as { task_id: string }).task_id).toBe('t1')
+        // 任务已落盘(工具主路径完成);kick 仍在后台挂起,释放后正常结束。
+        const persisted = await readTeam(stateRoot, 'team-tools')
+        expect(persisted?.tasks.find(t => t.id === 't1')?.subject).toBe('实现调度器建议')
+      }
+      releaseFollowup()
+      // 等待后台 kick 结束(避免测试退出时挂起 promise 告警)。
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('agent_teams_delete — 归档团队', () => {
   let workspace: string
   let stateRoot: string

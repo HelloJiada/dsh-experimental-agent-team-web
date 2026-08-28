@@ -345,6 +345,21 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
   installMemberStateGuard(ctx, config.stateDir)
   const scheduler = installTeamScheduler(ctx, { stateDir: config.stateDir, stallThresholdMs: config.stallThresholdMs })
 
+  // R-31/F-13:调度扇出不占工具关键路径——kick 改为 fire-and-forget。
+  // 队内串行化(serializeMember)本就保证成员级顺序,工具无需等待全队
+  // 派发/实时唤醒完成;失败只 warn(不影响已落盘的工具结果)。status 等
+  // 只读工具的 kick 副作用也由此与主响应解耦。
+  const kickTeamAsync = (workspace: string, teamId: string, captain?: Agent): void => {
+    void scheduler.kickTeam(workspace, teamId, captain).catch((error: unknown) => {
+      ctx.logger.warn(`agent-team-web: scheduler kickTeam failed for team "${teamId}": ${String(error)}`)
+    })
+  }
+  const kickMemberAsync = (workspace: string, teamId: string, memberName: string, captain?: Agent): void => {
+    void scheduler.kickMember(workspace, teamId, memberName, captain).catch((error: unknown) => {
+      ctx.logger.warn(`agent-team-web: scheduler kickMember failed for "${memberName}" in team "${teamId}": ${String(error)}`)
+    })
+  }
+
   ctx.tools.register(defineTool({
     name: 'agent_teams_create',
     description: 'Create a new AgentTeams team: you (the calling agent) become the captain. A commissar (政委) member for independent oversight is auto-created with the team; do not add a second one. A captain leads one team at a time; create tasks and additional members afterwards with agent_teams_add_member and agent_teams_create_task.',
@@ -618,7 +633,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           status: member.status,
         }
       })
-      await scheduler.kickMember(workspace, team.id, created.member_name, captain)
+      // R-31:kick fire-and-forget,工具不等待新成员派发完成。
+      kickMemberAsync(workspace, team.id, created.member_name, captain)
       return created
     },
   }))
@@ -675,7 +691,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         interruptMember(ctx, captain, revoked.member.id)
         await waitForMemberIdle(ctx, revoked.member, exec.signal)
       }
-      await scheduler.kickTeam(workspace, team.id, captain)
+      // R-31:kick fire-and-forget,工具不等待退池任务再派发完成。
+      kickTeamAsync(workspace, team.id, captain)
       return {
         member_name: revoked.member.name,
         status: revoked.member.status,
@@ -816,7 +833,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           ...suggestion.suggestionConfidence !== undefined ? { suggestion_confidence: suggestion.suggestionConfidence } : {},
         }
       })
-      await scheduler.kickTeam(workspace, team.id, captain)
+      // R-31:kick fire-and-forget,工具不等待全队派发完成。
+      kickTeamAsync(workspace, team.id, captain)
       return created
     },
   }))
@@ -909,7 +927,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         })
       })
       if (quiescenceError !== undefined) throw quiescenceError
-      if (target !== CAPTAIN_KEY) await scheduler.kickMember(workspace, team.id, target, captain)
+      // R-31:kick fire-and-forget,工具不等待目标成员唤醒完成。
+      if (target !== CAPTAIN_KEY) kickMemberAsync(workspace, team.id, target, captain)
       const current = await readTeam(stateRoot, team.id)
       const task = current === undefined ? undefined : requireTask(current, args.task_id)
       if (task === undefined) throw new Error(`team "${team.name}" ended during reassignment`)
@@ -1289,7 +1308,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         throw new Error(`task ${updated.taskId} requires commissar review (需要政委复核) before completing, but the team has no active commissar — add one with agent_teams_add_member(role=commissar) first`)
       }
       const result = updated.value
-      await scheduler.kickTeam(workspace, team.id, team.captainSessionId === caller.id ? caller : undefined)
+      // R-31:kick fire-and-forget,工具不等待终结后全队再派发完成。
+      kickTeamAsync(workspace, team.id, team.captainSessionId === caller.id ? caller : undefined)
       return result
     },
   }))
@@ -1492,7 +1512,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
 
   ctx.tools.register(defineTool({
     name: 'agent_teams_status',
-    description: 'Team snapshot: members with live activity and tasks with status/assignee/dependencies/output. Captains also see every team mailbox; members see only their own inbox. Poll this to watch progress. Non-terminal tasks may carry a suggested_role/assignee (keyword-based, advisory only) so the captain can confirm or override before assigning.',
+    description: 'Team snapshot: members with live activity and tasks with status/assignee/dependencies/output. Captains also see every team mailbox; members see only their own inbox. Poll this to watch progress. Non-terminal tasks may carry a suggested_role/assignee (keyword-based, advisory only) so the captain can confirm or override before assigning. R-31: as a captain caller this also triggers a best-effort scheduler kick (wake idle members to claim ready work) — fire-and-forget, never blocks the snapshot response.',
     parameters: {},
     output: {
       schema: { type: 'object', additionalProperties: true, properties: {} },
@@ -1504,7 +1524,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const stateRoot = stateRootOf(workspace, config)
       const located = await requireParticipantTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       if (located.captainSessionId === caller.id) {
-        await scheduler.kickTeam(workspace, located.id, caller)
+        // R-31:status 的 kick 是副作用,fire-and-forget 不阻塞快照响应。
+        kickTeamAsync(workspace, located.id, caller)
       }
       const { team, identity } = await withTeamLock(
         teamLockKey(stateRoot, located.id),

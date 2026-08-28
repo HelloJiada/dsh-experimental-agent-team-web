@@ -160,9 +160,20 @@ function taskInsight(
     severity = 'high'
     reasons.push('任务处于进行中，但没有声明 owner。')
   } else if (task.status === 'in_progress' && assignee !== null && memberNames.has(assignee)) {
-    readiness = 'stalled'
-    severity = 'medium'
-    reasons.push('任务处于进行中，但还没有证据表明它已经完成或解除占用。')
+    // R-35/F-19:owner 正在工作(activity=working)时不算停滞——刚开工/正常
+    // 推进的任务也曾经被一律判 stalled,污染健康分与提示。真正停滞的判定
+    // 依据 owner 的实时 activity:非 working(闲置/离线/未知)才标 stalled。
+    const ownerWorking = snapshot.members.some(member =>
+      member.name === assignee && member.activity === 'working')
+    if (ownerWorking) {
+      readiness = 'ready'
+      severity = 'low'
+      reasons.push('任务进行中，owner 正在工作。')
+    } else {
+      readiness = 'stalled'
+      severity = 'medium'
+      reasons.push('任务处于进行中，但 owner 当前未在工作（闲置/离线/未知），可能停滞。')
+    }
   }
 
   // 自成长超时提示:进行中任务实际/已用耗时超过预估预算即警示(与面板同一

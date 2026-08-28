@@ -155,8 +155,19 @@ function escapeRegex(value: string): string {
 }
 
 /**
+ * R-32/F-14:toolCalls 派生扫描窗口上限——每个邮箱最多读最近 N 条消息。
+ * 旧实现读整个邮箱全文并做 O(消息×任务) 正则匹配,长邮箱/大团队下开销
+ * 随面板轮询放大;taskCalls 只是"是否被提及"的近似信号,最近窗口已足够,
+ * 且任务 id 递增(t1,t2,…)尾部消息即最新进展。
+ */
+const MAX_TOOLCALL_SCAN_MESSAGES = 100
+
+/**
  * 产出信号 toolCalls 的服务端可观测近似:扫描团队全部邮箱(captain + 成员),
  * 统计提及任务 id(词边界)或任务标题的消息条数。读取时派生,不落盘。
+ * R-32:只扫描每个邮箱最近 {@link MAX_TOOLCALL_SCAN_MESSAGES} 条消息,
+ * 并在所有任务都已被提及后提前结束(避免长邮箱 + 大团队的全量 O(邮箱×任务)
+ * 扫描随面板轮询放大)。
  */
 async function deriveTaskToolCalls(
   ctx: Context,
@@ -167,26 +178,34 @@ async function deriveTaskToolCalls(
 ): Promise<ReadonlyMap<string, number>> {
   const counts = new Map<string, number>()
   if (tasks.length === 0) return counts
+  // 任务 id/标题 的边界正则(预编译,避免每条消息重复构造)。
+  const needles = tasks.map(task => ({
+    id: task.id,
+    idPattern: new RegExp(`\\b${escapeRegex(task.id)}\\b`, 'u'),
+    subject: task.subject.trim(),
+  }))
+  // 已提及任务集合:全部提及后即可停止扫描(计数只会更多,不会更少)。
+  const mentioned = new Set<string>()
   const agents = [CAPTAIN_KEY, ...roster.map(member => member.name)]
-  const texts: string[] = []
   for (const agent of agents) {
+    if (mentioned.size >= tasks.length) break
     try {
       const mailbox = await readMailbox(stateRoot, teamId, agent)
-      for (const message of mailbox) texts.push(`${message.from} ${message.to} ${message.content}`)
+      for (const message of mailbox.slice(-MAX_TOOLCALL_SCAN_MESSAGES)) {
+        if (mentioned.size >= tasks.length) break
+        const text = `${message.from} ${message.to} ${message.content}`
+        for (const needle of needles) {
+          const hit = needle.idPattern.test(text)
+            || (needle.subject.length >= 4 && text.includes(needle.subject))
+          if (hit) {
+            counts.set(needle.id, (counts.get(needle.id) ?? 0) + 1)
+            mentioned.add(needle.id)
+          }
+        }
+      }
     } catch (error: unknown) {
       ctx.logger.warn(`agent-team-web: mailbox read failed for ${agent} (toolCalls derivation): ${String(error)}`)
     }
-  }
-  for (const task of tasks) {
-    const idPattern = new RegExp(`\\b${escapeRegex(task.id)}\\b`, 'u')
-    const subjectNeedle = task.subject.trim()
-    let count = 0
-    for (const text of texts) {
-      const mentioned = idPattern.test(text)
-        || (subjectNeedle.length >= 4 && text.includes(subjectNeedle))
-      if (mentioned) count += 1
-    }
-    if (count > 0) counts.set(task.id, count)
   }
   return counts
 }
