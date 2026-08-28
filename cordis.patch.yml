@@ -6,3 +6,7 @@
       name: "@deepseek-ai/dsh-experimental-agent-team-web"
       inject:
         - sessionProjections
+      config:
+        maxExecPerRoleByRole:
+          engineer: 2
+          qa: 2
