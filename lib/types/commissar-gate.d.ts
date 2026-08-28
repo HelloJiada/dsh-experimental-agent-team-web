@@ -10,7 +10,7 @@
  * @module dsh-agent-team-web/commissar-gate
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { TeamMember, TeamState, TeamTask } from './types.ts';
+import type { TeamMember, TeamMessage, TeamState, TeamTask } from './types.ts';
 /** Whether a role string denotes the commissar oversight role (any spelling). */
 export declare function isCommissarRole(role: string | undefined): boolean;
 /** Whether a member record is an active (non-removed) commissar. */
@@ -26,6 +26,11 @@ export declare function gateBlocksCompletion(task: TeamTask): boolean;
  * same two channels as `agent_teams_send_message`: a durable mailbox append
  * (always, so offline members still see it via agent_teams_status) plus a
  * best-effort live wake through the captain's continuable parent.
+ *
+ * R-26:拆成两段——`appendCommissarReviewNotice`(锁内,仅持久化,快)与
+ * `wakeCommissarReview`(锁外,网络 live 唤醒)。本函数保留为组合版,
+ * 供直接调用方/测试使用;工具侧在 update_task 门禁里只锁内 append,
+ * 释放团队锁后再 wake,避免秒级 followup 阻塞同队所有工具。
  * @param ctx - the plugin context (injects `agents`).
  * @param stateRoot - resolved absolute state root directory.
  * @param team - the team record (membership authority).
@@ -34,4 +39,19 @@ export declare function gateBlocksCompletion(task: TeamTask): boolean;
  * @returns whether an active commissar exists and was notified.
  */
 export declare function notifyCommissarPendingReview(ctx: Context, stateRoot: string, team: TeamState, task: TeamTask, signal: AbortSignal): Promise<boolean>;
+/** 门禁通知的内容与目标(锁内 append 的产物,供锁外 wake 使用)。 */
+export interface CommissarReviewNotice {
+    readonly commissar: TeamMember;
+    readonly message: TeamMessage;
+}
+/**
+ * R-26:锁内持久化门禁通知——只写政委 mailbox(本地文件,快),不做网络调用。
+ * 无活跃政委时返回 undefined(调用方按"无政委"处理)。
+ */
+export declare function appendCommissarReviewNotice(stateRoot: string, team: TeamState, task: TeamTask): Promise<CommissarReviewNotice | undefined>;
+/**
+ * R-26:锁外 live 唤醒——把已持久化的门禁通知实时推给政委(网络,可能秒级)。
+ * 失败静默:mailbox 已落盘,政委下次 status 仍能看到。
+ */
+export declare function wakeCommissarReview(ctx: Context, stateRoot: string, team: TeamState, notice: CommissarReviewNotice, signal: AbortSignal): Promise<void>;
 //# sourceMappingURL=commissar-gate.d.ts.map

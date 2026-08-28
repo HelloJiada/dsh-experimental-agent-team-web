@@ -17,6 +17,12 @@ import type { Session } from '@deepseek-ai/dsh-session';
 import type { SessionEventMap } from '@deepseek-ai/dsh-session/types';
 import type { AgentTeamsEventType } from './event-types.ts';
 /**
+ * 测试辅助:重置跳过事件追踪的模块态。skippedEventTypes / skippedEventCount
+ * 是进程级累计指标,跨用例(或跨测试文件)会保留;单测在 beforeEach 调用
+ * 以获得可重复的断言基线。生产路径不调用。
+ */
+export declare function resetSkippedEventTracking(): void;
+/**
  * Append one AgentTeams event to a Session, containing failures (a broken
  * durable record must never break team tool execution).
  * @param ctx - the plugin context (for logging).

@@ -7,7 +7,7 @@
  *
  * @module agent-team-web/intelligence
  */
-import type { TeamActivitySnapshot } from './snapshot.js';
+import type { TeamActivitySnapshot } from './snapshot.ts';
 /** 任务就绪度(旧投影内核的 readiness 词汇,适配新内核)。 */
 export type TeamTaskReadiness = 'blocked' | 'stalled' | 'ready' | 'orphaned' | 'failed' | 'cancelled' | 'completed';
 /** 严重度 / 负载档位 / 风险档位 / 命令优先级。 */

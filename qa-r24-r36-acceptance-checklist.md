@@ -27,6 +27,7 @@
 | R-36 | t9 | P4 清理：renderStatus 缺 updatedAt 回退、intelligence .js 导入、removeTeamDir 死导出、delete 文案与归档语义不符 | **✅ 通过**：updated_at 回退（taskElapsedMs claimedAt→updatedAt→0）+ render.test.ts；intelligence .js→.ts 统一；removeTeamDir 删除；delete 文案改"archives under archive/" | ✅ t9, 2026-08-28 |
 | R-23补 | t10 | 坏团队跳过补 warn（state 层静默 → 调用层/日志补告警） | **✅ 通过**：state.ts onSkipped 可选回调（id+错误、不传零变化、守卫不放松、ENOENT 不误报）；tools.ts warnSkippedTeamDir 接入 13 调用点；state-find-warn.test.ts 10/10、全量 461 绿、typecheck 0 | ✅ 2026-08-28 |
 | live注入方案 | t10 | maxExecPerRole=1 下 live spawn 注入不可达（t2 发现） | **✅ 通过**：docs/live-injection-verify-plan.md 方案 A（patch+2 重启+三观察面+恢复回归）可行写明成本；方案 B（现有检查面复用）零成本已全绿；未改配置未重启 | ✅ 2026-08-28 |
+| R-17补测 | t12 | 覆盖盲区补测（snapshot 采集端/panel-geometry/command/scheduler 真链路） | **✅ 通过**：+32 用例（采集端 7 含坏团队 skip+warn、panel-geometry 11 含钳制数值、command 13 含防伪造/边界、scheduler 真链路 1 解除 stub 短路）；纯测试零生产代码变更；全量 525/525、typecheck 0 | ✅ t12, 2026-08-28 |
 
 ## 横向门禁（每批必过）
 

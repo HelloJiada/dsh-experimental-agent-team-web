@@ -67,7 +67,8 @@ export declare function transitionError(current: TaskStatus, next: TaskStatus): 
 export declare function activateTaskAttempt(task: TeamTask, assignee: string): string;
 /**
  * 任务进入终结状态时结算耗时(幂等):补记 completedAt 与 actualMs,
- * 并计算 overrunMs(实际 - 预估)。旧任务(无 claimedAt)不会产生损坏数据。
+ * 并计算 overrunMs(实际 - 预估预算,等级优先口径,与复盘超时判定同源)。
+ * 旧任务(无 claimedAt)不会产生损坏数据。
  * @param task - 目标任务(需在写盘前调用)。
  * @param now - 结算时间戳。
  */
@@ -123,18 +124,23 @@ export declare function recordRetiredMemberIds(stateRoot: string, memberIds: rea
  * Find the team owned by one captain session (at most one per captain).
  * @param stateRoot - resolved absolute state root directory.
  * @param captainSessionId - the owning session id.
+ * @param onSkipped - R-23 观察回调:某个团队目录 readTeam 失败(坏 JSON/半截写)
+ *   被跳过时调用(目录 id + 原始错误),默认不传则纯函数层保持静默——与
+ *   snapshot.ts 面板侧 skip+warn 语义一致,告警由调用层(tools.ts)注入。
  * @returns the team record, or undefined when the captain leads no team.
  */
-export declare function findTeamByCaptain(stateRoot: string, captainSessionId: string): Promise<TeamState | undefined>;
+export declare function findTeamByCaptain(stateRoot: string, captainSessionId: string, onSkipped?: (teamId: string, error: unknown) => void): Promise<TeamState | undefined>;
 /**
  * Find the team in which one session is an active participant.
  * Captains match `captainSessionId`; members match their durable child session
  * id. Removed members no longer have access to team-scoped tools.
  * @param stateRoot - resolved absolute state root directory.
  * @param agentSessionId - calling captain/member session id.
+ * @param onSkipped - R-23 观察回调:某个团队目录 readTeam 失败被跳过时调用
+ *   (目录 id + 原始错误);默认不传则静默(与 findTeamByCaptain 一致)。
  * @returns the team record, or undefined when the caller belongs to no team.
  */
-export declare function findTeamByParticipant(stateRoot: string, agentSessionId: string): Promise<TeamState | undefined>;
+export declare function findTeamByParticipant(stateRoot: string, agentSessionId: string, onSkipped?: (teamId: string, error: unknown) => void): Promise<TeamState | undefined>;
 /** Build a fresh message record. */
 export declare function createMessage(from: string, to: string, content: string): TeamMessage;
 /**
@@ -217,12 +223,6 @@ export declare function taskBlockedByReview(task: TeamTask): boolean;
  * 终结状态不残留"待输入"中间态(与 taskBlockedByReview 同一规则)。
  */
 export declare function taskAwaitingInput(task: TeamTask): boolean;
-/**
- * Remove a team's whole directory (members should be interrupted first).
- * @param stateRoot - resolved absolute state root directory.
- * @param teamId - the team id.
- */
-export declare function removeTeamDir(stateRoot: string, teamId: string): Promise<void>;
 /**
  * Archive a team instead of deleting it: the whole directory (team.json with
  * tasks and dependency graph, plus the mailboxes) moves under

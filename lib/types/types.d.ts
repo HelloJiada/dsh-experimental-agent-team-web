@@ -71,7 +71,7 @@ export interface TaskRetro {
     readonly estimateLevel?: EstimateLevel;
     /** 预估耗时(ms);任务创建时未填预估毫秒则缺省。 */
     readonly estimatedMs?: number;
-    /** 偏差 = 实际 - 预估(ms);仅同时具备两者时计算。 */
+    /** 偏差 = 实际 - 预估预算(ms);预算等级优先,仅预算存在时计算。 */
     readonly overrunMs?: number;
     /** 等级偏差:实际等级 − 预估等级(-1/0/+1 等)。 */
     readonly levelDeviation?: number;
@@ -162,7 +162,7 @@ export interface TeamTask {
     completedAt?: number;
     /** 实际耗时 = completedAt - claimedAt(ms)。 */
     actualMs?: number;
-    /** 实际 - 预估 偏差(ms);两者齐备时计算,负值表示提前完成。 */
+    /** 实际 - 预估预算 偏差(ms);预算取等级优先口径(estimateBudgetMs),负值表示提前完成。 */
     overrunMs?: number;
     /** 产出信号(服务端可观测近似 + 成员自报)。 */
     signals?: TaskSignals;

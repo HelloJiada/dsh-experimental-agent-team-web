@@ -62,7 +62,11 @@ export interface RetroTaskFacts {
     /** 边界:本 attempt 曾有 helper 介入。 */
     readonly hasHelper?: boolean;
 }
-/** 结算一次任务耗时(幂等):补记 completedAt 与 actualMs,并算 overrunMs。 */
+/**
+ * 结算一次任务耗时(幂等):补记 completedAt 与 actualMs,并算 overrunMs。
+ * R-25:overrunMs 与超时判定同源——统一用等级优先预算
+ * (estimateBudgetMs)而非原始 estimatedMs,避免等级+毫秒双口径打架。
+ */
 export declare function resolveTaskTiming(task: RetroTaskFacts, now: number): {
     readonly completedAt: number;
     readonly actualMs?: number;
