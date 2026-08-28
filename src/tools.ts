@@ -180,9 +180,27 @@ function captainLockKey(stateRoot: string, captainId: string): string {
   return `captain:${stateRoot}:${captainId}`
 }
 
+/**
+ * R-23 调用层告警:findTeamByCaptain/findTeamByParticipant 在 state.ts 纯函数
+ * 层静默跳过不可读团队目录(坏 JSON/半截写),排障时只能看到
+ * "you do not lead or belong to any active team yet"。这里在 tools.ts 调用层
+ * 注入 logger.warn 痕迹(与 snapshot.ts 面板侧 skip+warn 同风格),不改变
+ * skip 语义——正常团队照常定位,损坏团队依旧对工具不可见。
+ */
+function warnSkippedTeamDir(ctx: Context): (teamId: string, error: unknown) => void {
+  return (teamId, error) => {
+    ctx.logger.warn(`agent-team-web: skipped unreadable team dir "${teamId}" during team lookup: ${String(error)}`)
+  }
+}
+
 /** The team this captain currently leads, or a loud failure. */
-async function requireCaptainTeam(workspace: string, config: ToolsConfig, captain: Agent): Promise<TeamState> {
-  const team = await findTeamByCaptain(stateRootOf(workspace, config), captain.id)
+async function requireCaptainTeam(
+  workspace: string,
+  config: ToolsConfig,
+  captain: Agent,
+  onSkipped?: (teamId: string, error: unknown) => void,
+): Promise<TeamState> {
+  const team = await findTeamByCaptain(stateRootOf(workspace, config), captain.id, onSkipped)
   if (team === undefined) {
     throw new Error('you are not leading any team yet — call agent_teams_create first')
   }
@@ -190,8 +208,13 @@ async function requireCaptainTeam(workspace: string, config: ToolsConfig, captai
 }
 
 /** The team this captain or active member currently participates in. */
-async function requireParticipantTeam(workspace: string, config: ToolsConfig, caller: Agent): Promise<TeamState> {
-  const team = await findTeamByParticipant(stateRootOf(workspace, config), caller.id)
+async function requireParticipantTeam(
+  workspace: string,
+  config: ToolsConfig,
+  caller: Agent,
+  onSkipped?: (teamId: string, error: unknown) => void,
+): Promise<TeamState> {
+  const team = await findTeamByParticipant(stateRootOf(workspace, config), caller.id, onSkipped)
   if (team === undefined) {
     throw new Error('you do not lead or belong to any active team yet')
   }
@@ -353,7 +376,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       if (teamName === '') throw new Error('team name must not be empty')
       const teamId = sanitizeKey(teamName)
       return withTeamLock(captainLockKey(stateRoot, captain.id), async () => {
-        const current = await findTeamByParticipant(stateRoot, captain.id)
+        const current = await findTeamByParticipant(stateRoot, captain.id, warnSkippedTeamDir(ctx))
         if (current !== undefined) {
           const relationship = current.captainSessionId === captain.id ? 'lead' : 'belong to'
           throw new Error(`you already ${relationship} team "${current.name}" — end or leave it before creating another`)
@@ -471,7 +494,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const captain = requireCaptain(exec)
       const workspace = workspaceOf(captain)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireCaptainTeam(workspace, config, captain)
+      const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
       const created = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
         // Role-based naming: an omitted or role-only name becomes the role
@@ -598,7 +621,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const captain = requireCaptain(exec)
       const workspace = workspaceOf(captain)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireCaptainTeam(workspace, config, captain)
+      const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
       const revoked = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
         const member = requireMember(fresh, args.name)
@@ -691,7 +714,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const captain = requireCaptain(exec)
       const workspace = workspaceOf(captain)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireCaptainTeam(workspace, config, captain)
+      const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
       const created = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
         const dependencies = args.dependencies ?? []
@@ -801,7 +824,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const captain = requireCaptain(exec)
       const workspace = workspaceOf(captain)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireCaptainTeam(workspace, config, captain)
+      const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
       const target = args.assignee.trim()
       if (target === '') throw new Error('reassignment assignee must not be empty')
 
@@ -902,7 +925,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireParticipantTeam(workspace, config, caller)
+      const team = await requireParticipantTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       return withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const { team: fresh, identity } = await requireFreshParticipant(stateRoot, team.id, caller.id)
         const task = requireTask(fresh, args.task_id)
@@ -1066,7 +1089,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireParticipantTeam(workspace, config, caller)
+      const team = await requireParticipantTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       const updated = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const { team: fresh, identity } = await requireFreshParticipant(stateRoot, team.id, caller.id)
         const task = requireTask(fresh, args.task_id)
@@ -1180,8 +1203,13 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             }
             task.retro = buildTaskRetro(facts, args.retro_cause)
             // L3:提炼入库(除 cancelled —— 记耗时不推经验)。bestPractice 全局库跨团队。
+            // R-30:入库门槛收紧——只对"有成员经验(retro_note)或非 on_time 归因"
+            // 自动入库;纯 on_time 且无 note 的通用按时建议低价值(buildTaskRetro
+            // 已将其 recommendation 留空),跳过,避免任何带认领+耗时的完成任务
+            // 都自动入库一条噪音经验。
             if (task.status !== 'cancelled') {
-              if (task.retro.retroNote !== undefined || task.retro.recommendation !== '') {
+              const hasNote = task.retro.retroNote !== undefined && task.retro.retroNote.trim() !== ''
+              if (hasNote || task.retro.cause !== 'on_time') {
                 const practice = distillBestPractice(task.retro, {
                   sourceTeamId: fresh.id,
                   sourceTaskId: task.id,
@@ -1289,7 +1317,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireParticipantTeam(workspace, config, caller)
+      const team = await requireParticipantTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       const reviewed = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const { team: fresh, identity } = await requireFreshParticipant(stateRoot, team.id, caller.id)
         if (identity.kind !== 'member') {
@@ -1366,7 +1394,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireParticipantTeam(workspace, config, caller)
+      const team = await requireParticipantTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       const to = args.to.trim()
       const prepared = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const { team: fresh, identity } = await requireFreshParticipant(stateRoot, team.id, caller.id)
@@ -1463,7 +1491,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
-      const located = await requireParticipantTeam(workspace, config, caller)
+      const located = await requireParticipantTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       if (located.captainSessionId === caller.id) {
         await scheduler.kickTeam(workspace, located.id, caller)
       }
@@ -1655,7 +1683,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireCaptainTeam(workspace, config, caller)
+      const team = await requireCaptainTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       return withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, caller.id)
         const task = requireTask(fresh, args.task_id)
@@ -1784,7 +1812,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireCaptainTeam(workspace, config, caller)
+      const team = await requireCaptainTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       const fresh = await withTeamLock(
         teamLockKey(stateRoot, team.id),
         () => requireFreshCaptainTeam(stateRoot, team.id, caller.id),
@@ -1856,7 +1884,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const captain = requireCaptain(exec)
       const workspace = workspaceOf(captain)
       const stateRoot = stateRootOf(workspace, config)
-      const team = await requireCaptainTeam(workspace, config, captain)
+      const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
       const members = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
         // Include previously removed members so deleting a pre-fix team also

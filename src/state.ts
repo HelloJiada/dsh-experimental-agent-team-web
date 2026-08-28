@@ -170,7 +170,8 @@ export function activateTaskAttempt(task: TeamTask, assignee: string): string {
 
 /**
  * 任务进入终结状态时结算耗时(幂等):补记 completedAt 与 actualMs,
- * 并计算 overrunMs(实际 - 预估)。旧任务(无 claimedAt)不会产生损坏数据。
+ * 并计算 overrunMs(实际 - 预估预算,等级优先口径,与复盘超时判定同源)。
+ * 旧任务(无 claimedAt)不会产生损坏数据。
  * @param task - 目标任务(需在写盘前调用)。
  * @param now - 结算时间戳。
  */
@@ -341,11 +342,15 @@ export async function recordRetiredMemberIds(stateRoot: string, memberIds: reado
  * Find the team owned by one captain session (at most one per captain).
  * @param stateRoot - resolved absolute state root directory.
  * @param captainSessionId - the owning session id.
+ * @param onSkipped - R-23 观察回调:某个团队目录 readTeam 失败(坏 JSON/半截写)
+ *   被跳过时调用(目录 id + 原始错误),默认不传则纯函数层保持静默——与
+ *   snapshot.ts 面板侧 skip+warn 语义一致,告警由调用层(tools.ts)注入。
  * @returns the team record, or undefined when the captain leads no team.
  */
 export async function findTeamByCaptain(
   stateRoot: string,
   captainSessionId: string,
+  onSkipped?: (teamId: string, error: unknown) => void,
 ): Promise<TeamState | undefined> {
   let entries
   try {
@@ -362,11 +367,13 @@ export async function findTeamByCaptain(
     // R-23: 单团队损坏(坏 JSON/半截写)只应让该团队不可见,不应毒化整个
     // 工作区。与面板侧 collectTeamsActivity(snapshot.ts) 的 skip 容错语义
     // 一致:readTeam 失败即跳过继续遍历。state.ts 为纯函数层无 logger 注入,
-    // 此处静默跳过,损坏团队对工具侧表现为"不存在"。
+    // 此处静默跳过,损坏团队对工具侧表现为"不存在";调用层可通过 onSkipped
+    // 观察被跳过的目录并补 logger.warn 排障痕迹。
     let team: TeamState | undefined
     try {
       team = await readTeam(stateRoot, entry.name)
-    } catch {
+    } catch (error: unknown) {
+      onSkipped?.(entry.name, error)
       continue
     }
     if (team?.captainSessionId === captainSessionId) {
@@ -385,11 +392,14 @@ export async function findTeamByCaptain(
  * id. Removed members no longer have access to team-scoped tools.
  * @param stateRoot - resolved absolute state root directory.
  * @param agentSessionId - calling captain/member session id.
+ * @param onSkipped - R-23 观察回调:某个团队目录 readTeam 失败被跳过时调用
+ *   (目录 id + 原始错误);默认不传则静默(与 findTeamByCaptain 一致)。
  * @returns the team record, or undefined when the caller belongs to no team.
  */
 export async function findTeamByParticipant(
   stateRoot: string,
   agentSessionId: string,
+  onSkipped?: (teamId: string, error: unknown) => void,
 ): Promise<TeamState | undefined> {
   let entries
   try {
@@ -408,7 +418,8 @@ export async function findTeamByParticipant(
     let team: TeamState | undefined
     try {
       team = await readTeam(stateRoot, entry.name)
-    } catch {
+    } catch (error: unknown) {
+      onSkipped?.(entry.name, error)
       continue
     }
     const participates = team?.captainSessionId === agentSessionId
