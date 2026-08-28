@@ -11,8 +11,8 @@
  */
 import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts';
 /** Canonical role key → military-title locale key (see `role.*` in locales.ts).
- * Preset: captain + the 5 behavioral executing roles + reviewer + commissar.
- * security / docs / operator are compatibility entries for legacy members and
+ * Preset: captain + the 6 behavioral executing roles + reviewer + commissar.
+ * security / operator are compatibility entries for legacy members and
  * custom role strings (not preset, no dedicated seat or behavior template). */
 export declare const ROLE_TITLE_KEY: Record<string, AgentTeamsLocaleKey>;
 /**
