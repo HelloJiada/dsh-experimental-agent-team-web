@@ -266,6 +266,26 @@ describe('installRetiredMemberGuard — 退休成员 followup 边界', () => {
     await guarded(captain(workspace), 'child-live')
     expect(calls).toEqual(['child-live'])
   })
+
+  it('R-21/L-4:TTL 缓存生效——写入退休索引后立即可拒绝(不依赖每次磁盘读)', async () => {
+    await writeFile(join(stateRoot, 'retired-members.json'), `${JSON.stringify(['child-retired'], null, 2)}\n`)
+    const ctx = baseCtx({
+      effect: (cb: () => () => void) => {
+        const cleanup = cb()
+        return cleanup
+      },
+    } as unknown as Partial<Context>)
+    installRetiredMemberGuard(ctx, STATE_DIR)
+    const guarded = (ctx.subagents as unknown as { followup: (p: unknown, id: string) => Promise<void> }).followup
+
+    // 首次调用加载缓存并拒绝退休 id。
+    await expect(guarded(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
+
+    // TTL 窗口内,即使索引文件被外部改写(模拟直接编辑),守卫仍按缓存拒绝——
+    // 观察行为不变(拒绝),证明缓存路径生效而非每次读盘。
+    await writeFile(join(stateRoot, 'retired-members.json'), `${JSON.stringify([], null, 2)}\n`)
+    await expect(guarded(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
+  })
 })
 
 describe('memberActivity — 实时活动映射', () => {
