@@ -629,6 +629,87 @@ describe('R-31 — 调度扇出不占工具关键路径(kick fire-and-forget)', 
   })
 })
 
+describe('R-17: scheduler kick 真链路(解除 stub running 短路,验证自动派单)', () => {
+  it('create_task → kickTeam → 空闲成员被派单:followup 收派单文本,成员落盘 working', async () => {
+    let workspace: string
+    let stateRoot: string
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-kickchain-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(stateRoot, { recursive: true })
+    try {
+      await writeTeamToDisk(stateRoot, {
+        name: '测试团队',
+        id: 'team-tools',
+        description: 'demo',
+        captainSessionId: 'session-captain',
+        createdAt: 1000,
+        members: [
+          // 技术员不注册在 agents 中 → isMemberAvailable=true(真正 idle),
+          // kick 会真实走派单链路,而非被 running 短路。
+          member('技术员', { id: 'session-eng', role: 'engineer' }),
+        ],
+        tasks: [],
+        taskSeq: 0,
+      })
+      const deliveredTexts: string[] = []
+      const tools = new Map<string, CapturedTool>()
+      let childSeq = 0
+      const fakeCtx = {
+        tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
+        agents: {
+          // 队长在线(实时唤醒需要),技术员不注册(空闲)。
+          get: (id: string) => id === 'session-captain'
+            ? { id, status: 'idle', whenIdle: async () => undefined }
+            : undefined,
+        },
+        llm: { resolveCallConfig: async () => ({ provider: 'p', model: 'm' }) },
+        logger: { warn: () => undefined, debug: () => undefined },
+        on: () => undefined,
+        effect: () => () => undefined,
+        subagents: {
+          registerContinuableSetup: () => undefined,
+          followup: async (_parent: unknown, _child: unknown, content: unknown) => {
+            const text = (content as { type: string; text: string }[])[0]?.text ?? ''
+            deliveredTexts.push(text)
+          },
+          interrupt: () => undefined,
+          list: () => ['spawn'],
+          getProvider: () => ({
+            prepareContinuable: {},
+            capabilities: { persona: true, toolFilter: true },
+          }),
+          startContinuable: async () => ({ childId: `child-${++childSeq}` }),
+        },
+      } as unknown as Context
+      registerAgentTeamsTools(fakeCtx, config)
+      const localTool = (name: string) => {
+        const def = tools.get(name)
+        if (def === undefined) throw new Error(`tool "${name}" not registered`)
+        return def
+      }
+      // create_task 触发 kickTeam → 空闲技术员被派单(followup 收到 assignmentPrompt)。
+      const created = await localTool('agent_teams_create_task').execute(
+        { subject: '实现调度器建议' },
+        execOf(agent(workspace, 'session-captain')),
+      ) as { task_id: string }
+      expect(created.task_id).toBe('t1')
+
+      // 等后台 kick 完成(fire-and-forget 异步)。
+      for (let i = 0; i < 20 && deliveredTexts.length === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      expect(deliveredTexts.length).toBeGreaterThan(0)
+      expect(deliveredTexts[0]).toContain('agent_teams_claim_task')
+      expect(deliveredTexts[0]).toContain('t1')
+      // 成员状态落盘为 working(派单生效)。
+      const persisted = await readTeam(stateRoot, 'team-tools')
+      expect(persisted?.members.find(m => m.name === '技术员')?.status).toBe('working')
+    } finally {
+      await rm(workspace, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('agent_teams_delete — 归档团队', () => {
   let workspace: string
   let stateRoot: string
