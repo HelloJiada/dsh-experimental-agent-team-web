@@ -194,6 +194,10 @@ export function invalidateTaskAttempt(
   task.overrunMs = undefined
   task.retro = undefined
   task.helperEver = undefined
+  // R-03:中间态属 attempt 级状态,重派后不得把旧 attempt 的"等待复核/等待输入"
+  // 残留污染新 attempt(blockedByReview 由门禁流、awaitingInput 由派生兜底重新判定)。
+  task.blockedByReview = undefined
+  task.awaitingInput = undefined
   // Same helper hygiene as activateTaskAttempt: reassign/remove/archive paths
   // all route through here and must not leave a stale helper behind.
   task.helper = undefined
@@ -825,8 +829,12 @@ export function taskBlockedByReview(task: TeamTask): boolean {
 /**
  * 改进 4:任务是否处于"等待输入"中间态。
  * 显式置位(awaitingInput === true)或描述含待确认问题(派生兜底,旧任务免迁移)。
+ * R-02:显式 false(input_answered 清除后)优先压制描述派生,清除才真正生效;
+ * 终结状态不残留"待输入"中间态(与 taskBlockedByReview 同一规则)。
  */
 export function taskAwaitingInput(task: TeamTask): boolean {
+  if (task.awaitingInput === false) return false
+  if (TERMINAL_TASK_STATUSES.includes(task.status)) return false
   return task.awaitingInput === true || descriptionAwaitingInput(task.description)
 }
 
@@ -1014,6 +1022,46 @@ export function taskVisualState(
     return dependency !== undefined && dependency.status !== 'completed'
   })
   return openDependency ? 'blocked' : 'open'
+}
+
+/**
+ * 有向依赖图环检测(R-04):DFS 递归栈法返回第一个环的路径
+ * (含闭环回到起点,如 `['t2', 't1', 't2']`);无环返回 undefined。
+ * 未知依赖 id 跳过(create_task 已做存在性校验)。taskDepthsById 对环
+ * 已有兜底(返回 0),此处供 create_task 在创建时拒绝会永久死锁的环。
+ */
+export function findTaskCycle(tasks: readonly TeamTask[]): string[] | undefined {
+  const byId = new Map(tasks.map((task) => [task.id, task]))
+  const visited = new Set<string>()
+  const onStack = new Set<string>()
+  const stack: string[] = []
+  const dfs = (id: string): string[] | undefined => {
+    if (onStack.has(id)) {
+      // 回到递归栈中的某个祖先:从该祖先到当前节点即闭环。
+      const start = stack.indexOf(id)
+      return [...stack.slice(start), id]
+    }
+    if (visited.has(id)) return undefined
+    visited.add(id)
+    onStack.add(id)
+    stack.push(id)
+    const task = byId.get(id)
+    if (task !== undefined) {
+      for (const dependency of task.dependencies) {
+        if (!byId.has(dependency)) continue
+        const cycle = dfs(dependency)
+        if (cycle !== undefined) return cycle
+      }
+    }
+    stack.pop()
+    onStack.delete(id)
+    return undefined
+  }
+  for (const task of tasks) {
+    const cycle = dfs(task.id)
+    if (cycle !== undefined) return cycle
+  }
+  return undefined
 }
 
 /**

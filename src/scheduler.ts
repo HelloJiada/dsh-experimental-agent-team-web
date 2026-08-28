@@ -29,6 +29,7 @@ import {
   readTeam,
   readUnreadMailbox,
   releaseMailboxDelivery,
+  taskAwaitingInput,
   unsatisfiedDependencies,
   withTeamLock,
   writeTeam,
@@ -102,9 +103,13 @@ function taskOwnerId(team: TeamState, task: TeamTask): string | undefined {
   return team.members.find(member => member.name === task.assignee && member.status !== 'removed')?.id
 }
 
-function nextReadyTask(tasks: readonly TeamTask[], memberName: string): TeamTask | undefined {
+/** The next ready task for one member: its assigned ready work first, then
+ * any unassigned ready work. R-02: awaitingInput(待输入)任务不参与自动派单,
+ * 等队长 input_answered 清除后才可派发(claim_task 同规则拦截)。 */
+export function nextReadyTask(tasks: readonly TeamTask[], memberName: string): TeamTask | undefined {
   const ready = tasks.filter(task => task.status === 'pending'
     && task.reassigning !== true
+    && !taskAwaitingInput(task)
     && unsatisfiedDependencies([...tasks], task.dependencies).length === 0)
   return ready.find(task => task.assignee === memberName)
     ?? ready.find(task => task.assignee === undefined)
@@ -128,6 +133,7 @@ export function isHelppableTask(
   stallThresholdMs: number,
 ): boolean {
   if (task.status !== 'claimed' && task.status !== 'in_progress') return false
+  if (taskAwaitingInput(task)) return false
   if (task.assignee === undefined || task.assignee === helperName || task.assignee === CAPTAIN_KEY) return false
   if (task.helper !== undefined) return false
   const owner = team.members.find(member => member.name === task.assignee && member.status !== 'removed')

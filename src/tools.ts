@@ -38,6 +38,7 @@ import {
   createTeamDir,
   descriptionAwaitingInput,
   finalizeTaskTiming,
+  findTaskCycle,
   findTeamByCaptain,
   findTeamByParticipant,
   invalidateTaskAttempt,
@@ -682,6 +683,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const created = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
         const dependencies = args.dependencies ?? []
+        // R-04:自环(新任务依赖自身 id)在存在性校验前先报清晰错误。
+        const newTaskId = `t${fresh.taskSeq + 1}`
+        if (dependencies.includes(newTaskId)) {
+          throw new Error(`dependency cycle detected: ${newTaskId} → ${newTaskId} — a task cannot depend on itself`)
+        }
         for (const dependency of dependencies) {
           if (!fresh.tasks.some((task) => task.id === dependency)) {
             throw new Error(`dependency "${dependency}" does not exist in team "${fresh.name}"`)
@@ -713,6 +719,12 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             : {},
           createdAt: Date.now(),
           updatedAt: Date.now(),
+        }
+        // R-04:创建前对有向依赖图(现有任务 + 新任务)做环检测(自环/互环/传递环),
+        // 命中即拒绝并报环路径——环内任务永不可认领,静默死锁。
+        const cycle = findTaskCycle([...fresh.tasks, task])
+        if (cycle !== undefined) {
+          throw new Error(`dependency cycle detected: ${cycle.join(' → ')} — every task in a cycle would block claiming forever; fix the dependencies first`)
         }
         fresh.taskSeq += 1
         fresh.tasks.push(task)
@@ -914,6 +926,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             ...task.attemptId === undefined ? {} : { attempt_id: task.attemptId },
           }
         }
+        // R-02:待输入任务不可认领(调度器同样跳过)——先回答待确认问题
+        // (update_task input_answered=true 清除)再派单,避免成员缺输入停滞。
+        if (taskAwaitingInput(task)) {
+          throw new Error(`task ${task.id} is awaiting input (待输入) — answer the pending question first (update_task with input_answered=true) before it can be claimed`)
+        }
         const pending = unsatisfiedDependencies(fresh.tasks, task.dependencies)
         if (pending.length > 0) {
           throw new Error(`task ${task.id} is blocked by unfinished dependencies: ${pending.join(', ')} — complete them first`)
@@ -970,6 +987,10 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       signal_note: {
         type: 'string',
         description: 'Optional self-reported output signal (L1): evidence of work beyond wall-clock time, e.g. "深挖了 1400 行 CSS". Stored on the task signals; never required.',
+      },
+      input_answered: {
+        type: 'boolean',
+        description: 'R-02: mark the task\'s pending question as answered — clears the awaitingInput (待输入) intermediate state so the task can be dispatched and claimed. Set by the captain (or the task owner) once the required input has been provided; persisted immediately.',
       },
     },
     output: {
@@ -1086,6 +1107,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           task.status = args.status
         }
         if (args.output !== undefined) task.output = args.output
+        // R-02:输入已答 → 显式清除 awaitingInput 中间态(显式 false 压制描述派生),
+        // 随本调用末尾 writeTeam 一并落盘;配合调度器/认领跳过,任务立即可派单。
+        if (args.input_answered === true) task.awaitingInput = false
         // 自成长:
         // - 三节点时间戳之"开工":进入 in_progress 时幂等记录 startedAt。
         // - 产出信号 turns:每次状态变更增量 +1;outputBytes 随 output 写入。
@@ -1113,8 +1137,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           }
         }
         if (TERMINAL_TASK_STATUSES.includes(task.status)) {
-          // 改进 4:终结状态不存在"等待复核"中间态,兜底清除脏标记。
+          // 改进 4:终结状态不存在"等待复核/等待输入"中间态,兜底清除脏标记。
           task.blockedByReview = false
+          task.awaitingInput = false
           finalizeTaskTiming(task)
           if (task.retro === undefined && task.actualMs !== undefined && task.claimedAt !== undefined) {
             const facts: RetroTaskFacts = {
