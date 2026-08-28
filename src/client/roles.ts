@@ -1,9 +1,9 @@
 /**
  * Military-role display titles for member roles: canonical role keys stay
  * English in the data layer; the UI renders the localized title instead.
- * The preset catalog is the captain, the 5 behavioral executing roles
- * (researcher / engineer / qa / designer / data), the task-level reviewer,
- * and the commissar. security / docs / operator are not preset — they are
+ * The preset catalog is the captain, the 6 behavioral executing roles
+ * (researcher / engineer / qa / designer / data / docs), the task-level reviewer,
+ * and the commissar. security / operator are not preset — they are
  * custom roles with no dedicated seat or behavior template — but their
  * display titles are kept in the tables so legacy members and custom role
  * strings still resolve (降级 = 不出现在预设清单/协议/模板, 不是删除显示映射).

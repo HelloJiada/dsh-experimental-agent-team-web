@@ -36,6 +36,7 @@ import {
   CAPTAIN_KEY,
   createMessage,
   createTeamDir,
+  descriptionAwaitingInput,
   finalizeTaskTiming,
   findTeamByCaptain,
   findTeamByParticipant,
@@ -45,6 +46,8 @@ import {
   releaseMailboxDelivery,
   readTeam,
   sanitizeKey,
+  taskAwaitingInput,
+  taskBlockedByReview,
   transitionError,
   unsatisfiedDependencies,
   withTeamLock,
@@ -81,6 +84,12 @@ import {
   type BestPracticeEntry,
 } from './best-practices.ts'
 import { formatDuration } from './duration.ts'
+import {
+  ROLE_TITLES,
+  suggestAssignments,
+  suggestAssigneeForTask,
+  type TaskAssigneeSuggestion,
+} from './suggest.ts'
 
 /** Resolved plugin config consumed by the tools. */
 export interface ToolsConfig {
@@ -109,6 +118,30 @@ function requireCaptain(exec: ToolRunContext): Agent {
     throw new Error('agent_teams tools require a calling agent (exec.agent was undefined)')
   }
   return exec.agent
+}
+
+/**
+ * 任务建议字段(改进方向 3 —— 队长负载缓解):纯函数按任务内容推断
+ * 「建议角色/成员」。只建议、不派单:不写状态、不自动认领,队长确认后
+ * 仍走现有 assignee 流程。无关键词命中时返回空对象(不瞎猜)。
+ */
+function suggestionFieldsOf(
+  subject: string,
+  description: string | undefined,
+  members: readonly TeamMember[],
+  tasks: readonly TeamTask[],
+): { suggestedRole?: string; suggestedAssignee?: string; suggestionConfidence?: string } {
+  // 把已有任务一并传入,让成员挑选按当前负载最少者优先。
+  const assignment = suggestAssignments(
+    [...tasks, { id: '_new', subject, description, status: 'pending' }],
+    members,
+  ).at(-1)
+  if (assignment?.suggestedRole === undefined || assignment.suggestedRole === null) return {}
+  return {
+    suggestedRole: assignment.suggestedRole,
+    ...assignment.suggestedMember !== null ? { suggestedAssignee: assignment.suggestedMember } : {},
+    suggestionConfidence: assignment.confidence ?? undefined,
+  }
 }
 
 /** The captain's workspace directory (team state root parent). */
@@ -401,7 +434,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
     description: 'Add a durable continuable member. When name is omitted (or given as just the role), the member is named after the role title itself (技术员, 侦察参谋, …); only a second member of the same role gets a numbered suffix (技术员 二号). By default it snapshots the captain\'s current LLM route and effort. Supply provider/model only for an explicitly requested role-specific route; a changed provider or model automatically uses the target model\'s default effort. Set reasoning_effort only to request one of the target model\'s supported ids explicitly (or "default" to force its default). The member waits for messages, works on assigned tasks, and can message the team.',
     parameters: {
       name: { type: 'string', description: 'Unique member name inside the team; when omitted (or just the role name) the member is named after the role title itself (e.g. 技术员); a second member of the same role gets a numbered suffix (e.g. 技术员 二号).' },
-      role: { type: 'string', description: 'Role of the member — 5 preset behavioral roles: researcher 侦察参谋 (想清楚: read first → root cause + plan → hand off) / engineer 技术员 (做出来: implement per plan → self-test → diff summary) / qa 质检员 (验明白: checklist → verify → pass/reject with evidence) / designer 文宣干事 (好看: visual plan with concrete values) / data 情报分析员 (算清楚: metrics → collect → reviewable report); reviewer 审查员 is a task-level dynamic role (add when dedicated review is needed). security 警卫员 / docs 文书 / operator 后勤保障员 are not preset — pass them as custom role strings only when the goal really needs them (no dedicated seat or behavior template, still subject to the per-role cap, default 1). A commissar (政委) is auto-created with the team and must not be added.' },
+      role: { type: 'string', description: 'Role of the member — 6 preset behavioral roles: researcher 侦察参谋 (想清楚: read first → root cause + plan → hand off) / engineer 技术员 (做出来: implement per plan → self-test → diff summary) / qa 质检员 (验明白: checklist → verify → pass/reject with evidence) / designer 文宣干事 (好看: visual plan with concrete values) / data 情报分析员 (算清楚: metrics → collect → reviewable report) / docs 文书 (写明白: structure first → write with spec → sync-check against reality); reviewer 审查员 is a task-level dynamic role (add when dedicated review is needed). security 警卫员 / operator 后勤保障员 are not preset — pass them as custom role strings only when the goal really needs them (no dedicated seat or behavior template, still subject to the per-role cap, default 1). A commissar (政委) is auto-created with the team and must not be added.' },
       provider: { type: 'string', description: 'Optional LLM provider route. Use only when the user explicitly requests a different provider; requires model.' },
       model: { type: 'string', description: 'Optional model override. Omit for the captain\'s current model (or the configured memberModel default).' },
       reasoning_effort: { type: 'string', description: 'Optional reasoning effort override: one of the target model\'s supported effort ids, or "default" to force its default. When omitted, the captain\'s effort is inherited only for the same provider/model; a changed route uses the target default.' },
@@ -590,7 +623,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
 
   ctx.tools.register(defineTool({
     name: 'agent_teams_create_task',
-    description: 'Create a task in your team\'s task list. Tasks can depend on other tasks (dependencies): a task is only claimable once every dependency is completed. Optionally assign it to a member, who still claims it before working. Mark risk=high/critical or milestone=true to put the task under the commissar gate: it can only be marked completed after the commissar passes it with agent_teams_review_task.',
+    description: 'Create a task in your team\'s task list. Tasks can depend on other tasks (dependencies): a task is only claimable once every dependency is completed. Optionally assign it to a member, who still claims it before working. Mark risk=high/critical or milestone=true to put the task under the commissar gate: it can only be marked completed after the commissar passes it with agent_teams_review_task. When no assignee is given, the result carries a suggested_role/assignee (keyword-based, purely advisory) for your confirmation — you keep the assignee decision.',
     parameters: {
       subject: { type: 'string', required: true, description: 'Brief title for the task.' },
       description: { type: 'string', description: 'What needs to be done, in detail.' },
@@ -631,11 +664,14 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           review_required: { type: 'boolean' },
           estimate_level: { type: 'string' },
           estimate_ms: { type: 'number' },
+          suggested_role: { type: 'string' },
+          suggested_assignee: { type: 'string' },
+          suggestion_confidence: { type: 'string' },
         },
       },
       render: (args, value) => [{
         type: 'text',
-        text: `Task "${value.subject}" created as ${value.task_id} (status ${value.status}${value.assignee ? `, assigned to ${value.assignee}` : ''}${value.review_required === true ? ', commissar review required' : ''}${value.estimate_level !== undefined ? `, estimate ${value.estimate_level}(${ESTIMATE_LEVEL_RANGES[value.estimate_level as keyof typeof ESTIMATE_LEVEL_RANGES].label})` : value.estimate_ms !== undefined ? `, estimate ${formatDuration(value.estimate_ms)}` : ''}).`,
+        text: `Task "${value.subject}" created as ${value.task_id} (status ${value.status}${value.assignee ? `, assigned to ${value.assignee}` : ''}${value.review_required === true ? ', commissar review required' : ''}${value.estimate_level !== undefined ? `, estimate ${value.estimate_level}(${ESTIMATE_LEVEL_RANGES[value.estimate_level as keyof typeof ESTIMATE_LEVEL_RANGES].label})` : value.estimate_ms !== undefined ? `, estimate ${formatDuration(value.estimate_ms)}` : ''}${value.suggested_role !== undefined ? ` · 建议分配给：${ROLE_TITLES[value.suggested_role as keyof typeof ROLE_TITLES] ?? value.suggested_role}（${value.suggested_role}）${value.suggested_assignee !== undefined ? ` → ${value.suggested_assignee}` : ''}${value.suggestion_confidence !== undefined ? ` [${value.suggestion_confidence}]` : ''}` : ''}).`,
       }],
     },
     async execute(args, exec) {
@@ -667,6 +703,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           ...args.risk !== undefined ? { riskLevel: args.risk } : {},
           ...milestone ? { milestone: true } : {},
           ...reviewRequired ? { reviewRequired: true } : {},
+          // 改进 4:任务描述含待确认问题(待输入/待确认…)时置位中间态 awaitingInput。
+          ...descriptionAwaitingInput(args.description) ? { awaitingInput: true } : {},
           ...(args.estimate_level === 'S' || args.estimate_level === 'M' || args.estimate_level === 'L')
             ? { estimateLevel: args.estimate_level }
             : {},
@@ -688,6 +726,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           ...task.estimateLevel !== undefined ? { estimateLevel: task.estimateLevel } : {},
           ...task.estimatedMs !== undefined ? { estimateMs: task.estimatedMs } : {},
         })
+        const suggestion = args.assignee === undefined
+          ? suggestionFieldsOf(task.subject, task.description, fresh.members, fresh.tasks)
+          : {}
         return {
           task_id: task.id,
           subject: task.subject,
@@ -696,6 +737,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           ...reviewRequired ? { review_required: true } : {},
           ...task.estimateLevel !== undefined ? { estimate_level: task.estimateLevel } : {},
           ...task.estimatedMs !== undefined ? { estimate_ms: task.estimatedMs } : {},
+          ...suggestion.suggestedRole !== undefined ? { suggested_role: suggestion.suggestedRole } : {},
+          ...suggestion.suggestedAssignee !== undefined ? { suggested_assignee: suggestion.suggestedAssignee } : {},
+          ...suggestion.suggestionConfidence !== undefined ? { suggestion_confidence: suggestion.suggestionConfidence } : {},
         }
       })
       await scheduler.kickTeam(workspace, team.id, captain)
@@ -1000,7 +1044,12 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         // milestone) may only be marked completed after the commissar passed
         // it. Rejecting keeps the task in_progress/claimed and notifies the
         // commissar; without an active commissar the gate still holds hard.
+        // 改进 4:被拦截的完成请求置位中间态 blockedByReview(等待政委复核),
+        // 并先落盘再抛错,让面板/快照能立即看到任务的"待复核"阻塞态。
         if (args.status === 'completed' && gateBlocksCompletion(task)) {
+          task.blockedByReview = true
+          task.updatedAt = Date.now()
+          await writeTeam(stateRoot, fresh)
           const notified = await notifyCommissarPendingReview(ctx, stateRoot, fresh, task, exec.signal)
           if (!notified) {
             throw new Error(`task ${task.id} requires commissar review (需要政委复核) before completing, but the team has no active commissar — add one with agent_teams_add_member(role=commissar) first`)
@@ -1040,6 +1089,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           }
         }
         if (TERMINAL_TASK_STATUSES.includes(task.status)) {
+          // 改进 4:终结状态不存在"等待复核"中间态,兜底清除脏标记。
+          task.blockedByReview = false
           finalizeTaskTiming(task)
           if (task.retro === undefined && task.actualMs !== undefined && task.claimedAt !== undefined) {
             const facts: RetroTaskFacts = {
@@ -1194,6 +1245,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           ...args.comment !== undefined && args.comment.trim() !== '' ? { comment: args.comment } : {},
           reviewedAt: Date.now(),
         }
+        // 改进 4:pass 解除"等待复核"中间态;reject 保持 in_progress 待返工,
+        // blockedByReview 维持不变(任务仍被门禁拦截,直到出现 pass)。
+        if (args.verdict === 'pass') task.blockedByReview = false
         task.updatedAt = Date.now()
         await writeTeam(stateRoot, fresh)
         appendTeamEvent(ctx, captainSessionOf(ctx, fresh.captainSessionId, caller.session), 'agent-team-web/task-reviewed', {
@@ -1328,7 +1382,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
 
   ctx.tools.register(defineTool({
     name: 'agent_teams_status',
-    description: 'Team snapshot: members with live activity and tasks with status/assignee/dependencies/output. Captains also see every team mailbox; members see only their own inbox. Poll this to watch progress.',
+    description: 'Team snapshot: members with live activity and tasks with status/assignee/dependencies/output. Captains also see every team mailbox; members see only their own inbox. Poll this to watch progress. Non-terminal tasks may carry a suggested_role/assignee (keyword-based, advisory only) so the captain can confirm or override before assigning.',
     parameters: {},
     output: {
       schema: { type: 'object', additionalProperties: true, properties: {} },
@@ -1358,7 +1412,15 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           status: member.status,
           activity: member.id !== '' ? (activity.get(member.id) ?? 'unknown') : 'unspawned',
         }))
-      const tasks = team.tasks.map((task) => ({
+      // 改进方向 3:按任务内容推断「建议角色/成员」(纯函数,仅建议不派单),
+      // 队长在状态里直接可见,确认后仍走现有 assignee 流程。
+      const suggestionByTask = new Map<string, TaskAssigneeSuggestion>()
+      for (const suggestion of suggestAssignments(team.tasks, team.members)) {
+        suggestionByTask.set(suggestion.taskId, suggestion)
+      }
+      const tasks = team.tasks.map((task) => {
+        const suggestion = suggestionByTask.get(task.id)
+        return {
         id: task.id,
         subject: task.subject,
         status: task.status,
@@ -1370,6 +1432,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         ...task.riskLevel !== undefined ? { risk_level: task.riskLevel } : {},
         ...task.milestone === true ? { milestone: true } : {},
         ...task.reviewRequired === true ? { review_required: true } : {},
+        // 改进 4:任务中间态(等待政委复核 / 等待输入)显式透出给模型。
+        ...taskBlockedByReview(task) ? { blocked_by_review: true } : {},
+        ...taskAwaitingInput(task) ? { awaiting_input: true } : {},
         ...task.review === undefined ? {} : {
           review: {
             reviewer_name: task.review.reviewerName,
@@ -1415,7 +1480,12 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             created_at: task.retro.createdAt,
           },
         },
-      }))
+        ...suggestion === undefined ? {} : {
+          ...suggestion.suggestedRole === null ? {} : { suggested_role: suggestion.suggestedRole },
+          ...suggestion.suggestedMember === null ? {} : { suggested_member: suggestion.suggestedMember },
+          ...suggestion.confidence === null ? {} : { suggestion_confidence: suggestion.confidence },
+        },
+      }})
       const mailboxWarnings: string[] = []
       let mailboxWarningCount = 0
       const reportMalformed = (agentKey: string) => (lineNumber: number): void => {
@@ -1783,7 +1853,7 @@ function renderStatus(value: JsonValue): string {
       status: string
       activity: string
     }[]
-    tasks: { id: string; subject: string; status: string; assignee: string; dependencies: string[]; attempt: number; attempt_id: string; reassigning: boolean; risk_level?: string; milestone?: boolean; review_required?: boolean; review?: { reviewer_name: string; verdict: string; comment?: string; reviewed_at: number }; helper?: string; output?: string; estimate_level?: string; estimated_ms?: number; claimed_at?: number; started_at?: number; completed_at?: number; actual_ms?: number; overrun_ms?: number; signals?: { turns?: number; tool_calls?: number; output_bytes: number; self_report?: string }; retro?: { attempt: number; actual_ms: number; estimate_level?: string; estimated_ms?: number; overrun_ms?: number; level_deviation?: number; overran: boolean; cause: string; summary: string; retro_note?: string; captain_verdict?: string; recommendation: string; includes_gate_wait?: boolean; has_helper?: boolean; created_at: number } }[]
+    tasks: { id: string; subject: string; status: string; assignee: string; dependencies: string[]; attempt: number; attempt_id: string; reassigning: boolean; risk_level?: string; milestone?: boolean; review_required?: boolean; review?: { reviewer_name: string; verdict: string; comment?: string; reviewed_at: number }; helper?: string; output?: string; estimate_level?: string; estimated_ms?: number; claimed_at?: number; started_at?: number; completed_at?: number; actual_ms?: number; overrun_ms?: number; signals?: { turns?: number; tool_calls?: number; output_bytes: number; self_report?: string }; retro?: { attempt: number; actual_ms: number; estimate_level?: string; estimated_ms?: number; overrun_ms?: number; level_deviation?: number; overran: boolean; cause: string; summary: string; retro_note?: string; captain_verdict?: string; recommendation: string; includes_gate_wait?: boolean; has_helper?: boolean; created_at: number }; suggested_role?: string; suggested_member?: string; suggestion_confidence?: string }[]
     captain_inbox: { from: string; content: string }[]
     member_inboxes: Record<string, { count: number; latest: string }>
     mailbox_warnings: string[]
@@ -1842,7 +1912,13 @@ function renderStatus(value: JsonValue): string {
       const retro = task.retro !== undefined
         ? ` · retro: ${task.retro.summary.slice(0, 120)}`
         : ''
-      return `  - ${task.id} [${task.status}] attempt ${task.attempt}${handoff}${risk}${gate}${helping}${timing}${signals}${retro} ${task.subject} → ${task.assignee || 'unassigned'}${deps}${output}`
+      // 改进方向 3:建议角色/成员(纯函数推断,仅建议)。已派给建议成员时不再
+      // 重复提示;未派或派给他人时提示,队长确认后仍走现有 assignee 流程。
+      const suggestion = task.suggested_role !== undefined && task.suggested_role !== ''
+        && (task.assignee === '' || (task.suggested_member !== undefined && task.suggested_member !== '' && task.assignee !== task.suggested_member))
+        ? ` · 建议分配给：${ROLE_TITLES[task.suggested_role as keyof typeof ROLE_TITLES] ?? task.suggested_role}（${task.suggested_role}）${task.suggested_member !== undefined && task.suggested_member !== '' ? ` → ${task.suggested_member}` : ''}${task.suggestion_confidence !== undefined ? ` [${task.suggestion_confidence}]` : ''}`
+        : ''
+      return `  - ${task.id} [${task.status}] attempt ${task.attempt}${handoff}${risk}${gate}${helping}${suggestion}${timing}${signals}${retro} ${task.subject} → ${task.assignee || 'unassigned'}${deps}${output}`
     }),
     `Captain inbox (${team.captain_inbox.length}):`,
     ...team.captain_inbox.map((message) => `  - [${message.from}] ${message.content.slice(0, 200)}`),

@@ -33,6 +33,10 @@ export interface ActivityTask {
   readonly depth: number
   /** True while the task awaits a commissar `pass` (commissar gate). */
   readonly reviewRequired?: boolean
+  /** 中间态:完成被政委门禁拦截,等待 pass 复核(改进 4)。 */
+  readonly blockedByReview?: boolean
+  /** 中间态:等待队长/成员提供输入(改进 4)。 */
+  readonly awaitingInput?: boolean
   /** Risk level when the captain set one (commissar gate). */
   readonly riskLevel?: 'low' | 'medium' | 'high' | 'critical'
   /** Latest commissar review record, when one exists. */

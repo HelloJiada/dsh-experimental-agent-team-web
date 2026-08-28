@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { TaskStatus, TeamMember, TeamMessage, TeamState, TeamTask } from './types.ts'
+import { TERMINAL_TASK_STATUSES } from './types.ts'
 import { resolveTaskTiming } from './retro.ts'
 
 /** Mailbox key of the captain. */
@@ -757,6 +758,8 @@ function isTeamTask(value: unknown): value is TeamTask {
     && (value['milestone'] === undefined || typeof value['milestone'] === 'boolean')
     && (value['reviewRequired'] === undefined || typeof value['reviewRequired'] === 'boolean')
     && validReview
+    && (value['blockedByReview'] === undefined || typeof value['blockedByReview'] === 'boolean')
+    && (value['awaitingInput'] === undefined || typeof value['awaitingInput'] === 'boolean')
     && isOptionalString(value['helper'])
     && (value['helperSince'] === undefined || isFiniteNumber(value['helperSince']))
     && (value['helperEver'] === undefined || typeof value['helperEver'] === 'boolean')
@@ -784,6 +787,47 @@ export function taskRequiresReview(task: TeamTask): boolean {
 /** Whether the gate is satisfied: the latest review verdict is `pass`. */
 export function taskReviewPassed(task: TeamTask): boolean {
   return task.review?.verdict === 'pass'
+}
+
+// ── 任务中间态(改进 4):blockedByReview / awaitingInput ──
+
+/** 任务描述中的"待确认问题"提示词(awaitingInput 检测,不区分大小写)。 */
+const AWAITING_INPUT_HINTS: readonly string[] = [
+  '待确认', '待输入', '待答复', '待补充', '待队长确认', '待队长提供',
+  '等待输入', '等待确认', '需要确认', '需确认', '请确认', '请提供', '请补充',
+  'awaiting input', 'awaitinginput', 'awaiting confirmation', 'pending question',
+  'please confirm', 'please provide',
+]
+
+/** 独立成行的问号(单独一个 ? 或 ？)视为待确认问题。 */
+const STANDALONE_QUESTION_LINE = /^[?？]\s*$/mu
+
+/**
+ * 改进 4:任务描述是否含有待确认问题(等待队长/成员提供输入)。
+ * 纯函数:命中显式提示词(待确认/待输入/请确认…)或独立成行的问号即判定,
+ * 空描述恒为 false。create_task 以此置位 awaitingInput,快照读取时也以此派生兜底。
+ */
+export function descriptionAwaitingInput(description: string | undefined): boolean {
+  if (description === undefined || description === '') return false
+  if (STANDALONE_QUESTION_LINE.test(description)) return true
+  const normalized = description.toLowerCase()
+  return AWAITING_INPUT_HINTS.some((hint) => normalized.includes(hint))
+}
+
+/**
+ * 改进 4:任务是否处于"等待政委复核"中间态(完成被门禁拦截)。
+ * 终结状态(completed/failed/cancelled)恒为 false,兜底脏数据。
+ */
+export function taskBlockedByReview(task: TeamTask): boolean {
+  return task.blockedByReview === true && !TERMINAL_TASK_STATUSES.includes(task.status)
+}
+
+/**
+ * 改进 4:任务是否处于"等待输入"中间态。
+ * 显式置位(awaitingInput === true)或描述含待确认问题(派生兜底,旧任务免迁移)。
+ */
+export function taskAwaitingInput(task: TeamTask): boolean {
+  return task.awaitingInput === true || descriptionAwaitingInput(task.description)
 }
 
 /** Validate the full team record before it can participate in authorization. */

@@ -190,6 +190,22 @@ export declare function taskRequiresReview(task: TeamTask): boolean;
 /** Whether the gate is satisfied: the latest review verdict is `pass`. */
 export declare function taskReviewPassed(task: TeamTask): boolean;
 /**
+ * 改进 4:任务描述是否含有待确认问题(等待队长/成员提供输入)。
+ * 纯函数:命中显式提示词(待确认/待输入/请确认…)或独立成行的问号即判定,
+ * 空描述恒为 false。create_task 以此置位 awaitingInput,快照读取时也以此派生兜底。
+ */
+export declare function descriptionAwaitingInput(description: string | undefined): boolean;
+/**
+ * 改进 4:任务是否处于"等待政委复核"中间态(完成被门禁拦截)。
+ * 终结状态(completed/failed/cancelled)恒为 false,兜底脏数据。
+ */
+export declare function taskBlockedByReview(task: TeamTask): boolean;
+/**
+ * 改进 4:任务是否处于"等待输入"中间态。
+ * 显式置位(awaitingInput === true)或描述含待确认问题(派生兜底,旧任务免迁移)。
+ */
+export declare function taskAwaitingInput(task: TeamTask): boolean;
+/**
  * Remove a team's whole directory (members should be interrupted first).
  * @param stateRoot - resolved absolute state root directory.
  * @param teamId - the team id.

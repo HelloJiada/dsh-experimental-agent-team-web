@@ -3,6 +3,7 @@ import type { AgentTeamsTranslate } from './locales.ts'
 import {
   memberElapsedText,
   memberTimingState,
+  retroDetailText,
   taskElapsedMs,
   taskPendingCalibration,
   taskSignalsText,
@@ -21,6 +22,13 @@ const t: AgentTeamsTranslate = (key, params = {}) => {
     'timing.memberElapsedApprox': '已耗时 {value}（近似）',
     'timing.signals': '产出信号：回合 {turns} 次 · 工具 {toolCalls} · 输出 {bytes} 字符',
     'timing.selfReport': '成员自报：{note}',
+    'timing.retroNote': '经验：{note}',
+    'timing.recommendation': '建议：{note}',
+    'timing.gateWait': '含政委等待',
+    'timing.hasHelper': '有 helper 介入',
+    'retro.cause.underestimated': '任务被低估',
+    'retro.cause.onTime': '按时完成',
+    'retro.causeLabel': '原因：{cause}',
   }
   const template = templates[key]
   if (template === undefined) return key
@@ -153,5 +161,23 @@ describe('taskPendingCalibration — 复盘质量闭环「待校准」徽标', (
   it('纯空白 retro_note 视为无成员经验(与服务端 trim 口径一致)', () => {
     const done = task({ status: 'completed', state: 'completed', riskLevel: 'high', retro: retro({ retroNote: '   ' }) })
     expect(taskPendingCalibration(done)).toBe(true)
+  })
+
+  it('retroDetailText 完整展示复盘:原因+建议+经验+边界标注', () => {
+    const done = task({
+      status: 'completed', state: 'completed', riskLevel: 'high',
+      retro: retro({ cause: 'underestimated', retroNote: '先读测试', recommendation: '同类任务下次按 1.3~1.5 倍给出预估。', includesGateWait: true }),
+    })
+    const text = retroDetailText(done, t)
+    expect(text).toContain('原因：任务被低估')
+    expect(text).toContain('建议：同类任务下次按 1.3~1.5 倍给出预估。')
+    expect(text).toContain('经验：先读测试')
+    expect(text).toContain('含政委等待')
+  })
+
+  it('retroDetailText 无复盘返回 null;cancelled 空建议不显示', () => {
+    expect(retroDetailText(task({ status: 'completed', state: 'completed' }), t)).toBeNull()
+    const cancelled = task({ status: 'cancelled', state: 'completed', retro: retro({ cause: 'other', recommendation: '' }) })
+    expect(retroDetailText(cancelled, t)).not.toContain('建议：')
   })
 })

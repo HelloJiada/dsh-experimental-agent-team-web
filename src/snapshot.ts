@@ -17,7 +17,7 @@ import { currentTaskElapsedApprox, currentTaskElapsedMs, retroPendingCalibration
 import { readBestPractices } from './best-practices.ts'
 import {
   CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readMailbox, readUnreadMailbox, readTeam,
-  taskDepthsById, taskVisualState,
+  taskAwaitingInput, taskBlockedByReview, taskDepthsById, taskVisualState,
 } from './state.ts'
 import type { BestPracticeEntry } from './best-practices.ts'
 import type { EstimateLevel, MemberStatus, TeamMember, TaskRetro, TaskSignals, TeamState, TeamTask } from './types.ts'
@@ -67,6 +67,10 @@ export interface TeamActivityTask {
     readonly comment?: string
     readonly reviewedAt: number
   }
+  /** 中间态:完成被政委门禁拦截,等待 pass 复核(改进 4)。 */
+  readonly blockedByReview?: boolean
+  /** 中间态:等待队长/成员提供输入(改进 4)。 */
+  readonly awaitingInput?: boolean
   /** Helper member currently pushing this task forward (ownership unchanged). */
   readonly helper?: string
   /** 预估工作量等级(对外口径,自成长)。 */
@@ -280,6 +284,9 @@ export async function assembleTeamSnapshot(
         ...task.reviewRequired === true && task.review?.verdict !== 'pass'
           ? { reviewRequired: true }
           : {},
+        // 改进 4:透出任务中间态(等待政委复核 / 等待输入),供面板标记。
+        ...taskBlockedByReview(task) ? { blockedByReview: true } : {},
+        ...taskAwaitingInput(task) ? { awaitingInput: true } : {},
         ...task.review === undefined ? {} : {
           review: {
             reviewerName: task.review.reviewerName,

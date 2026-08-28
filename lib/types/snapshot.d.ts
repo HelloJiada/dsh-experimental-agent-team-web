@@ -54,6 +54,10 @@ export interface TeamActivityTask {
         readonly comment?: string;
         readonly reviewedAt: number;
     };
+    /** 中间态:完成被政委门禁拦截,等待 pass 复核(改进 4)。 */
+    readonly blockedByReview?: boolean;
+    /** 中间态:等待队长/成员提供输入(改进 4)。 */
+    readonly awaitingInput?: boolean;
     /** Helper member currently pushing this task forward (ownership unchanged). */
     readonly helper?: string;
     /** 预估工作量等级(对外口径,自成长)。 */

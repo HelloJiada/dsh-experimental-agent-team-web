@@ -1042,7 +1042,9 @@
 
 .reviewChip,
 .helpingChip,
-.calibrationChip {
+.calibrationChip,
+.blockedChip,
+.inputChip {
   display: inline-flex;
   align-items: center;
   min-height: 16px;
@@ -1061,6 +1063,23 @@
 .reviewChip {
   background: color-mix(in srgb, var(--dsw-alias-state-warning) 16%, transparent);
   color: var(--dsw-alias-state-warning);
+}
+
+/* 改进 4 中间态「待复核」:完成被门禁拦截的强阻塞信号,在黄底基础上加
+   实线描边,与仅"门禁适用"的 reviewChip(无描边)区分层级。 */
+.blockedChip {
+  background: color-mix(in srgb, var(--dsw-alias-state-warning) 22%, transparent);
+  color: var(--dsw-alias-state-warning);
+  outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning) 55%, transparent);
+  outline-offset: -1px;
+}
+
+/* 改进 4 中间态「待输入」:中性等待提示,虚线描边与「待校准」区分。 */
+.inputChip {
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 10%, transparent);
+  color: var(--dsw-alias-label-secondary);
+  outline: 1px dashed color-mix(in srgb, var(--dsw-alias-label-secondary) 45%, transparent);
+  outline-offset: -1px;
 }
 
 .helpingChip {
@@ -1471,6 +1490,21 @@
   line-height: 14px;
 }
 
+/* 改进 4:任务详情中间态行(等待政委复核 / 等待输入)。 */
+.taskDetailBlocked {
+  color: var(--dsw-alias-state-warning);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+}
+
+.taskDetailInput {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
 .emptyHint {
   padding: 10px 14px;
   color: var(--dsw-alias-label-tertiary);
@@ -1507,6 +1541,54 @@
   font-size: 9px;
   font-weight: 600;
   line-height: 14px;
+}
+
+/* 改进方向 5:归档查询筛选栏(团队 / 时间 / 复盘状态)。 */
+.archiveFilterBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 14px 2px;
+}
+
+.archiveFilterField {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.archiveFilterCaption {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.archiveSelect {
+  max-width: 120px;
+  padding: 1px 2px;
+  border: 1px solid var(--dsw-alias-line-normal);
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-module);
+  color: var(--dsw-alias-label-primary);
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.archiveFilterCount {
+  margin-left: auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.archiveEmpty {
+  display: block;
+  padding: 4px 14px 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 9px;
 }
 
 @media (prefers-reduced-motion: reduce) {

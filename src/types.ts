@@ -189,6 +189,15 @@ export interface TeamTask {
   reviewRequired?: boolean
   /** Latest commissar review record (audit trail for the gate). */
   review?: TaskReviewRecord
+  /** 中间态:任务完成被政委门禁拦截,等待 pass 复核(改进 4)。
+   * update_task 的完成请求被门禁拦截时置位,政委 verdict=pass 后清除,
+   * 任务进入终结状态时兜底清除。与派生的 reviewRequired 不同:它表示
+   * "确实发生过一次被拦截的完成尝试",是比"门禁适用"更强的阻塞信号。 */
+  blockedByReview?: boolean
+  /** 中间态:任务等待队长/成员提供输入(改进 4)。
+   * create_task 按任务描述中的待确认问题自动置位(见 descriptionAwaitingInput),
+   * 快照读取时也按描述派生兜底,旧任务无需迁移即可识别。 */
+  awaitingInput?: boolean
   /** Helper member currently pushing this task forward (ownership unchanged). */
   helper?: string
   /** When the current helper started helping (stall recovery bookkeeping). */

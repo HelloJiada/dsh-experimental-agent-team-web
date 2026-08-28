@@ -139,6 +139,10 @@ export function retroDetailText(task: ActivityTask, t: AgentTeamsTranslate): str
   const retro = task.retro
   if (retro === undefined) return null
   const parts = [t('retro.causeLabel', { cause: retroCauseLabel(retro.cause, t) })]
+  // 经验/最优方案是复盘的核心价值,必须展示(cancelled 留空则不显示)。
+  if (retro.recommendation !== undefined && retro.recommendation !== '') {
+    parts.push(t('timing.recommendation', { note: retro.recommendation }))
+  }
   if (retro.retroNote !== undefined && retro.retroNote !== '') {
     parts.push(t('timing.retroNote', { note: retro.retroNote }))
   }

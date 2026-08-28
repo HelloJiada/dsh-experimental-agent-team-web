@@ -37,6 +37,16 @@ import {
   usesParallelTaskGrid,
 } from './activity-model.ts'
 import {
+  ARCHIVE_DEFAULT_FILTER,
+  ARCHIVE_RETRO_FILTERS,
+  ARCHIVE_TIME_RANGES,
+  archivedTeamNames,
+  filterArchivedTeams,
+  type ArchiveFilterState,
+  type ArchiveRetroFilter,
+  type ArchiveTimeRange,
+} from './archive-filter.ts'
+import {
   getActivityMonitorTargetsSnapshot,
   getActivitySnapshotsSnapshot,
   startActivityPolling,
@@ -49,6 +59,7 @@ import {
 import { ACTION_ART, LEAD_ART, memberArtUrl } from './artwork.ts'
 import { isRoleName, nameTitle, roleTitle } from './roles.ts'
 import { taskReviewPending, taskReviewState } from './task-review.ts'
+import { taskAwaitingInput, taskBlockedByReview, taskIntermediateFlag } from './task-intermediate.ts'
 import { taskHelper } from './task-helping.ts'
 import {
   memberElapsedText,
@@ -455,6 +466,17 @@ function DependencyMap({ tasks, t, compact = false }: {
                     : t('task.review.pending')}
               </span>
             )}
+            {/* 改进 4:任务中间态详情行(等待政委复核 / 等待输入)。 */}
+            {taskBlockedByReview(detailTask) && (
+              <span className={css.taskDetailBlocked} data-intermediate="blockedReview">
+                {t('task.intermediate.blockedReviewDetail')}
+              </span>
+            )}
+            {taskAwaitingInput(detailTask) && (
+              <span className={css.taskDetailInput} data-intermediate="awaitingInput">
+                {t('task.intermediate.awaitingInputDetail')}
+              </span>
+            )}
           </section>
         </>
       )}
@@ -677,9 +699,14 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
                     {owned.length === 0
                       ? <span className={css.taskEmpty}>{t('assignment.empty')}</span>
                       : owned.map((task) => (
-                        <span key={task.id} className={css.assignmentChip} data-state={taskTone(task.state, task.status)} data-review={taskReviewPending(task) ? 'pending' : undefined} data-helping={taskHelper(task) !== undefined ? 'true' : undefined} data-timing={timingData(task)} title={`${task.id} · ${task.subject}`}>
+                        <span key={task.id} className={css.assignmentChip} data-state={taskTone(task.state, task.status)} data-review={taskReviewPending(task) ? 'pending' : undefined} data-intermediate={taskIntermediateFlag(task)} data-helping={taskHelper(task) !== undefined ? 'true' : undefined} data-timing={timingData(task)} title={`${task.id} · ${task.subject}`}>
                           {task.id}
-                          {taskReviewPending(task) && <span className={css.reviewChip}>{t('task.review.pending')}</span>}
+                          {/* 改进 4:被门禁拦截的任务显示「待复核」阻塞态(更强的中间态),
+                              替代派生的「待政委复核」徽标,避免重复提示;未拦截的门禁任务仍显示后者。 */}
+                          {taskBlockedByReview(task)
+                            ? <span className={css.blockedChip}>{t('task.intermediate.blockedReview')}</span>
+                            : taskReviewPending(task) && <span className={css.reviewChip}>{t('task.review.pending')}</span>}
+                          {taskAwaitingInput(task) && <span className={css.inputChip}>{t('task.intermediate.awaitingInput')}</span>}
                           {taskPendingCalibration(task) && <span className={css.calibrationChip}>{t('task.calibration.pending')}</span>}
                           {taskHelper(task) !== undefined && <span className={css.helpingChip}>{t('task.helping', { member: taskHelper(task) })}</span>}
                           {!compact && timingData(task) !== 'ok' && <span className={css.timingChip} data-timing={timingData(task)}>{t(timingData(task) === 'over' ? 'timing.over' : 'timing.warn')}</span>}
@@ -937,6 +964,13 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
       ),
     )),
     [archivedTeams, current, teams],
+  )
+  // 改进方向 5:归档查询 —— 历史归档区按 团队/时间/复盘状态 筛选。
+  // 纯函数计算,只影响展示层;筛选状态为面板本地 UI 状态。
+  const [archiveFilter, setArchiveFilter] = useState<ArchiveFilterState>(ARCHIVE_DEFAULT_FILTER)
+  const filteredArchived = useMemo(
+    () => filterArchivedTeams(visibleArchived, archiveFilter),
+    [visibleArchived, archiveFilter],
   )
   const visibleCount = visibleTeams.length + visibleArchived.length + visibleHistoric.length
 
@@ -1238,7 +1272,57 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
                   {visibleTeams.map((team) => (
                     <TeamSection key={team.teamId} team={team} onNavigate={navigateToSession} t={t} compact={compact} />
                   ))}
-                  {visibleArchived.map((team) => (
+                  {visibleArchived.length > 0 && (
+                    <div className={css.archiveFilterBar} data-archive-filter>
+                      <label className={css.archiveFilterField}>
+                        <span className={css.archiveFilterCaption}>{t('archive.filterTeam')}</span>
+                        <select
+                          className={css.archiveSelect}
+                          data-filter="team"
+                          value={archiveFilter.team}
+                          onChange={(event) => setArchiveFilter({ ...archiveFilter, team: event.target.value })}
+                        >
+                          <option value="">{t('archive.filterTeamAll')}</option>
+                          {archivedTeamNames(visibleArchived).map((name) => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={css.archiveFilterField}>
+                        <span className={css.archiveFilterCaption}>{t('archive.filterTime')}</span>
+                        <select
+                          className={css.archiveSelect}
+                          data-filter="time"
+                          value={archiveFilter.timeRange}
+                          onChange={(event) => setArchiveFilter({ ...archiveFilter, timeRange: event.target.value as ArchiveTimeRange })}
+                        >
+                          {ARCHIVE_TIME_RANGES.map((range) => (
+                            <option key={range} value={range}>{t(`archive.time.${range}`)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={css.archiveFilterField}>
+                        <span className={css.archiveFilterCaption}>{t('archive.filterRetro')}</span>
+                        <select
+                          className={css.archiveSelect}
+                          data-filter="retro"
+                          value={archiveFilter.retro}
+                          onChange={(event) => setArchiveFilter({ ...archiveFilter, retro: event.target.value as ArchiveRetroFilter })}
+                        >
+                          {ARCHIVE_RETRO_FILTERS.map((retro) => (
+                            <option key={retro} value={retro}>{t(`archive.retro.${retro}`)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <span className={css.archiveFilterCount} data-filter-count>
+                        {t('archive.filterCount', { shown: filteredArchived.length, total: visibleArchived.length })}
+                      </span>
+                    </div>
+                  )}
+                  {visibleArchived.length > 0 && filteredArchived.length === 0 && (
+                    <span className={css.archiveEmpty}>{t('archive.filterEmpty')}</span>
+                  )}
+                  {filteredArchived.map((team) => (
                     <div key={`${team.captainSessionId}:${team.teamId}`} data-team-id={team.teamId} data-historic>
                       <span className={css.archiveLabel}>{t('archive.label')}</span>
                       <TeamSection team={team} onNavigate={navigateToSession} t={t} historic compact={compact} />

@@ -65,6 +65,10 @@ export declare const zh: {
     'task.review.pending': string;
     'task.review.passed': string;
     'task.review.rejected': string;
+    'task.intermediate.blockedReview': string;
+    'task.intermediate.awaitingInput': string;
+    'task.intermediate.blockedReviewDetail': string;
+    'task.intermediate.awaitingInputDetail': string;
     'task.helping': string;
     'timing.estimated': string;
     'timing.actual': string;
@@ -76,6 +80,7 @@ export declare const zh: {
     'timing.signals': string;
     'timing.selfReport': string;
     'timing.retroNote': string;
+    'timing.recommendation': string;
     'timing.gateWait': string;
     'timing.hasHelper': string;
     'timing.over': string;
@@ -140,6 +145,20 @@ export declare const zh: {
     'assignment.label': string;
     'assignment.empty': string;
     'archive.label': string;
+    'archive.filterTeam': string;
+    'archive.filterTeamAll': string;
+    'archive.filterTime': string;
+    'archive.time.all': string;
+    'archive.time.7d': string;
+    'archive.time.30d': string;
+    'archive.time.90d': string;
+    'archive.filterRetro': string;
+    'archive.retro.all': string;
+    'archive.retro.hasRetro': string;
+    'archive.retro.overran': string;
+    'archive.retro.noRetro': string;
+    'archive.filterCount': string;
+    'archive.filterEmpty': string;
 };
 /** AgentTeams namespace key union. */
 export type AgentTeamsLocaleKey = keyof typeof zh;
@@ -207,6 +226,10 @@ export declare const en: {
     'task.review.pending': string;
     'task.review.passed': string;
     'task.review.rejected': string;
+    'task.intermediate.blockedReview': string;
+    'task.intermediate.awaitingInput': string;
+    'task.intermediate.blockedReviewDetail': string;
+    'task.intermediate.awaitingInputDetail': string;
     'task.helping': string;
     'timing.estimated': string;
     'timing.actual': string;
@@ -218,6 +241,7 @@ export declare const en: {
     'timing.signals': string;
     'timing.selfReport': string;
     'timing.retroNote': string;
+    'timing.recommendation': string;
     'timing.gateWait': string;
     'timing.hasHelper': string;
     'timing.over': string;
@@ -282,6 +306,20 @@ export declare const en: {
     'assignment.label': string;
     'assignment.empty': string;
     'archive.label': string;
+    'archive.filterTeam': string;
+    'archive.filterTeamAll': string;
+    'archive.filterTime': string;
+    'archive.time.all': string;
+    'archive.time.7d': string;
+    'archive.time.30d': string;
+    'archive.time.90d': string;
+    'archive.filterRetro': string;
+    'archive.retro.all': string;
+    'archive.retro.hasRetro': string;
+    'archive.retro.overran': string;
+    'archive.retro.noRetro': string;
+    'archive.filterCount': string;
+    'archive.filterEmpty': string;
 };
 /** Translation function consumed by pure view helpers. */
 export type AgentTeamsTranslate = (key: AgentTeamsLocaleKey, params?: Record<string, unknown>) => string;
