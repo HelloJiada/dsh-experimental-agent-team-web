@@ -22,6 +22,19 @@ import type { AgentTeamsEventType } from './event-types.ts'
 /** Event types already reported as unsupported, to avoid repetitive logs. */
 const skippedEventTypes = new Set<AgentTeamsEventType>()
 
+/** 累计被 harness 拒绝的事件条数(R-34 可观测指标)。 */
+let skippedEventCount = 0
+
+/**
+ * 测试辅助:重置跳过事件追踪的模块态。skippedEventTypes / skippedEventCount
+ * 是进程级累计指标,跨用例(或跨测试文件)会保留;单测在 beforeEach 调用
+ * 以获得可重复的断言基线。生产路径不调用。
+ */
+export function resetSkippedEventTracking(): void {
+  skippedEventTypes.clear()
+  skippedEventCount = 0
+}
+
 /**
  * Append one AgentTeams event to a Session, containing failures (a broken
  * durable record must never break team tool execution).
@@ -46,9 +59,14 @@ export function appendTeamEvent(
     KNOWN_SESSION_EVENT_TYPES?: ReadonlySet<string>
   }).KNOWN_SESSION_EVENT_TYPES
   if (known?.has(type) !== true) {
+    // R-34:静默丢弃会让面板事件流难以排查——未识别事件至少 warn 一次
+    // (按类型去重防刷屏),并累计总数作为可观测指标。
+    skippedEventCount += 1
     if (!skippedEventTypes.has(type)) {
       skippedEventTypes.add(type)
-      ctx.logger.debug(`agent-team-web: session event "${type}" omitted because this harness does not recognize it`)
+      ctx.logger.warn(
+        `agent-team-web: session event "${type}" omitted because this harness does not recognize it (${skippedEventCount} events skipped in total)`,
+      )
     }
     return
   }
