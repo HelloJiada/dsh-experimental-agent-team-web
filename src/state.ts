@@ -954,15 +954,6 @@ function isTeamMessage(value: unknown): value is TeamMessage {
 }
 
 /**
- * Remove a team's whole directory (members should be interrupted first).
- * @param stateRoot - resolved absolute state root directory.
- * @param teamId - the team id.
- */
-export async function removeTeamDir(stateRoot: string, teamId: string): Promise<void> {
-  await rm(join(stateRoot, teamId), { recursive: true, force: true })
-}
-
-/**
  * `rename` with the same transient retry policy as the state-file atomic
  * write, for paths (like archiving a whole team directory) where there is no
  * content-equivalent direct-write degradation on Windows. A short-lived

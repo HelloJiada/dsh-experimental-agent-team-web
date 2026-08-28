@@ -8,10 +8,10 @@
  * @module agent-team-web/intelligence
  */
 
-import type { TeamActivitySnapshot } from './snapshot.js'
-import { ESTIMATE_LEVEL_RANGES, type EstimateLevel } from './types.js'
-import { formatDuration } from './duration.js'
-import { taskTimingState } from './retro.js'
+import type { TeamActivitySnapshot } from './snapshot.ts'
+import { ESTIMATE_LEVEL_RANGES, type EstimateLevel } from './types.ts'
+import { formatDuration } from './duration.ts'
+import { taskTimingState } from './retro.ts'
 
 /** 预估展示文本:等级优先,其次内部毫秒,再其次"未预估"。 */
 function estimateLabel(task: TeamActivitySnapshot['tasks'][number]): string {
