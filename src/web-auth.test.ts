@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { TOKEN_HEADER } from './web-auth-constants.ts'
 import {
   assertTrustedAuthority,
+  createWebToken,
   isLoopbackHostname,
   requestHostTrusted,
   requestTokenValid,
@@ -38,6 +39,16 @@ describe('tokensEqual — constant-time hex compare', () => {
 
   it('rejects same-length different tokens', () => {
     expect(tokensEqual(TOKEN, 'boot-token-0123456789abcdee')).toBe(false)
+  })
+})
+
+describe('createWebToken — 每次生成独立随机令牌(QA P2 轻量断言)', () => {
+  it('两次调用产生不同令牌,且为 48 位十六进制', () => {
+    const first = createWebToken()
+    const second = createWebToken()
+    expect(first).not.toBe(second)
+    expect(first).toMatch(/^[0-9a-f]{48}$/)
+    expect(second).toMatch(/^[0-9a-f]{48}$/)
   })
 })
 
