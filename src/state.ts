@@ -815,7 +815,10 @@ export function taskReviewPassed(task: TeamTask): boolean {
 const AWAITING_INPUT_HINTS: readonly string[] = [
   '待确认', '待输入', '待答复', '待补充', '待队长确认', '待队长提供',
   '等待输入', '等待确认', '需要确认', '需确认', '请确认', '请提供', '请补充',
-  'awaiting input', 'awaitinginput', 'awaiting confirmation', 'pending question',
+  // 注意:英文提示词仅保留带空格的自然语言形式,不收录 `awaitinginput` 等
+  // 无空格变体——那会误匹配框架术语 `awaitingInput`(如任务描述在讨论该
+  // 中间态概念本身),把"描述提及"误判成"等待输入"。
+  'awaiting input', 'awaiting confirmation', 'pending question',
   'please confirm', 'please provide',
 ]
 

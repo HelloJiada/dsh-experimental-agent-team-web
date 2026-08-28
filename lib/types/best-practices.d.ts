@@ -42,9 +42,20 @@ export declare function bestPracticeId(): string;
 export declare function distillPracticeText(retro: TaskRetro): string;
 /** 读取全局经验库(文件不存在视为空库)。 */
 export declare function readBestPractices(stateRoot: string): Promise<BestPracticeEntry[]>;
-/** 持久化全局经验库(在调用方锁内或自行加锁)。 */
+/** 持久化全局经验库(自行加锁;锁内调用请用 mutateBestPractices)。 */
 export declare function writeBestPractices(stateRoot: string, entries: readonly BestPracticeEntry[]): Promise<void>;
-/** 新增或更新一条经验(同 sourceTaskId 幂等更新,不重复新增)。 */
+/**
+ * R-08:原子"读-改-写"全局经验库。把「读取当前条目 → fn 变换 → 写回」整体放入
+ * `best-practices:${stateRoot}` 锁内,消除跨团队/跨会话并发的 TOCTOU 丢条目
+ * (修复前:readBestPractices 无锁,writeBestPractices 只护写入段,两团队并发
+ * 终结任务时后写覆盖先写)。fn 返回 undefined 表示不修改(跳过写盘)。
+ * 注意:withTeamLock 不可重入,fn 内不得再调用 writeBestPractices。
+ */
+export declare function mutateBestPractices(stateRoot: string, fn: (entries: readonly BestPracticeEntry[]) => readonly BestPracticeEntry[] | undefined): Promise<void>;
+/** 新增或更新一条经验(同 sourceTaskId 幂等更新,不重复新增)。
+ * R-09:practice 文本变化(任务重试/新 attempt 重新提炼)时,旧校准结论
+ * (useful/useless/revised)不再适用于新经验——verdict 重置为 pending 重新走
+ * 校准闭环,避免被旧 useless 静默过滤、或被旧 useful 未经复核即注入成员 persona。 */
 export declare function upsertBestPractice(entries: readonly BestPracticeEntry[], next: BestPracticeEntry): BestPracticeEntry[];
 /** 更新一条经验的队长校准结论;revised 时可选改写原因。 */
 export declare function updateBestPracticeVerdict(entries: readonly BestPracticeEntry[], entryId: string, verdict: BestPracticeVerdict, cause?: TaskRetroCause): BestPracticeEntry[];

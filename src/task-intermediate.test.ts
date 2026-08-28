@@ -85,8 +85,15 @@ describe('descriptionAwaitingInput — 任务描述待确认问题检测', () =>
 
   it('命中显式提示词(英文,不区分大小写)', () => {
     expect(descriptionAwaitingInput('Implement export, awaiting input on format')).toBe(true)
-    expect(descriptionAwaitingInput('description awaitingInput on scope')).toBe(true)
+    expect(descriptionAwaitingInput('Awaiting confirmation on scope')).toBe(true)
     expect(descriptionAwaitingInput('Please confirm the target platform')).toBe(true)
+  })
+
+  it('讨论框架概念(awaitingInput 术语)不误判为等待输入', () => {
+    // 任务描述在阐述中间态概念本身,而非等待输入——不得命中无空格变体。
+    expect(descriptionAwaitingInput('检查 awaitingInput 中间态流转是否完备')).toBe(false)
+    expect(descriptionAwaitingInput('description awaitingInput on scope')).toBe(false)
+    expect(descriptionAwaitingInput('对接 blockedByReview/awaitingInput 快照字段')).toBe(false)
   })
 
   it('独立成行的问号视为待确认问题', () => {

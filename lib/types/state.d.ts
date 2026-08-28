@@ -78,6 +78,14 @@ export declare function beginTaskAttempt(task: TeamTask, assignee: string): stri
  */
 export declare function invalidateTaskAttempt(task: TeamTask, nextAssignee?: string, reassigning?: boolean): void;
 /**
+ * 移除成员时清理其遗留的 helper 标记(R-06):从所有任务上摘除该成员
+ * 作为 helper 的引用(helper 与 helperSince 一并清除),避免
+ * `isHelppableTask` 因 stale helper 永远拒绝再帮助该任务。
+ * helperEver 保留作复盘审计(hasHelper 标注);attempt 级轮换语义由
+ * invalidateTaskAttempt/activateTaskAttempt 处理,此处只清引用。
+ */
+export declare function clearMemberHelperMarks(tasks: TeamTask[], memberName: string): void;
+/**
  * Create the team directory structure and the initial team record.
  * @param stateRoot - resolved absolute state root directory.
  * @param state - the initial team record.
@@ -203,6 +211,8 @@ export declare function taskBlockedByReview(task: TeamTask): boolean;
 /**
  * 改进 4:任务是否处于"等待输入"中间态。
  * 显式置位(awaitingInput === true)或描述含待确认问题(派生兜底,旧任务免迁移)。
+ * R-02:显式 false(input_answered 清除后)优先压制描述派生,清除才真正生效;
+ * 终结状态不残留"待输入"中间态(与 taskBlockedByReview 同一规则)。
  */
 export declare function taskAwaitingInput(task: TeamTask): boolean;
 /**
@@ -241,6 +251,13 @@ export type VisualTaskState = 'blocked' | 'open' | 'running' | 'completed';
  * when done, `blocked` while any dependency is unfinished, else `open`.
  */
 export declare function taskVisualState(status: string, dependencies: readonly string[], tasks: readonly TeamTask[]): VisualTaskState;
+/**
+ * 有向依赖图环检测(R-04):DFS 递归栈法返回第一个环的路径
+ * (含闭环回到起点,如 `['t2', 't1', 't2']`);无环返回 undefined。
+ * 未知依赖 id 跳过(create_task 已做存在性校验)。taskDepthsById 对环
+ * 已有兜底(返回 0),此处供 create_task 在创建时拒绝会永久死锁的环。
+ */
+export declare function findTaskCycle(tasks: readonly TeamTask[]): string[] | undefined;
 /**
  * Longest dependency path depth per task id (each depth = one lane column).
  */

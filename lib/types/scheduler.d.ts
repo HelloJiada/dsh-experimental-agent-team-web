@@ -25,6 +25,10 @@ export interface TeamScheduler {
     /** Try to flush fallback mail or give one member one ready task. */
     kickMember(workspace: string, teamId: string, memberName: string, captain?: Agent): Promise<void>;
 }
+/** The next ready task for one member: its assigned ready work first, then
+ * any unassigned ready work. R-02: awaitingInput(待输入)任务不参与自动派单,
+ * 等队长 input_answered 清除后才可派发(claim_task 同规则拦截)。 */
+export declare function nextReadyTask(tasks: readonly TeamTask[], memberName: string): TeamTask | undefined;
 /**
  * Whether a teammate's claimed/in-progress task is stalled enough for a
  * helper to push it forward — without transferring ownership. All conditions

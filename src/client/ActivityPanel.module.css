@@ -1061,37 +1061,40 @@
 }
 
 .reviewChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-warning) 16%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning) 16%, var(--dsw-alias-bg-module));
   color: var(--dsw-alias-state-warning);
 }
 
 /* 改进 4 中间态「待复核」:完成被门禁拦截的强阻塞信号,在黄底基础上加
    实线描边,与仅"门禁适用"的 reviewChip(无描边)区分层级。 */
 .blockedChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-warning) 22%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning) 22%, var(--dsw-alias-bg-module));
   color: var(--dsw-alias-state-warning);
   outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning) 55%, transparent);
   outline-offset: -1px;
 }
 
-/* 改进 4 中间态「待输入」:中性等待提示,虚线描边与「待校准」区分。 */
+/* 改进 4 中间态「待输入」:中性等待提示,虚线描边与「待校准」区分。
+   背景与模块底混合(不透明),避免透出任务行状态色(如 completed 绿底)
+   导致灰字叠绿底看不清。 */
 .inputChip {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 10%, transparent);
-  color: var(--dsw-alias-label-secondary);
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 10%, var(--dsw-alias-bg-module));
+  color: var(--dsw-alias-label-primary);
   outline: 1px dashed color-mix(in srgb, var(--dsw-alias-label-secondary) 45%, transparent);
   outline-offset: -1px;
 }
 
 .helpingChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, var(--dsw-alias-bg-module));
   color: var(--dsw-alias-state-business-primary);
 }
 
 /* 复盘质量闭环「待校准」:与政委门禁(黄)和协助(蓝)区分,用中性强调色,
-   表示"复盘闭环待补全"而非阻塞/风险。 */
+   表示"复盘闭环待补全"而非阻塞/风险。背景与模块底混合(不透明),字体
+   用主文字色保证在彩色任务行(如 completed 绿底)上仍清晰可读。 */
 .calibrationChip {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 14%, transparent);
-  color: var(--dsw-alias-label-secondary);
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 14%, var(--dsw-alias-bg-module));
+  color: var(--dsw-alias-label-primary);
 }
 
 /* 自成长超时警示:任务行徽标(超预算=黄,超时=红)与 chip 描边。 */
