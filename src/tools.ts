@@ -12,11 +12,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { join } from 'node:path'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
+import { renderBestPractices, renderStatus, serializeRetro, serializeSignals } from './render.ts'
 import {
   gateBlocksCompletion,
   isActiveCommissar,
@@ -73,8 +74,6 @@ import {
   retroCalibrationHint,
   retroRecommendationFor,
   summarizeTeamRetro,
-  taskElapsedMs,
-  taskTimingState,
   type RetroTaskFacts,
 } from './retro.ts'
 import {
@@ -90,7 +89,6 @@ import { formatDuration } from './duration.ts'
 import {
   ROLE_TITLES,
   suggestAssignments,
-  suggestAssigneeForTask,
   type TaskAssigneeSuggestion,
 } from './suggest.ts'
 
@@ -1246,36 +1244,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           ...task.output !== undefined ? { output: task.output } : {},
           ...task.estimateLevel !== undefined ? { estimate_level: task.estimateLevel } : {},
           ...task.startedAt !== undefined ? { started_at: task.startedAt } : {},
-          ...task.signals === undefined ? {} : {
-            signals: {
-              ...task.signals.turns !== undefined ? { turns: task.signals.turns } : {},
-              ...task.signals.toolCalls !== undefined ? { tool_calls: task.signals.toolCalls } : {},
-              output_bytes: task.signals.outputBytes,
-              ...task.signals.selfReport !== undefined ? { self_report: task.signals.selfReport } : {},
-            },
-          },
+          ...serializeSignals(task.signals),
           ...task.actualMs !== undefined ? { actual_ms: task.actualMs } : {},
           ...task.estimatedMs !== undefined ? { estimated_ms: task.estimatedMs } : {},
           ...task.overrunMs !== undefined ? { overrun_ms: task.overrunMs } : {},
-          ...task.retro === undefined ? {} : {
-            retro: {
-              attempt: task.retro.attempt,
-              actual_ms: task.retro.actualMs,
-              ...task.retro.estimateLevel !== undefined ? { estimate_level: task.retro.estimateLevel } : {},
-              ...task.retro.estimatedMs !== undefined ? { estimated_ms: task.retro.estimatedMs } : {},
-              ...task.retro.overrunMs !== undefined ? { overrun_ms: task.retro.overrunMs } : {},
-              ...task.retro.levelDeviation !== undefined ? { level_deviation: task.retro.levelDeviation } : {},
-              overran: task.retro.overran,
-              cause: task.retro.cause,
-              summary: task.retro.summary,
-              ...task.retro.retroNote !== undefined ? { retro_note: task.retro.retroNote } : {},
-              ...task.retro.captainVerdict !== undefined ? { captain_verdict: task.retro.captainVerdict } : {},
-              recommendation: task.retro.recommendation,
-              ...task.retro.includesGateWait === true ? { includes_gate_wait: true } : {},
-              ...task.retro.hasHelper === true ? { has_helper: true } : {},
-              created_at: task.retro.createdAt,
-            },
-          },
+          ...serializeRetro(task.retro),
         }
       })
       await scheduler.kickTeam(workspace, team.id, team.captainSessionId === caller.id ? caller : undefined)
@@ -1556,33 +1529,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         ...task.completedAt !== undefined ? { completed_at: task.completedAt } : {},
         ...task.actualMs !== undefined ? { actual_ms: task.actualMs } : {},
         ...task.overrunMs !== undefined ? { overrun_ms: task.overrunMs } : {},
-        ...task.signals === undefined ? {} : {
-          signals: {
-            ...task.signals.turns !== undefined ? { turns: task.signals.turns } : {},
-            ...task.signals.toolCalls !== undefined ? { tool_calls: task.signals.toolCalls } : {},
-            output_bytes: task.signals.outputBytes,
-            ...task.signals.selfReport !== undefined ? { self_report: task.signals.selfReport } : {},
-          },
-        },
-        ...task.retro === undefined ? {} : {
-          retro: {
-            attempt: task.retro.attempt,
-            actual_ms: task.retro.actualMs,
-            ...task.retro.estimateLevel !== undefined ? { estimate_level: task.retro.estimateLevel } : {},
-            ...task.retro.estimatedMs !== undefined ? { estimated_ms: task.retro.estimatedMs } : {},
-            ...task.retro.overrunMs !== undefined ? { overrun_ms: task.retro.overrunMs } : {},
-            ...task.retro.levelDeviation !== undefined ? { level_deviation: task.retro.levelDeviation } : {},
-            overran: task.retro.overran,
-            cause: task.retro.cause,
-            summary: task.retro.summary,
-            ...task.retro.retroNote !== undefined ? { retro_note: task.retro.retroNote } : {},
-            ...task.retro.captainVerdict !== undefined ? { captain_verdict: task.retro.captainVerdict } : {},
-            recommendation: task.retro.recommendation,
-            ...task.retro.includesGateWait === true ? { includes_gate_wait: true } : {},
-            ...task.retro.hasHelper === true ? { has_helper: true } : {},
-            created_at: task.retro.createdAt,
-          },
-        },
+        // R-36:透出 updatedAt,供 renderStatus 对缺 claimedAt 的旧团队
+        // in_progress 任务回退显示近似耗时(与面板快照口径一致)。
+        ...task.updatedAt !== undefined ? { updated_at: task.updatedAt } : {},
+        ...serializeSignals(task.signals),
+        ...serializeRetro(task.retro),
         ...suggestion === undefined ? {} : {
           ...suggestion.suggestedRole === null ? {} : { suggested_role: suggestion.suggestedRole },
           ...suggestion.suggestedMember === null ? {} : { suggested_member: suggestion.suggestedMember },
@@ -1864,7 +1815,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
 
   ctx.tools.register(defineTool({
     name: 'agent_teams_delete',
-    description: 'End your team: interrupts all members (best effort) and deletes the team\'s state directory (team file, tasks, mailboxes). Use when the team\'s work is done or abandoned.',
+    description: 'End your team: interrupts all members (best effort) and archives the team\'s state directory (team file, tasks, mailboxes) under <stateRoot>/archive/ for later review and dependency rebuilds. Use when the team\'s work is done or abandoned.',
     parameters: {},
     output: {
       schema: {
@@ -1942,138 +1893,3 @@ function roleOfTask(team: TeamState, task: TeamTask): string {
     ?? task.assignee
 }
 
-/** Render the status snapshot as compact text for the model. */
-function renderStatus(value: JsonValue): string {
-  const team = value as {
-    team_name: string
-    description?: string
-    viewer: string
-    members: {
-      name: string
-      role: string
-      provider: string
-      model: string
-      reasoning_effort: string
-      status: string
-      activity: string
-    }[]
-    tasks: { id: string; subject: string; status: string; assignee: string; dependencies: string[]; attempt: number; attempt_id: string; reassigning: boolean; risk_level?: string; milestone?: boolean; review_required?: boolean; review?: { reviewer_name: string; verdict: string; comment?: string; reviewed_at: number }; helper?: string; output?: string; estimate_level?: string; estimated_ms?: number; claimed_at?: number; started_at?: number; completed_at?: number; actual_ms?: number; overrun_ms?: number; signals?: { turns?: number; tool_calls?: number; output_bytes: number; self_report?: string }; retro?: { attempt: number; actual_ms: number; estimate_level?: string; estimated_ms?: number; overrun_ms?: number; level_deviation?: number; overran: boolean; cause: string; summary: string; retro_note?: string; captain_verdict?: string; recommendation: string; includes_gate_wait?: boolean; has_helper?: boolean; created_at: number }; suggested_role?: string; suggested_member?: string; suggestion_confidence?: string }[]
-    captain_inbox: { from: string; content: string }[]
-    member_inboxes: Record<string, { count: number; latest: string }>
-    mailbox_warnings: string[]
-    mailbox_warning_count: number
-  }
-  const lines: string[] = [
-    `Team "${team.team_name}"${team.description ? ` — ${team.description}` : ''}`,
-    `Viewing as: ${team.viewer}`,
-    `Members (${team.members.length}):`,
-    ...team.members.map((member) => {
-      const route = member.provider && member.model ? ` · ${member.provider}/${member.model}` : ''
-      const effort = member.reasoning_effort ? ` · reasoning ${member.reasoning_effort}` : ''
-      return `  - ${member.name} [${member.role}] ${member.status}/${member.activity}${route}${effort}`
-    }),
-    `Tasks (${team.tasks.length}):`,
-    ...team.tasks.map((task) => {
-      const deps = task.dependencies.length > 0 ? ` (deps: ${task.dependencies.join(',')})` : ''
-      const output = task.output !== undefined ? `\n      output: ${task.output.slice(0, 300)}` : ''
-      const handoff = task.reassigning ? ' (reassigning)' : ''
-      const risk = task.risk_level !== undefined || task.milestone === true
-        ? ` [${task.risk_level ?? 'milestone'}${task.milestone === true ? ', milestone' : ''}]`
-        : ''
-      const gate = task.review_required === true
-        ? task.review?.verdict === 'pass'
-          ? ' · review passed'
-          : ` · review pending (政委待复核)${task.review !== undefined ? ` · last verdict ${task.review.verdict}` : ''}`
-        : ''
-      const helping = task.helper !== undefined ? ` · helped by ${task.helper}` : ''
-      // 自成长耗时:预估等级优先、已用/实际、超时状态(与面板同一套阈值)。
-      let timing = ''
-      if (task.estimate_level !== undefined) {
-        timing += ` · est ${task.estimate_level}(${ESTIMATE_LEVEL_RANGES[task.estimate_level as keyof typeof ESTIMATE_LEVEL_RANGES].label})`
-      } else if (task.estimated_ms !== undefined) {
-        timing += ` · est ${formatDuration(task.estimated_ms)}`
-      }
-      if (task.status === 'in_progress' && task.claimed_at !== undefined) {
-        const elapsed = taskElapsedMs({ claimedAt: task.claimed_at }, Date.now())
-        const state = taskTimingState(
-          task.estimate_level as 'S' | 'M' | 'L' | undefined,
-          task.estimated_ms,
-          elapsed,
-        )
-        timing += ` · used ${formatDuration(elapsed)}${state !== 'ok' ? ` [${state}]` : ''}`
-      }
-      if (task.actual_ms !== undefined) {
-        const state = taskTimingState(
-          task.estimate_level as 'S' | 'M' | 'L' | undefined,
-          task.estimated_ms,
-          task.actual_ms,
-        )
-        timing += ` · actual ${formatDuration(task.actual_ms)}${state !== 'ok' ? ` [${state}]` : ''}`
-      }
-      const signals = task.signals !== undefined
-        ? ` · signals(turns ${task.signals.turns ?? 0} · out ${task.signals.output_bytes}${task.signals.self_report !== undefined ? ` · "${task.signals.self_report.slice(0, 40)}"` : ''})`
-        : ''
-      const retro = task.retro !== undefined
-        ? ` · retro: ${task.retro.summary.slice(0, 120)}`
-        : ''
-      // 改进方向 3:建议角色/成员(纯函数推断,仅建议)。已派给建议成员时不再
-      // 重复提示;未派或派给他人时提示,队长确认后仍走现有 assignee 流程。
-      const suggestion = task.suggested_role !== undefined && task.suggested_role !== ''
-        && (task.assignee === '' || (task.suggested_member !== undefined && task.suggested_member !== '' && task.assignee !== task.suggested_member))
-        ? ` · 建议分配给：${ROLE_TITLES[task.suggested_role as keyof typeof ROLE_TITLES] ?? task.suggested_role}（${task.suggested_role}）${task.suggested_member !== undefined && task.suggested_member !== '' ? ` → ${task.suggested_member}` : ''}${task.suggestion_confidence !== undefined ? ` [${task.suggestion_confidence}]` : ''}`
-        : ''
-      return `  - ${task.id} [${task.status}] attempt ${task.attempt}${handoff}${risk}${gate}${helping}${suggestion}${timing}${signals}${retro} ${task.subject} → ${task.assignee || 'unassigned'}${deps}${output}`
-    }),
-    `Captain inbox (${team.captain_inbox.length}):`,
-    ...team.captain_inbox.map((message) => `  - [${message.from}] ${message.content.slice(0, 200)}`),
-  ]
-  for (const [name, inbox] of Object.entries(team.member_inboxes)) {
-    lines.push(`Member inbox ${name} (${inbox.count}): latest — ${inbox.latest.slice(0, 120)}`)
-  }
-  if (team.mailbox_warning_count > 0) {
-    lines.push(
-      `Mailbox warnings (${team.mailbox_warning_count}; malformed lines were skipped; showing up to 10):`,
-      ...team.mailbox_warnings.map((warning) => `  - ${warning}`),
-    )
-  }
-  return lines.join('\n')
-}
-
-/** Render the best-practices library + calibration as compact text. */
-function renderBestPractices(value: JsonValue, args: { role?: string; level?: string; limit?: number }): string {
-  const data = value as {
-    team_id: string
-    total: number
-    best_practices: {
-      id: string
-      source_team_id: string
-      source_task_id: string
-      source_task_subject: string
-      role: string
-      level?: string
-      cause: string
-      practice: string
-      verdict: string
-      created_at: number
-      updated_at: number
-    }[]
-    calibration: {
-      completed_with_timing: number
-      by_role_level: { role: string; level: string; task_count: number; avg_actual_ms?: number; overrun_ratio?: number }[]
-      hint: string
-    }
-  }
-  const filter = `${args.role !== undefined ? ` role=${args.role}` : ''}${args.level !== undefined ? ` level=${args.level}` : ''}${args.limit !== undefined ? ` limit=${args.limit}` : ''}`
-  const lines: string[] = [`Best practices (${data.total} entries${filter}):`]
-  if (data.best_practices.length === 0) {
-    lines.push('  (empty library — experiences are distilled automatically when members add retro_note or complete tasks with recommendations)')
-  }
-  for (const entry of data.best_practices) {
-    lines.push(
-      `  - ${entry.id} [${entry.verdict}] ${entry.role}${entry.level !== undefined ? ` × ${entry.level}` : ''} · ${entry.cause} · from ${entry.source_task_id}(${entry.source_task_subject.slice(0, 40)})`,
-      `      ${entry.practice.slice(0, 160)}`,
-    )
-  }
-  lines.push(`  Calibration: ${data.calibration.hint}`)
-  return lines.join('\n')
-}
