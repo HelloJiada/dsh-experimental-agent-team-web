@@ -4,10 +4,12 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   BEST_PRACTICES_FILE,
+  MAX_INJECTED_PRACTICE_LENGTH,
   distillBestPractice,
   distillPracticeText,
   readBestPractices,
   selectBestPracticesForRole,
+  truncatePracticeForInjection,
   updateBestPracticeVerdict,
   upsertBestPractice,
   writeBestPractices,
@@ -48,7 +50,8 @@ function entry(id: string, overrides: Partial<BestPracticeEntry> = {}): BestPrac
     role: 'engineer',
     cause: 'underestimated',
     practice: '先读测试再动手',
-    verdict: 'pending',
+    // R-20 门控:可注入池默认用已验证 verdict(useful);pending 注入由专项用例锁定。
+    verdict: 'useful',
     createdAt: 1000,
     updatedAt: 1000,
     ...overrides,
@@ -122,6 +125,15 @@ describe('全局库文件读写', () => {
     const raw = await readFile(join(tempRoot, BEST_PRACTICES_FILE), 'utf8')
     expect(raw).toContain('bp-1')
   })
+
+  it('R-19/M-1:经验库文件 0600、目录 0700(多用户机器不世界可读)', async () => {
+    await writeBestPractices(tempRoot, [entry('bp-1')])
+    const { stat } = await import('node:fs/promises')
+    const fileMode = (await stat(join(tempRoot, BEST_PRACTICES_FILE))).mode & 0o777
+    const dirMode = (await stat(tempRoot)).mode & 0o777
+    expect(fileMode).toBe(0o600)
+    expect(dirMode).toBe(0o700)
+  })
 })
 
 describe('selectBestPracticesForRole — 团队记忆注入(按角色匹配 + 冷启动守卫)', () => {
@@ -147,14 +159,25 @@ describe('selectBestPracticesForRole — 团队记忆注入(按角色匹配 + �
     expect(selectBestPracticesForRole(entries, '  ')).toHaveLength(0)
   })
 
-  it('校准过的经验(useful)优先于未校准(pending),同级按更新时间倒序', () => {
+  it('R-20 门控:只注入已验证经验(useful/revised),pending 一律不注入', () => {
+    // 质检员验收点③:注入门控收紧有明确决策——pending(未校准,retro_note 原文
+    // 未经队长把关)不再注入;只有队长校准为 useful/revised 后才可进入成员系统提示。
     const entries = [
-      entry('bp-pending-new', { role: 'engineer', verdict: 'pending', updatedAt: 3000 }),
-      entry('bp-useful', { role: 'engineer', verdict: 'useful', updatedAt: 1000 }),
-      entry('bp-pending-old', { role: 'engineer', verdict: 'pending', updatedAt: 2000 }),
+      entry('bp-pending-new', { verdict: 'pending', updatedAt: 3000 }),
+      entry('bp-useful', { verdict: 'useful', updatedAt: 1000 }),
+      entry('bp-revised', { verdict: 'revised', updatedAt: 2000 }),
+      entry('bp-pending-old', { verdict: 'pending', updatedAt: 2500 }),
     ]
     const selected = selectBestPracticesForRole(entries, 'engineer')
-    expect(selected.map(item => item.id)).toEqual(['bp-useful', 'bp-pending-new', 'bp-pending-old'])
+    expect(selected.map(item => item.id)).toEqual(['bp-revised', 'bp-useful'])
+  })
+
+  it('R-20 门控:仅 pending 条目(无任何已校准样本)不注入,即使样本 ≥2', () => {
+    const entries = [
+      entry('bp-pending-1', { verdict: 'pending' }),
+      entry('bp-pending-2', { verdict: 'pending' }),
+    ]
+    expect(selectBestPracticesForRole(entries, 'engineer')).toHaveLength(0)
   })
 
   it('注入上限:只取前 3 条,保持 persona 精简', () => {
@@ -175,5 +198,23 @@ describe('selectBestPracticesForRole — 团队记忆注入(按角色匹配 + �
     ]
     const selected = selectBestPracticesForRole(entries, 'engineer')
     expect(selected.map(item => item.id)).toEqual(['bp-useful-1', 'bp-useful-2'])
+  })
+})
+
+describe('truncatePracticeForInjection — R-20 注入文本截断', () => {
+  it('短文本原样保留', () => {
+    expect(truncatePracticeForInjection('先读测试再动手')).toBe('先读测试再动手')
+  })
+
+  it('超长文本截断到上限并加省略号', () => {
+    const long = 'x'.repeat(MAX_INJECTED_PRACTICE_LENGTH + 50)
+    const truncated = truncatePracticeForInjection(long)
+    expect(truncated).toHaveLength(MAX_INJECTED_PRACTICE_LENGTH + 1) // 200 + '…'
+    expect(truncated.endsWith('…')).toBe(true)
+  })
+
+  it('恰好等于上限时不截断', () => {
+    const exact = 'x'.repeat(MAX_INJECTED_PRACTICE_LENGTH)
+    expect(truncatePracticeForInjection(exact)).toBe(exact)
   })
 })

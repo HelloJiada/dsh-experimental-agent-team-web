@@ -363,7 +363,8 @@ describe('add_member best-practices 记忆注入', () => {
   })
 
   it('角色匹配样本 ≥2 时,经验注入成员 persona(startContinuable 请求断言)', async () => {
-    // 冷启动守卫:engineer 角色需 ≥2 条已校准经验才注入。
+    // 冷启动守卫:engineer 角色需 ≥2 条已验证(useful/revised)经验才注入;
+    // R-20 门控:pending 未校准条目不计入可注入样本。
     const library: BestPracticeEntry[] = [
       {
         id: 'bp-1', sourceTeamId: 'team-a', sourceTaskId: 't1', sourceTaskSubject: '任务t1',
@@ -372,8 +373,13 @@ describe('add_member best-practices 记忆注入', () => {
       },
       {
         id: 'bp-2', sourceTeamId: 'team-a', sourceTaskId: 't2', sourceTaskSubject: '任务t2',
-        role: 'engineer', cause: 'on_time', practice: '实现前先定验收标准', verdict: 'pending',
+        role: 'engineer', cause: 'on_time', practice: '实现前先定验收标准', verdict: 'revised',
         createdAt: 1000, updatedAt: 2000,
+      },
+      {
+        id: 'bp-3', sourceTeamId: 'team-a', sourceTaskId: 't3', sourceTaskSubject: '任务t3',
+        role: 'engineer', cause: 'other', practice: '未校准经验不应注入', verdict: 'pending',
+        createdAt: 1000, updatedAt: 3000,
       },
     ]
     await writeFile(join(stateRoot, BEST_PRACTICES_FILE), `${JSON.stringify(library, null, 2)}\n`)
@@ -390,6 +396,8 @@ describe('add_member best-practices 记忆注入', () => {
     expect(spawn?.request.persona).toContain('Team memory (from the global best-practices library')
     expect(spawn?.request.persona).toContain('先读测试再动手')
     expect(spawn?.request.persona).toContain('实现前先定验收标准')
+    // R-20:pending 未校准条目不注入。
+    expect(spawn?.request.persona).not.toContain('未校准经验不应注入')
     expect(spawn?.request.toolFilter.deny).toEqual(expect.arrayContaining([
       'agent_teams_create', 'agent_teams_add_member', 'agent_teams_remove_member',
       'agent_teams_reassign_task', 'agent_teams_create_task', 'agent_teams_delete',

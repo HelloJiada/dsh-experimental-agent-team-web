@@ -77,15 +77,32 @@ function keyDigest(name: string): string {
  * @returns a non-empty key safe as a single path segment.
  */
 export function sanitizeKey(name: string): string {
-  const cleaned = name.normalize('NFC').trim().toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
+  const normalized = name.normalize('NFC').trim().toLowerCase()
+  const cleaned = normalized.replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')
   if (cleaned === '') return `k-${keyDigest(name)}`
+  // R-21/L-3:Windows 保留设备名(CON/NUL/AUX/COM1… 含带扩展名形式)在
+  // Windows 上会命中设备语义,追加摘要后缀避免目录/邮箱文件写入异常。
+  // 判定基于折叠前的规范化名(如 nul.json),摘要基于折叠后的 cleaned,
+  // 保证大小写变体映射到同一 key。
+  if (isWindowsReservedName(normalized)) return `${cleaned}-${keyDigest(cleaned)}`
   const points = [...cleaned]
   if (points.length > MAX_KEY_LENGTH) {
-    return `${points.slice(0, MAX_KEY_LENGTH).join('')}-${keyDigest(name)}`
+    return `${points.slice(0, MAX_KEY_LENGTH).join('')}-${keyDigest(cleaned)}`
   }
   return cleaned
+}
+
+/** Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9), with optional extension. */
+const WINDOWS_RESERVED_NAMES: ReadonlySet<string> = new Set([
+  'con', 'prn', 'aux', 'nul',
+  'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+])
+
+/** Whether a normalized (folded) name is a Windows reserved device name (with any extension). */
+export function isWindowsReservedName(normalized: string): boolean {
+  const base = normalized.split('.')[0] ?? ''
+  return WINDOWS_RESERVED_NAMES.has(base)
 }
 
 /**
@@ -228,7 +245,7 @@ export function clearMemberHelperMarks(tasks: TeamTask[], memberName: string): v
  */
 export async function createTeamDir(stateRoot: string, state: TeamState): Promise<void> {
   const dir = join(stateRoot, state.id)
-  await mkdir(join(dir, 'inbox'), { recursive: true })
+  await mkdir(join(dir, 'inbox'), { recursive: true, mode: 0o700 })
   await atomicWriteText(join(dir, 'team.json'), JSON.stringify(state, null, 2))
 }
 
@@ -312,7 +329,7 @@ export async function recordRetiredMemberIds(stateRoot: string, memberIds: reado
   await withTeamLock(`retired-members:${stateRoot}`, async () => {
     const retired = await readRetiredMemberIds(stateRoot)
     for (const id of additions) retired.add(id)
-    await mkdir(stateRoot, { recursive: true })
+    await mkdir(stateRoot, { recursive: true, mode: 0o700 })
     await atomicWriteText(
       join(stateRoot, RETIRED_MEMBERS_FILE),
       `${JSON.stringify([...retired].sort(), null, 2)}\n`,
@@ -409,7 +426,7 @@ export async function appendMailbox(
   message: TeamMessage,
 ): Promise<void> {
   const file = join(stateRoot, teamId, 'inbox', `${sanitizeKey(agentKey)}.jsonl`)
-  await mkdir(join(stateRoot, teamId, 'inbox'), { recursive: true })
+  await mkdir(join(stateRoot, teamId, 'inbox'), { recursive: true, mode: 0o700 })
   let existing = ''
   try {
     existing = await readFile(file, 'utf8')
@@ -653,21 +670,24 @@ export async function replaceFileAtomicOrDirect(
 }
 
 /**
- * Atomically replace one UTF-8 state file from a same-directory temp file,
- * degrading to a direct overwrite when the atomic rename cannot proceed
- * (see {@link replaceFileAtomicOrDirect} for the Windows EPERM rationale).
+ * R-19/M-1: state files are owner-only (`0o600`) so other local users cannot
+ * read team state (session ids, message text, task outputs) on multi-user
+ * machines. The temp file gets the mode before the rename — `rename` preserves
+ * the temp's mode, and the direct-write fallback uses the same mode.
+ * @param file - the target state file path.
+ * @param content - the UTF-8 payload.
  */
 async function atomicWriteText(file: string, content: string): Promise<void> {
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`
   try {
-    await writeFile(temporary, content, { encoding: 'utf8', flag: 'wx' })
+    await writeFile(temporary, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
   } catch (error: unknown) {
     await rm(temporary, { force: true }).catch(() => undefined)
     throw error
   }
   await replaceFileAtomicOrDirect(temporary, file, content, {
     rename: (from, to) => rename(from, to),
-    writeFile: (target, payload) => writeFile(target, payload, 'utf8'),
+    writeFile: (target, payload) => writeFile(target, payload, { encoding: 'utf8', mode: 0o600 }),
     remove: (path) => rm(path, { force: true }),
   })
 }
@@ -950,7 +970,7 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
  */
 export async function archiveTeamDir(stateRoot: string, teamId: string): Promise<void> {
   const archiveRoot = join(stateRoot, 'archive')
-  await mkdir(archiveRoot, { recursive: true })
+  await mkdir(archiveRoot, { recursive: true, mode: 0o700 })
   const source = join(stateRoot, teamId)
   const target = join(archiveRoot, teamId)
   const previous = join(archiveRoot, `.${teamId}.previous-${randomUUID()}`)

@@ -74,18 +74,32 @@ export declare const MIN_MEMBER_MEMORY_SAMPLES = 2;
 /** 单成员注入的经验条目上限(保持 persona 精简,防止记忆淹没规则)。 */
 export declare const MAX_MEMBER_MEMORY_ENTRIES = 3;
 /**
+ * R-20/M-2 注入门控决策:只注入**已验证**经验。
+ *
+ * 经验文本源自成员自由填写的 retro_note(t4 M-2:跨团队持久化提示注入向量),
+ * 因此 `pending`(未校准)条目一律**不注入**——只有队长通过
+ * agent_teams_retro_review 明确校准为 `useful`/`revised` 后才会进入成员系统提示。
+ * 这同时满足质检员验收点③:门控收紧有明确决策(pending 不注入)+ 测试锁定;
+ * 被 `useless` 否决的条目同样排除。冷启动守卫(<2 样本)与数量上限保持不变。
+ */
+export declare const INJECTABLE_BEST_PRACTICE_VERDICTS: ReadonlySet<BestPracticeVerdict>;
+/** R-20/M-2 注入文本长度上限:经验引用截断,防止巨型 retro_note 淹没 persona。 */
+export declare const MAX_INJECTED_PRACTICE_LENGTH = 200;
+/**
  * 从全局经验库选出某角色的可注入记忆条目(团队记忆注入的数据源)。
  *
  * 规则:
  * - 无角色(或空角色)不注入;按 `entry.role === role` 精确匹配;
- * - 已否决的经验(verdict === 'useless',仅陈旧文件可能残留)一律不注入;
+ * - **只注入已验证经验**(verdict ∈ {useful, revised});pending/useless 一律不注入
+ *   (R-20/M-2 门控收紧:跨团队持久化提示注入向量需队长校准放行);
  * - 冷启动守卫:角色匹配样本 < {@link MIN_MEMBER_MEMORY_SAMPLES} 时返回空(不注入);
- * - 校准过的经验(useful/revised)优先于未校准(pending),同级按更新时间倒序;
- * - 截取前 {@link MAX_MEMBER_MEMORY_ENTRIES} 条,保持 persona 精简。
+ * - 已校准经验按更新时间倒序,截取前 {@link MAX_MEMBER_MEMORY_ENTRIES} 条。
  *
  * @param entries - 全局经验库全量条目(读盘原样传入)。
  * @param role - 目标成员的角色(如 `engineer`、`researcher`)。
- * @returns 可注入的经验条目(空数组 = 冷启动守卫触发或无角色)。
+ * @returns 可注入的经验条目(空数组 = 冷启动守卫触发或无角色或无可注入经验)。
  */
 export declare function selectBestPracticesForRole(entries: readonly BestPracticeEntry[], role: string | undefined): BestPracticeEntry[];
+/** R-20/M-2:注入前截断经验文本,把经验限定为数据引用而非完整指令。 */
+export declare function truncatePracticeForInjection(practice: string): string;
 //# sourceMappingURL=best-practices.d.ts.map

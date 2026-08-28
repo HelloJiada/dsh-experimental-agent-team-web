@@ -41,6 +41,8 @@ export declare function withTeamLock<T>(key: string, fn: () => Promise<T>): Prom
  * @returns a non-empty key safe as a single path segment.
  */
 export declare function sanitizeKey(name: string): string;
+/** Whether a normalized (folded) name is a Windows reserved device name (with any extension). */
+export declare function isWindowsReservedName(normalized: string): boolean;
 /**
  * Whether `dependencies` are all satisfied (every named task exists and
  * completed) for the given task list.

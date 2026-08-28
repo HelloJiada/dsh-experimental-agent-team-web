@@ -134,6 +134,11 @@ export declare function interruptMember(ctx: Context, captain: Agent, childId: s
  * `openSubagent()`, so filtering those rows would make an archived member's
  * persisted conversation inaccessible. Exact ids keep unrelated subagents
  * untouched while the followup boundary still prevents further model turns.
+ *
+ * R-21/L-4: the check is now backed by a 1s TTL cache, so the global guard
+ * costs one Set lookup per followup instead of a disk read per call; the
+ * patch scope stays global (any path that tries to resume a retired id is
+ * refused) but the per-call cost is bounded.
  */
 export declare function installRetiredMemberGuard(ctx: Context, stateDir: string): void;
 /**
