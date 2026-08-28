@@ -8,12 +8,14 @@ import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   CLOSE_BODY_CAP_BYTES,
+  closeRequestAuthorized,
   handleCloseTeam,
   isTeamCloseable,
   prepareTeamForArchive,
   readJsonBody,
 } from './close-route.ts'
 import { readTeam } from './state.ts'
+import { TOKEN_HEADER } from './web-auth-constants.ts'
 import type { ToolsConfig } from './tools.ts'
 import type { TeamMember, TeamState, TeamTask } from './types.ts'
 
@@ -23,6 +25,11 @@ const config: ToolsConfig = {
   maxMembers: 8,
   stallThresholdMs: 120_000,
 }
+
+/** The test boot token; all valid requests echo it in the token header. */
+const TOKEN = 'test-boot-token-0123456789abcdef'
+/** Loopback Host header accepted by the fence. */
+const LOOPBACK_HOST = { host: '127.0.0.1:3080' }
 
 function team(overrides: Partial<TeamState> = {}): TeamState {
   return {
@@ -61,13 +68,22 @@ async function writeTeamToDisk(stateRoot: string, teamState: TeamState): Promise
 }
 
 /** A minimal IncomingMessage whose body streams the given raw text. */
-function request(method: string, rawBody?: string): IncomingMessage {
+function request(method: string, rawBody?: string, headers: Record<string, string> = {}): IncomingMessage {
   const stream = new PassThrough()
   const req = stream as unknown as IncomingMessage
   req.method = method
+  req.headers = headers
   stream.end(rawBody ?? '')
   return req
 }
+
+/** A POST request carrying the boot token and a loopback Host. */
+function authorizedPost(rawBody: string, headers: Record<string, string> = {}): IncomingMessage {
+  return request('POST', rawBody, { ...LOOPBACK_HOST, [TOKEN_HEADER]: TOKEN, ...headers })
+}
+
+/** The close auth bundle shared by every authorized call. */
+const closeAuth = { token: TOKEN }
 
 interface ResState {
   status: number
@@ -145,16 +161,61 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
     await rm(workspace, { recursive: true, force: true })
   })
 
+  it('403 without any auth bundle (write surface never runs unauthenticated)', async () => {
+    const { res, state } = response()
+    await handleCloseTeam(context(), config, registry([]), request('POST', '{}'), res)
+    expect(state.status).toBe(403)
+    expect(JSON.parse(state.body).reason).toBe('unauthorized')
+  })
+
+  it('403 with an auth bundle but a missing token header', async () => {
+    const { res, state } = response()
+    await handleCloseTeam(
+      context(), config, registry([]),
+      request('POST', '{}', LOOPBACK_HOST),
+      res,
+      closeAuth,
+    )
+    expect(state.status).toBe(403)
+  })
+
+  it('403 with a wrong token header', async () => {
+    const { res, state } = response()
+    await handleCloseTeam(
+      context(), config, registry([]),
+      request('POST', '{}', { ...LOOPBACK_HOST, [TOKEN_HEADER]: 'wrong-token' }),
+      res,
+      closeAuth,
+    )
+    expect(state.status).toBe(403)
+  })
+
+  it('403 with a valid token but a non-loopback, untrusted Host (DNS-rebinding fence)', async () => {
+    const { res, state } = response()
+    await handleCloseTeam(
+      context(), config, registry([]),
+      request('POST', '{}', { host: 'evil.example', [TOKEN_HEADER]: TOKEN }),
+      res,
+      closeAuth,
+    )
+    expect(state.status).toBe(403)
+  })
+
   it('405 on non-POST methods, advertising the allowed method', async () => {
     const { res, state } = response()
-    await handleCloseTeam(context(), config, registry([]), request('GET'), res)
+    await handleCloseTeam(
+      context(), config, registry([]),
+      request('GET', '', { ...LOOPBACK_HOST, [TOKEN_HEADER]: TOKEN }),
+      res,
+      closeAuth,
+    )
     expect(state.status).toBe(405)
     expect(state.headers.allow).toBe('POST')
   })
 
   it('400 on an invalid JSON body', async () => {
     const { res, state } = response()
-    await handleCloseTeam(context(), config, registry([]), request('POST', '{not json'), res)
+    await handleCloseTeam(context(), config, registry([]), authorizedPost('{not json'), res, closeAuth)
     expect(state.status).toBe(400)
     expect(JSON.parse(state.body).reason).toBe('invalid json body')
   })
@@ -163,8 +224,9 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
     const { res, state } = response()
     await handleCloseTeam(
       context(), config, registry([]),
-      request('POST', JSON.stringify({ teamId: 'team-close' })),
+      authorizedPost(JSON.stringify({ teamId: 'team-close' })),
       res,
+      closeAuth,
     )
     expect(state.status).toBe(400)
     expect(JSON.parse(state.body).reason).toBe('teamId and captainSessionId required')
@@ -174,8 +236,9 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
     const { res, state } = response()
     await handleCloseTeam(
       context(), config, registry([{ path: workspace, title: 'w' }]),
-      request('POST', JSON.stringify({ teamId: 'ghost', captainSessionId: 'session-captain' })),
+      authorizedPost(JSON.stringify({ teamId: 'ghost', captainSessionId: 'session-captain' })),
       res,
+      closeAuth,
     )
     expect(state.status).toBe(404)
   })
@@ -185,8 +248,9 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
     const { res, state } = response()
     await handleCloseTeam(
       context(), config, registry([{ path: workspace, title: 'w' }]),
-      request('POST', JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain' })),
+      authorizedPost(JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain' })),
       res,
+      closeAuth,
     )
     expect(state.status).toBe(404)
   })
@@ -196,8 +260,9 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
     const { res, state } = response()
     await handleCloseTeam(
       context(), config, registry([{ path: workspace, title: 'w' }]),
-      request('POST', JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-other' })),
+      authorizedPost(JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-other' })),
       res,
+      closeAuth,
     )
     expect(state.status).toBe(403)
   })
@@ -209,8 +274,9 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
     const { res, state } = response()
     await handleCloseTeam(
       context(), config, registry([{ path: workspace, title: 'w' }]),
-      request('POST', JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain' })),
+      authorizedPost(JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain' })),
       res,
+      closeAuth,
     )
     expect(state.status).toBe(409)
   })
@@ -226,8 +292,9 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
       await handleCloseTeam(
         context(), config,
         registry([{ path: workspace, title: 'w1' }, { path: workspace2, title: 'w2' }]),
-        request('POST', JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain' })),
+        authorizedPost(JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain' })),
         res,
+        closeAuth,
       )
       expect(state.status).toBe(400)
     } finally {
@@ -242,8 +309,9 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
     const { res, state } = response()
     await handleCloseTeam(
       context(), config, registry([{ path: workspace, title: 'w' }]),
-      request('POST', JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain' })),
+      authorizedPost(JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain' })),
       res,
+      closeAuth,
     )
 
     expect(state.status).toBe(200)
@@ -262,6 +330,33 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
     const retired = JSON.parse(await readFile(join(stateRoot, 'retired-members.json'), 'utf8')) as string[]
     expect(retired).toContain('session-member-1')
     expect(retired).toContain('session-member-2')
+  })
+})
+
+describe('closeRequestAuthorized — token + Host fence', () => {
+  it('accepts a loopback Host with the correct token', () => {
+    expect(closeRequestAuthorized(request('POST', '{}', { ...LOOPBACK_HOST, [TOKEN_HEADER]: TOKEN }), closeAuth)).toBe(true)
+  })
+
+  it('accepts localhost Host with the correct token', () => {
+    expect(closeRequestAuthorized(request('POST', '{}', { host: 'localhost:3080', [TOKEN_HEADER]: TOKEN }), closeAuth)).toBe(true)
+  })
+
+  it('rejects a missing Host header', () => {
+    expect(closeRequestAuthorized(request('POST', '{}', { [TOKEN_HEADER]: TOKEN }), closeAuth)).toBe(false)
+  })
+
+  it('rejects a non-loopback Host unless trustedHosts names it', () => {
+    const req = request('POST', '{}', { host: 'harness.local:3080', [TOKEN_HEADER]: TOKEN })
+    expect(closeRequestAuthorized(req, closeAuth)).toBe(false)
+    expect(closeRequestAuthorized(req, { token: TOKEN, trustedHosts: ['harness.local'] })).toBe(true)
+    expect(closeRequestAuthorized(req, { token: TOKEN, trustedHosts: ['harness.local:3080'] })).toBe(true)
+    expect(closeRequestAuthorized(req, { token: TOKEN, trustedHosts: ['harness.local:9090'] })).toBe(false)
+  })
+
+  it('rejects a wrong or missing token even on loopback', () => {
+    expect(closeRequestAuthorized(request('POST', '{}', LOOPBACK_HOST), closeAuth)).toBe(false)
+    expect(closeRequestAuthorized(request('POST', '{}', { ...LOOPBACK_HOST, [TOKEN_HEADER]: 'nope' }), closeAuth)).toBe(false)
   })
 })
 

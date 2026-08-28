@@ -173,6 +173,14 @@ export declare const ACTIVITY_POLL_MS = 1000;
 export declare const ACTIVITY_PROBE_MS = 5000;
 /** Host route serving live and archived team snapshots. */
 export declare const ACTIVITY_STATE_URL = "/plugins/agent-team-web/state";
+/** The boot token injected into the served HTML, or undefined outside the GUI. */
+export declare function agentTeamsWebToken(): string | undefined;
+/** Fetch init for AgentTeams web routes, carrying the boot token when present. */
+export declare function agentTeamsFetchInit(signal: AbortSignal): {
+    cache: 'no-store';
+    signal: AbortSignal;
+    headers?: Record<string, string>;
+};
 interface ActivityFetchResponse {
     readonly ok: boolean;
     json(): Promise<unknown>;
@@ -185,10 +193,7 @@ export interface ActivityPollingRuntime {
      * AgentTeams card capable of registering an explicit monitor target.
      */
     readonly discoverySessionId?: string;
-    readonly fetchState?: (url: string, init: {
-        readonly cache: 'no-store';
-        readonly signal: AbortSignal;
-    }) => Promise<ActivityFetchResponse>;
+    readonly fetchState?: (url: string, init: ReturnType<typeof agentTeamsFetchInit>) => Promise<ActivityFetchResponse>;
     readonly schedule?: (callback: () => void, intervalMs: number) => unknown;
     readonly cancel?: (timer: unknown) => void;
     readonly publishSnapshots?: (update: Partial<ActivitySnapshots>) => void;

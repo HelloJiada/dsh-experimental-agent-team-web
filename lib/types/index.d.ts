@@ -53,6 +53,14 @@ export interface Config {
      * Disable to keep the natural-language trigger as the only entry point.
      */
     slashCommand?: boolean;
+    /**
+     * Non-loopback authorities the AgentTeams web routes accept, mirroring the
+     * harness `/api` browser-trust fence contract: bare `host` or `host:port`
+     * entries. The default empty list accepts only loopback Hosts, so an
+     * all-interfaces bind cannot be read or closed by an unconfigured LAN
+     * caller even though the served HTML exposes the boot token.
+     */
+    trustedHosts?: string[];
 }
 export declare const Config: z<Config>;
 export declare function apply(ctx: Context, config: Config): void;

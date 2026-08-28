@@ -34,9 +34,29 @@ import {
 } from './state.ts'
 import type { ToolsConfig } from './tools.ts'
 import type { TeamMember, TeamState } from './types.ts'
+import { sendUnauthorized, webRequestAuthorized } from './web-auth.ts'
 
 /** Hard cap for the close request body (16 KiB) — the payload is two ids. */
 export const CLOSE_BODY_CAP_BYTES = 16 * 1024
+
+/**
+ * Route auth for the close endpoint: the boot capability token plus the Host
+ * fence. R-17/H-1: the captainSessionId body check is no longer the write
+ * credential — a caller must also present the per-boot token that was injected
+ * into the served HTML, so a leaked /state response cannot derive close
+ * authority. Defense in depth over the index.ts route-level check.
+ */
+export interface CloseRouteAuth {
+  /** Per-boot capability token (see web-auth.ts `createWebToken`). */
+  readonly token: string
+  /** Non-loopback authorities allowed to close (default loopback-only). */
+  readonly trustedHosts?: readonly string[]
+}
+
+/** Whether a close request passes the token + Host fence. */
+export function closeRequestAuthorized(req: IncomingMessage, auth: CloseRouteAuth): boolean {
+  return webRequestAuthorized(req, auth.token, auth.trustedHosts ?? [])
+}
 
 /**
  * The process-local team lock key, shaped exactly like the tools'
@@ -167,6 +187,8 @@ function sendJson(
  * @param workspaceRegistry - registered workspaces; roots mirror the state route.
  * @param req - the incoming HTTP request.
  * @param res - the HTTP response.
+ * @param auth - the route capability token + trusted hosts; the request must
+ *   pass the Host fence and present the boot token before any body is read.
  */
 export async function handleCloseTeam(
   ctx: Context,
@@ -174,7 +196,15 @@ export async function handleCloseTeam(
   workspaceRegistry: WorkspaceRegistry,
   req: IncomingMessage,
   res: ServerResponse,
+  auth?: CloseRouteAuth,
 ): Promise<void> {
+  // R-17/H-1: token + Host fence first. When the route passes no auth (tests,
+  // legacy callers), the endpoint is refused outright — the write surface must
+  // never run unauthenticated.
+  if (auth === undefined || !closeRequestAuthorized(req, auth)) {
+    sendUnauthorized(res)
+    return
+  }
   if (req.method !== 'POST') {
     sendJson(res, 405, { ok: false, reason: 'method not allowed' }, { allow: 'POST' })
     return

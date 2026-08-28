@@ -22,6 +22,7 @@ import { join } from 'node:path'
 import { isCommissarRole } from './commissar-gate.ts'
 import { canonicalExecRole } from './role-limits.ts'
 import { readRetiredMemberIds, readTeamSync } from './state.ts'
+import { registerMemberAgent } from './member-state-guard.ts'
 import type { BestPracticeEntry } from './best-practices.ts'
 import type { TeamMember, TeamState } from './types.ts'
 
@@ -207,6 +208,10 @@ export function installMemberSelectionRuntime(ctx: Context, stateDir: string): M
 
     const parentSessionId = child.session.header.parentSession
     if (parentSessionId === undefined) return () => undefined
+    // R-18/H-2: every continuable member child (fresh or cold-resumed) is
+    // registered with the state-dir guard so its file tools are denied the
+    // team state directory.
+    registerMemberAgent(child.id)
     const key = pendingSelectionKey(parentSessionId, descriptor.label)
     let selection = pending.get(key)
     if (selection === undefined) {
@@ -368,7 +373,7 @@ ${roleBehavior}`}
 Team context:
 - Team id: ${team.id}
 - Your name inside the team (use it as \`from\`/identity): ${member.name}
-- The team state lives under ${stateDir}/${team.id}/ (team.json and inbox/*.jsonl). You may inspect these files read-only for diagnostics, but never edit them directly; use the agent_teams_* tools so JSON escaping and concurrent updates stay safe.
+- The team state lives under ${stateDir}/${team.id}/ (team.json and inbox/*.jsonl). Your file tools are denied access to the state directory — read team state exclusively through agent_teams_status, and never edit those files directly; use the agent_teams_* tools so JSON escaping and concurrent updates stay safe.
 - The captain and your teammates reach you through messages. Each message you receive is a new turn: act on it and end your turn with a concise reply.
 
 Working rules:
@@ -464,6 +469,9 @@ export async function spawnMember(
     })
   ))
   member.id = start.childId
+  // R-18/H-2: fresh spawns register with the state-dir guard (cold-resumed
+  // members are registered by installMemberSelectionRuntime's setup).
+  registerMemberAgent(member.id)
 }
 
 /**

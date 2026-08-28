@@ -55,7 +55,9 @@ import {
   type ActivityMember,
   type ActivityTask,
   type ActivityTeam,
+  agentTeamsWebToken,
 } from './activity-monitor.ts'
+import { TOKEN_HEADER } from '../web-auth-constants.ts'
 import { ACTION_ART, LEAD_ART, memberArtUrl } from './artwork.ts'
 import { isRoleName, nameTitle, roleTitle } from './roles.ts'
 import { taskReviewPending, taskReviewState } from './task-review.ts'
@@ -1021,9 +1023,15 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     setClosing(true)
     setCloseError(null)
     try {
+      // R-17/H-1: the /close route is token-gated; the panel echoes the boot
+      // token injected into the served HTML.
+      const token = agentTeamsWebToken()
       const response = await fetch('/plugins/agent-team-web/close', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...token === undefined ? {} : { [TOKEN_HEADER]: token },
+        },
         body: JSON.stringify({
           teamId: liveTeam.teamId,
           captainSessionId: liveTeam.captainSessionId,

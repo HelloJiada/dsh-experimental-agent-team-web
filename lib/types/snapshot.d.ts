@@ -154,4 +154,19 @@ export declare function collectArchivedTeamsActivity(ctx: Context, roots: readon
     workspace: string;
     stateRoot: string;
 }[]): Promise<TeamActivitySnapshot[]>;
+/**
+ * R-17/H-1: project one full snapshot for the HTTP `/state` route.
+ *
+ * The browser panel renders only display data; every field it never touches
+ * is stripped unconditionally — inbox full text (only `messageCount` stays),
+ * the cross-team best-practices library, the calibration table, message-risk
+ * content, and the command plan. Session identifiers (`captainSessionId`,
+ * member subagent ids) are kept **only** for the authenticated same-origin
+ * panel (they drive member navigation and session discovery); anonymous
+ * callers receive blanked ids so nothing sensitive leaves the host.
+ * @param snapshot - the fully assembled snapshot.
+ * @param authorized - whether the caller presented the valid boot token.
+ * @returns the HTTP-safe projection.
+ */
+export declare function redactSnapshotForHttp(snapshot: TeamActivitySnapshot, authorized: boolean): TeamActivitySnapshot;
 //# sourceMappingURL=snapshot.d.ts.map

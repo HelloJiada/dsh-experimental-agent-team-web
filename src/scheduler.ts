@@ -177,7 +177,7 @@ Owner attempt id: ${ticket.attemptId}
 
 Push the task forward as the helper: investigate and do the work. When done, report with agent_teams_send_message to the owner (${ticket.ownerName}) and to captain. Do NOT call agent_teams_claim_task or agent_teams_update_task on this task — the owner keeps the capability and will mark it completed (the commissar gate still applies if the task requires review). If the owner has resumed and asked you to stand down, stop and report that.
 
-State policy: ${stateDir}/${teamId}/ is read-only diagnostics; mutate team state only through agent_teams_* tools.`
+State policy: ${stateDir}/${teamId}/ is off-limits to your file tools (enforced); read and mutate team state only through agent_teams_* tools.`
 }
 
 function assignmentPrompt(ticket: DispatchTicket, stateDir: string, teamId: string): string {
@@ -190,7 +190,7 @@ Attempt id: ${ticket.attemptId}
 
 Call agent_teams_claim_task for ${ticket.taskId}; it will return this same attempt_id. Include attempt_id=${ticket.attemptId} in every agent_teams_update_task call. If it is rejected as stale, stop work because the task was reassigned. Work only this task in this turn, report the result to the captain, then become idle so the scheduler can select your next ready task.
 
-State policy: ${stateDir}/${teamId}/ is read-only diagnostics; mutate team state only through agent_teams_* tools.`
+State policy: ${stateDir}/${teamId}/ is off-limits to your file tools (enforced); read and mutate team state only through agent_teams_* tools.`
 }
 
 function fallbackMailboxPrompt(messages: Awaited<ReturnType<typeof readUnreadMailbox>>): string {

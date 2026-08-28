@@ -23,6 +23,21 @@ import type { TeamMember, TeamState } from './types.ts';
 /** Hard cap for the close request body (16 KiB) — the payload is two ids. */
 export declare const CLOSE_BODY_CAP_BYTES: number;
 /**
+ * Route auth for the close endpoint: the boot capability token plus the Host
+ * fence. R-17/H-1: the captainSessionId body check is no longer the write
+ * credential — a caller must also present the per-boot token that was injected
+ * into the served HTML, so a leaked /state response cannot derive close
+ * authority. Defense in depth over the index.ts route-level check.
+ */
+export interface CloseRouteAuth {
+    /** Per-boot capability token (see web-auth.ts `createWebToken`). */
+    readonly token: string;
+    /** Non-loopback authorities allowed to close (default loopback-only). */
+    readonly trustedHosts?: readonly string[];
+}
+/** Whether a close request passes the token + Host fence. */
+export declare function closeRequestAuthorized(req: IncomingMessage, auth: CloseRouteAuth): boolean;
+/**
  * Collect and JSON-parse a request body under a hard size cap. A stream error,
  * oversize body or invalid JSON all reject; the caller maps them to 400/413.
  * @param req - the incoming request (consumed as an async iterable).
@@ -61,6 +76,8 @@ export declare function prepareTeamForArchive(stateRoot: string, teamId: string)
  * @param workspaceRegistry - registered workspaces; roots mirror the state route.
  * @param req - the incoming HTTP request.
  * @param res - the HTTP response.
+ * @param auth - the route capability token + trusted hosts; the request must
+ *   pass the Host fence and present the boot token before any body is read.
  */
-export declare function handleCloseTeam(ctx: Context, config: ToolsConfig, workspaceRegistry: WorkspaceRegistry, req: IncomingMessage, res: ServerResponse): Promise<void>;
+export declare function handleCloseTeam(ctx: Context, config: ToolsConfig, workspaceRegistry: WorkspaceRegistry, req: IncomingMessage, res: ServerResponse, auth?: CloseRouteAuth): Promise<void>;
 //# sourceMappingURL=close-route.d.ts.map

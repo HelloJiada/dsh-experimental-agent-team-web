@@ -66,6 +66,7 @@ import {
   type MemberRuntimeConfig,
 } from './members.ts'
 import { TERMINAL_TASK_STATUSES, TASK_RETRO_CAUSES, ESTIMATE_LEVEL_RANGES, type TeamMember, type TeamState, type TeamTask, type TaskRetroCause } from './types.ts'
+import { installMemberStateGuard } from './member-state-guard.ts'
 import { installTeamScheduler } from './scheduler.ts'
 import {
   buildTaskRetro,
@@ -313,6 +314,8 @@ export function steerCaptainReport(captain: Pick<Agent, 'steer'>, from: string, 
 export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void {
   installRetiredMemberGuard(ctx, config.stateDir)
   const memberSelections = installMemberSelectionRuntime(ctx, config.stateDir)
+  // R-18/H-2: dispatch-time state-dir guard for member file tools.
+  installMemberStateGuard(ctx, config.stateDir)
   const scheduler = installTeamScheduler(ctx, { stateDir: config.stateDir, stallThresholdMs: config.stallThresholdMs })
 
   ctx.tools.register(defineTool({

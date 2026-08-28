@@ -31,7 +31,9 @@ import { handleCloseTeam } from './close-route.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { collectArchivedTeamsActivity, collectTeamsActivity } from './snapshot.ts'
+import { collectArchivedTeamsActivity, collectTeamsActivity, redactSnapshotForHttp } from './snapshot.ts'
+import { TOKEN_GLOBAL } from './web-auth-constants.ts'
+import { assertTrustedAuthority, createWebToken, webRequestAuthorized } from './web-auth.ts'
 
 /**
  * Structural slice of the web server service, compatible with both the
@@ -89,6 +91,14 @@ export interface Config {
    * Disable to keep the natural-language trigger as the only entry point.
    */
   slashCommand?: boolean
+  /**
+   * Non-loopback authorities the AgentTeams web routes accept, mirroring the
+   * harness `/api` browser-trust fence contract: bare `host` or `host:port`
+   * entries. The default empty list accepts only loopback Hosts, so an
+   * all-interfaces bind cannot be read or closed by an unconfigured LAN
+   * caller even though the served HTML exposes the boot token.
+   */
+  trustedHosts?: string[]
 }
 
 export const Config: z<Config> = z.object({
@@ -101,6 +111,7 @@ export const Config: z<Config> = z.object({
   stallThresholdMs: z.natural().default(120_000),
   promptSectionOrder: z.natural().default(117),
   slashCommand: z.boolean().default(true),
+  trustedHosts: z.array(z.string()).default([]),
 })
 
 /** The model-facing usage policy: when and how to drive AgentTeams. */
@@ -118,6 +129,14 @@ Tools: ${toolNames}`
 }
 
 export function apply(ctx: Context, config: Config): void {
+  const trustedHosts = config.trustedHosts ?? []
+  // R-17/H-1: per-boot capability token for the AgentTeams web routes. The
+  // token rides into the served HTML (index-inject global row) so the browser
+  // panel can echo it; it is the write credential for /close, so a leaked
+  // /state response can never derive close authority. Malformed trustedHosts
+  // entries fail the load loudly instead of silently authorizing a prefix.
+  for (const entry of trustedHosts) assertTrustedAuthority(entry)
+  const webToken = createWebToken()
   const resolved: ToolsConfig = {
     stateDir: config.stateDir ?? '.agent-team-web',
     memberProvider: config.memberProvider ?? 'spawn',
@@ -187,6 +206,17 @@ export function apply(ctx: Context, config: Config): void {
     if (webServer === undefined || workspaceRegistry === undefined) return
     webRegistered = true
 
+    // R-17/H-1: publish the per-boot capability token into the served HTML so
+    // the browser panel can echo it in `x-dsh-agent-teams-token`. Only this
+    // same-origin consumer receives the full snapshot; anonymous callers get
+    // the redacted projection (no session ids, no inbox text).
+    const inject = (ctx as unknown as {
+      on(name: 'webserver/index-inject', listener: (table: { kind: 'global'; name: string; value: unknown }[]) => void): unknown
+    }).on
+    inject('webserver/index-inject', (table) => {
+      table.push({ kind: 'global', name: TOKEN_GLOBAL, value: webToken })
+    })
+
     // Activity panel data route: the browser floater polls this for team
     // snapshots (disk truth + live subagent activity). Mirrors the Claude
     // Code desktop watcher's server-side snapshot pattern.
@@ -194,6 +224,11 @@ export function apply(ctx: Context, config: Config): void {
     kind: 'exact',
     path: '/plugins/agent-team-web/state',
     handler: async (req, res) => {
+      // R-17/H-1: host fence + token gate. An authenticated same-origin panel
+      // receives the full snapshot; everyone else receives only the redacted
+      // display projection (no captainSessionId, member subagent ids, or
+      // inbox text), and a non-loopback/trusted Host is refused outright.
+      const authorized = webRequestAuthorized(req, webToken, trustedHosts)
       const url = new URL(req.url ?? '/', 'http://x')
       const roots = workspaceRegistry.list().map((workspace) => ({
         workspace: workspace.title,
@@ -203,7 +238,7 @@ export function apply(ctx: Context, config: Config): void {
       const snapshots = url.searchParams.get('archived') === '1'
         ? await collectArchivedTeamsActivity(ctx, roots)
         : await collectTeamsActivity(ctx, roots)
-      const body = JSON.stringify({ teams: snapshots })
+      const body = JSON.stringify({ teams: snapshots.map(snapshot => redactSnapshotForHttp(snapshot, authorized)) })
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store',
@@ -216,11 +251,16 @@ export function apply(ctx: Context, config: Config): void {
   // handler is the host-side authority — it re-checks ownership and that all
   // tasks are completed before archiving (defense in depth over the client's
   // disabled state). Method-agnostic webServer routing means POST is enforced
-  // inside the handler.
+  // inside the handler. R-17/H-1: the boot token is now the write credential,
+  // so a leaked /state response cannot derive close authority (the route-level
+  // check below and the in-handler check are two layers of the same gate).
   ctx.effect(() => webServer.register({
     kind: 'exact',
     path: '/plugins/agent-team-web/close',
-    handler: (req, res) => handleCloseTeam(ctx, resolved, workspaceRegistry, req, res),
+    handler: (req, res) => handleCloseTeam(ctx, resolved, workspaceRegistry, req, res, {
+      token: webToken,
+      trustedHosts,
+    }),
   }), 'agent-teams: close route')
 
   // Whale mascot artwork: serve the packaged V2 role/action images to the

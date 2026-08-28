@@ -19,6 +19,22 @@
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client';
+import { type ActivityMember, type ActivityTask, type ActivityTeam } from './activity-monitor.ts';
+import type { AgentTeamsTranslate } from './locales.ts';
+export declare function taskStatusLabel(status: string, t: AgentTeamsTranslate): string;
+export declare function formatTaskIds(ids: readonly string[], t: AgentTeamsTranslate): string;
+/** Badge/bar coloring key: visual state, widened for terminal statuses. */
+export declare function taskTone(state: ActivityTask['state'], status: string): string;
+/** 任务耗时超时档位(ok 不输出警示;warn/over 分别黄/红)。 */
+export declare function timingData(task: ActivityTask): 'ok' | 'warn' | 'over';
+export declare function compactTaskLabel(subject: string): string;
+export declare function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate): string;
+/** 健康档位:0-49 需要立即干预,50-79 存在风险,80+ 运行平稳。 */
+export declare function healthLevel(score: number): 'critical' | 'warn' | 'ok';
+/** 高风险消息计数(融合分析层)。 */
+export declare function healthRiskCount(team: ActivityTeam): number;
+/** 成员负载条:active / pending / stalled / orphaned 四段。 */
+export declare function loadBarFor(team: ActivityTeam, member: ActivityMember): JSX.Element | null;
 /** The top-right activity floater. Teams follow the current session: live
  * snapshots and historic card summaries are only shown while their captain
  * session is the one currently open. */

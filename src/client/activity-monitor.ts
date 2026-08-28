@@ -1,6 +1,7 @@
 /** Shared, demand-driven state for the AgentTeams browser monitor. */
 
 import type { TeamIntelligence } from '../intelligence.ts'
+import { STATE_PATH, TOKEN_GLOBAL, TOKEN_HEADER } from '../web-auth-constants.ts'
 
 /** One member row of a host snapshot. */
 export interface ActivityMember {
@@ -264,7 +265,23 @@ export const ACTIVITY_POLL_MS = 1000
  */
 export const ACTIVITY_PROBE_MS = 5000
 /** Host route serving live and archived team snapshots. */
-export const ACTIVITY_STATE_URL = '/plugins/agent-team-web/state'
+export const ACTIVITY_STATE_URL = STATE_PATH
+
+/** The boot token injected into the served HTML, or undefined outside the GUI. */
+export function agentTeamsWebToken(): string | undefined {
+  const token = (globalThis as Record<string, unknown>)[TOKEN_GLOBAL]
+  return typeof token === 'string' && token !== '' ? token : undefined
+}
+
+/** Fetch init for AgentTeams web routes, carrying the boot token when present. */
+export function agentTeamsFetchInit(signal: AbortSignal): { cache: 'no-store'; signal: AbortSignal; headers?: Record<string, string> } {
+  const token = agentTeamsWebToken()
+  return {
+    cache: 'no-store',
+    signal,
+    ...token === undefined ? {} : { headers: { [TOKEN_HEADER]: token } },
+  }
+}
 
 interface ActivityFetchResponse {
   readonly ok: boolean
@@ -281,7 +298,7 @@ export interface ActivityPollingRuntime {
   readonly discoverySessionId?: string
   readonly fetchState?: (
     url: string,
-    init: { readonly cache: 'no-store'; readonly signal: AbortSignal },
+    init: ReturnType<typeof agentTeamsFetchInit>,
   ) => Promise<ActivityFetchResponse>
   readonly schedule?: (callback: () => void, intervalMs: number) => unknown
   readonly cancel?: (timer: unknown) => void
@@ -345,10 +362,7 @@ export function startActivityPolling(
     inFlight = true
     controller = new AbortController()
     try {
-      const liveResponse = await fetchState(ACTIVITY_STATE_URL, {
-        cache: 'no-store',
-        signal: controller.signal,
-      })
+      const liveResponse = await fetchState(ACTIVITY_STATE_URL, agentTeamsFetchInit(controller.signal))
       if (!liveResponse.ok) return
       const body = (await liveResponse.json()) as { teams?: unknown }
       if (cancelled || !Array.isArray(body.teams)) return
@@ -381,10 +395,7 @@ export function startActivityPolling(
       // host archive no longer exists; a discovery session that already
       // upgraded keeps polling, and a still-probing one keeps probing, so a
       // team created later in the same session stays discoverable.
-      const archivedResponse = await fetchState(`${ACTIVITY_STATE_URL}?archived=1`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      })
+      const archivedResponse = await fetchState(`${ACTIVITY_STATE_URL}?archived=1`, agentTeamsFetchInit(controller.signal))
       if (!archivedResponse.ok) return
       const archivedBody = (await archivedResponse.json()) as { teams?: unknown }
       if (cancelled || !Array.isArray(archivedBody.teams)) return

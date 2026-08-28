@@ -400,3 +400,45 @@ export async function collectArchivedTeamsActivity(
   }
   return snapshots
 }
+
+/**
+ * R-17/H-1: project one full snapshot for the HTTP `/state` route.
+ *
+ * The browser panel renders only display data; every field it never touches
+ * is stripped unconditionally — inbox full text (only `messageCount` stays),
+ * the cross-team best-practices library, the calibration table, message-risk
+ * content, and the command plan. Session identifiers (`captainSessionId`,
+ * member subagent ids) are kept **only** for the authenticated same-origin
+ * panel (they drive member navigation and session discovery); anonymous
+ * callers receive blanked ids so nothing sensitive leaves the host.
+ * @param snapshot - the fully assembled snapshot.
+ * @param authorized - whether the caller presented the valid boot token.
+ * @returns the HTTP-safe projection.
+ */
+export function redactSnapshotForHttp(
+  snapshot: TeamActivitySnapshot,
+  authorized: boolean,
+): TeamActivitySnapshot {
+  return {
+    ...snapshot,
+    captainSessionId: authorized ? snapshot.captainSessionId : '',
+    captainInbox: [],
+    bestPractices: undefined,
+    calibration: undefined,
+    members: snapshot.members.map(member => (
+      authorized ? member : { ...member, id: '' }
+    )),
+    intelligence: snapshot.intelligence === undefined ? undefined : {
+      ...snapshot.intelligence,
+      messageRisks: snapshot.intelligence.messageRisks.map(risk => ({ ...risk, content: '' })),
+      commandPlan: {
+        version: 1,
+        total: 0,
+        highPriorityCount: 0,
+        mediumPriorityCount: 0,
+        lowPriorityCount: 0,
+        commands: [],
+      },
+    },
+  }
+}
