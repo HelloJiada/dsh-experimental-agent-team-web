@@ -1061,40 +1061,39 @@
 }
 
 .reviewChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-warning) 16%, var(--dsw-alias-bg-module));
-  color: var(--dsw-alias-state-warning);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning) 32%, var(--dsw-alias-label-primary));
+  color: var(--dsw-alias-label-on-fill);
 }
 
 /* 改进 4 中间态「待复核」:完成被门禁拦截的强阻塞信号,在黄底基础上加
    实线描边,与仅"门禁适用"的 reviewChip(无描边)区分层级。 */
 .blockedChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-warning) 22%, var(--dsw-alias-bg-module));
-  color: var(--dsw-alias-state-warning);
-  outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning) 55%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning) 32%, var(--dsw-alias-label-primary));
+  color: var(--dsw-alias-label-on-fill);
+  outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning) 65%, transparent);
   outline-offset: -1px;
 }
 
 /* 改进 4 中间态「待输入」:中性等待提示,虚线描边与「待校准」区分。
-   背景与模块底混合(不透明),避免透出任务行状态色(如 completed 绿底)
-   导致灰字叠绿底看不清。 */
+   深色不透明底 + 白色文字 —— 任务行底色为彩色(completed 绿/running 蓝)
+   或浅灰(pending)时均清晰可读,白字不再叠在绿底上发灰。 */
 .inputChip {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 10%, var(--dsw-alias-bg-module));
-  color: var(--dsw-alias-label-primary);
-  outline: 1px dashed color-mix(in srgb, var(--dsw-alias-label-secondary) 45%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 55%, var(--dsw-alias-label-primary));
+  color: var(--dsw-alias-label-on-fill);
+  outline: 1px dashed color-mix(in srgb, var(--dsw-alias-label-secondary) 75%, transparent);
   outline-offset: -1px;
 }
 
 .helpingChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, var(--dsw-alias-bg-module));
-  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-label-primary));
+  color: var(--dsw-alias-label-on-fill);
 }
 
-/* 复盘质量闭环「待校准」:与政委门禁(黄)和协助(蓝)区分,用中性强调色,
-   表示"复盘闭环待补全"而非阻塞/风险。背景与模块底混合(不透明),字体
-   用主文字色保证在彩色任务行(如 completed 绿底)上仍清晰可读。 */
+/* 复盘质量闭环「待校准」:深色不透明底 + 白色文字,与「待输入」同一
+   可读性标准;虚线描边区分「待输入」、实线描边区分「待复核」。 */
 .calibrationChip {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 14%, var(--dsw-alias-bg-module));
-  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 55%, var(--dsw-alias-label-primary));
+  color: var(--dsw-alias-label-on-fill);
 }
 
 /* 自成长超时警示:任务行徽标(超预算=黄,超时=红)与 chip 描边。 */
