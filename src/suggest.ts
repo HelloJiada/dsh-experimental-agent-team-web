@@ -16,7 +16,7 @@
  */
 
 /** 预设可建议的 6 个执行角色(与预设行为角色一一对应)。 */
-export type SuggestedRole = 'researcher' | 'engineer' | 'qa' | 'designer' | 'data' | 'docs'
+export type SuggestedRole = 'researcher' | 'engineer' | 'qa' | 'designer' | 'data' | 'docs' | 'security'
 
 /** 建议置信度:命中关键词条数 1/2/≥3 → low/medium/high。 */
 export type SuggestionConfidence = 'low' | 'medium' | 'high'
@@ -29,6 +29,7 @@ export const SUGGESTED_ROLES: readonly SuggestedRole[] = [
   'designer',
   'data',
   'docs',
+  'security',
 ]
 
 /** 角色 key → 中文军职标题(展示用,与 client/roles 的军职表一致)。 */
@@ -39,6 +40,7 @@ export const ROLE_TITLES: Readonly<Record<SuggestedRole, string>> = {
   designer: '文宣干事',
   data: '情报分析员',
   docs: '文书',
+  security: '警卫员',
 }
 
 /** 单角色命中结果。 */
@@ -121,6 +123,12 @@ const ROLE_KEYWORDS: Readonly<Record<SuggestedRole, readonly string[]>> = {
     '文档', '编写', '撰写', '说明书', '手册', '指南', '发布说明', '更新日志',
     'changelog', '笔记', '记录', 'readme', 'API 文档', '注释',
     'document', 'write', 'manual', 'readme', 'guide',
+  ],
+  security: [
+    '安全', '权限', '鉴权', '认证', '注入', '泄露', '渗透', '越权', '边界',
+    '加固', '威胁', '加密', '密钥', '漏洞', '审查风险',
+    'security', 'auth', 'permission', 'injection', 'leak', 'vulnerab',
+    'trust', 'threat', 'hardening',
   ],
 }
 

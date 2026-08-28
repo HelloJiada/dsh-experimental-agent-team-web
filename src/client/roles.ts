@@ -1,11 +1,11 @@
 /**
  * Military-role display titles for member roles: canonical role keys stay
  * English in the data layer; the UI renders the localized title instead.
- * The preset catalog is the captain, the 6 behavioral executing roles
- * (researcher / engineer / qa / designer / data / docs), the task-level reviewer,
- * and the commissar. security / operator are not preset — they are
- * custom roles with no dedicated seat or behavior template — but their
- * display titles are kept in the tables so legacy members and custom role
+ * The preset catalog is the captain, the 7 behavioral executing roles
+ * (researcher / engineer / qa / designer / data / docs / security), the task-level reviewer,
+ * and the commissar. operator is not preset — it is a
+ * custom role with no dedicated seat or behavior template — but its
+ * display title is kept in the tables so legacy members and custom role
  * strings still resolve (降级 = 不出现在预设清单/协议/模板, 不是删除显示映射).
  * @module dsh-agent-team-web/client/roles
  */
@@ -14,8 +14,8 @@ import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts'
 import { zh } from './locales.ts'
 
 /** Canonical role key → military-title locale key (see `role.*` in locales.ts).
- * Preset: captain + the 6 behavioral executing roles + reviewer + commissar.
- * security / operator are compatibility entries for legacy members and
+ * Preset: captain + the 7 behavioral executing roles + reviewer + commissar.
+ * operator is a compatibility entry for legacy members and
  * custom role strings (not preset, no dedicated seat or behavior template). */
 export const ROLE_TITLE_KEY: Record<string, AgentTeamsLocaleKey> = {
   captain: 'role.captain',

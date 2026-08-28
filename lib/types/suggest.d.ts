@@ -15,7 +15,7 @@
  * @module dsh-agent-team-web/suggest
  */
 /** 预设可建议的 6 个执行角色(与预设行为角色一一对应)。 */
-export type SuggestedRole = 'researcher' | 'engineer' | 'qa' | 'designer' | 'data' | 'docs';
+export type SuggestedRole = 'researcher' | 'engineer' | 'qa' | 'designer' | 'data' | 'docs' | 'security';
 /** 建议置信度:命中关键词条数 1/2/≥3 → low/medium/high。 */
 export type SuggestionConfidence = 'low' | 'medium' | 'high';
 /** 固定角色顺序:平票时先者胜(engineer 优先于 qa,researcher 优先于 data)。 */

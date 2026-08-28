@@ -84,8 +84,16 @@ describe('memberPersona — 角色差异化行为模板注入', () => {
     expect(persona).not.toContain('you are a worker member')
   })
 
-  it('自定义/降级角色不注入模板（保持通用 worker 人设）', () => {
+  it('security 预设角色注入专属安全模板（第 7 执行角色）', () => {
     const persona = memberPersona(team([]), member('警卫员', 'security'), '.agent-team-web')
+    expect(persona).toContain('Your role is 警卫员 (security) — you guard the trust boundaries')
+    expect(persona).toContain('MAP THE PERIMETER FIRST')
+    expect(persona).toContain('PROBE THE EXPOSURE')
+    expect(persona).toContain('GRADE WITH EXPLOIT SCENARIO')
+  })
+
+  it('自定义/降级角色（operator）不注入模板（保持通用 worker 人设）', () => {
+    const persona = memberPersona(team([]), member('后勤保障员', 'operator'), '.agent-team-web')
     expect(persona).toContain('you are a worker member')
     expect(persona).not.toContain('Role behavior:')
   })

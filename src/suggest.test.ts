@@ -73,6 +73,13 @@ describe('suggestRole — 任务类型 → 角色推断(纯函数)', () => {
     expect(suggestion?.role).toBe('qa')
   })
 
+  it('安全类任务建议 security 角色(第 7 预设)', () => {
+    expect(suggestRole('安全审查')?.role).toBe('security')
+    expect(suggestRole('检查权限边界与注入面')?.role).toBe('security')
+    expect(suggestRole('Security hardening of the web routes')?.role).toBe('security')
+    expect(suggestRole('普通功能开发')?.role).toBe('engineer')
+  })
+
   it('确定性:同一输入两次结果一致', () => {
     const subject = '实现改进:调度器建议任务分配'
     const first = suggestRole(subject, '接入 create_task 并展示建议')

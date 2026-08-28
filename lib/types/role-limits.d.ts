@@ -3,9 +3,9 @@
  *
  * The captain owns exactly one seat (never created via add_member), the
  * commissar is auto-created and uniqueness-gated, and every executing role
- * (the 6 preset behavioral roles engineer / researcher / data / qa / designer / docs,
+ * (the 7 preset behavioral roles engineer / researcher / data / qa / designer / docs / security,
  * plus the task-level reviewer and any custom role string such as
- * security / operator) may have at most `maxExecPerRole` (default 1)
+ * operator) may have at most `maxExecPerRole` (default 1)
  * active members. Role strings are matched canonically — trim/lowercase, strip
  * `-v2`/`_v2`/` v2` suffixes and Chinese military titles — in the same style
  * as `isCommissarRole`.

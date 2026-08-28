@@ -3,9 +3,9 @@
  *
  * The captain owns exactly one seat (never created via add_member), the
  * commissar is auto-created and uniqueness-gated, and every executing role
- * (the 6 preset behavioral roles engineer / researcher / data / qa / designer / docs,
+ * (the 7 preset behavioral roles engineer / researcher / data / qa / designer / docs / security,
  * plus the task-level reviewer and any custom role string such as
- * security / operator) may have at most `maxExecPerRole` (default 1)
+ * operator) may have at most `maxExecPerRole` (default 1)
  * active members. Role strings are matched canonically — trim/lowercase, strip
  * `-v2`/`_v2`/` v2` suffixes and Chinese military titles — in the same style
  * as `isCommissarRole`.
@@ -20,8 +20,8 @@ export const DEFAULT_MAX_EXEC_PER_ROLE = 1
 
 /**
  * Chinese military titles → canonical executing-role key (mirrors client
- * roles.ts). The 5 preset behavioral roles plus reviewer are listed first;
- * security / docs / operator are kept so legacy members and custom role
+ * roles.ts). The 7 preset behavioral roles plus reviewer are listed first;
+ * operator is kept so legacy members and custom role
  * strings still canonicalize into the same per-role cap bucket.
  */
 const ZH_EXEC_ROLE_KEY: Record<string, string> = {

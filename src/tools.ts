@@ -107,7 +107,7 @@ export interface ToolsConfig {
   /** Team size cap in members, including captain and commissar. */
   maxMembers: number
   /** Per executing-role member cap (default `1`): each executing role
-   * (the 5 preset behavioral roles, the task-level reviewer, and any custom
+   * (the 7 preset behavioral roles, the task-level reviewer, and any custom
    * role string) may have up to this many active members; captain/commissar
    * exempt. */
   maxExecPerRole?: number
