@@ -1058,42 +1058,40 @@
   font-weight: 700;
   line-height: 16px;
   white-space: nowrap;
+  /* 与任务 id 融为一体:透明背景 + 继承任务行文字色
+     (completed 绿底=白字, pending 浅底=深字),不套独立色块。 */
+  background: transparent;
+  color: inherit;
 }
 
 .reviewChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-warning) 32%, var(--dsw-alias-label-primary));
-  color: var(--dsw-alias-label-on-fill);
+  outline: 1px dashed color-mix(in srgb, var(--dsw-alias-state-warning) 70%, transparent);
+  outline-offset: -1px;
 }
 
-/* 改进 4 中间态「待复核」:完成被门禁拦截的强阻塞信号,在黄底基础上加
-   实线描边,与仅"门禁适用"的 reviewChip(无描边)区分层级。 */
 .blockedChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-warning) 32%, var(--dsw-alias-label-primary));
-  color: var(--dsw-alias-label-on-fill);
-  outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning) 65%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning) 75%, transparent);
   outline-offset: -1px;
 }
 
 /* 改进 4 中间态「待输入」:中性等待提示,虚线描边与「待校准」区分。
-   深色不透明底 + 白色文字 —— 任务行底色为彩色(completed 绿/running 蓝)
-   或浅灰(pending)时均清晰可读,白字不再叠在绿底上发灰。 */
+   透明背景 + 继承文字色 —— 与任务 id 同色同底(completed 绿底=白字),
+   不再叠独立色块。 */
 .inputChip {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 55%, var(--dsw-alias-label-primary));
-  color: var(--dsw-alias-label-on-fill);
-  outline: 1px dashed color-mix(in srgb, var(--dsw-alias-label-secondary) 75%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--dsw-alias-label-secondary) 70%, transparent);
   outline-offset: -1px;
 }
 
 .helpingChip {
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-label-primary));
-  color: var(--dsw-alias-label-on-fill);
+  outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 65%, transparent);
+  outline-offset: -1px;
 }
 
-/* 复盘质量闭环「待校准」:深色不透明底 + 白色文字,与「待输入」同一
+/* 复盘质量闭环「待校准」:透明背景 + 继承文字色,与「待输入」同一
    可读性标准;虚线描边区分「待输入」、实线描边区分「待复核」。 */
 .calibrationChip {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 55%, var(--dsw-alias-label-primary));
-  color: var(--dsw-alias-label-on-fill);
+  outline: 1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 70%, transparent);
+  outline-offset: -1px;
 }
 
 /* 自成长超时警示:任务行徽标(超预算=黄,超时=红)与 chip 描边。 */
