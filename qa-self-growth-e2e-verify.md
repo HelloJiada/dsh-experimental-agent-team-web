@@ -71,6 +71,8 @@
 
 engineer useful/revised 样本 **0→1→2 递增实证**（t1 校准=1 → t3 校准=2）。未校准的 t4 条目保持 pending（对照：pending 不入注入候选）。
 
+**qa 角色对称实证（2026-08-28 收尾）**：t2（qa 角色，本人）终结蒸馏的条目 **bp-1ee8be7b**（sourceTaskId=t2，retroNote 优先）经队长 `retro_review(t2, useful)` 校准为 **useful** → qa 角色同样完成 pending→useful 流转，与 engineer 链路对称，注入两态验证对 qa 角色同样成立。
+
 ## 五、注入验证（阶段 C/D）
 
 ### 5.0 环境约束发现（E2E 实测）
