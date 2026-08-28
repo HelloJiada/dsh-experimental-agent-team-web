@@ -23,8 +23,10 @@ export interface ToolsConfig {
     memberMaxDepth?: number;
     /** Team size cap in members, including captain and commissar. */
     maxMembers: number;
-    /** Per executing-role member cap (default `2`): each executing role may
-     * have up to this many active members; captain/commissar exempt. */
+    /** Per executing-role member cap (default `1`): each executing role
+     * (the 5 preset behavioral roles, the task-level reviewer, and any custom
+     * role string) may have up to this many active members; captain/commissar
+     * exempt. */
     maxExecPerRole?: number;
     /** A member-owned open task is "stalled" (helppable) after this many ms. */
     stallThresholdMs: number;

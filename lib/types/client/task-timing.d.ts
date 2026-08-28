@@ -32,4 +32,10 @@ export declare function taskSignalsText(task: ActivityTask, t: AgentTeamsTransla
 export declare function retroCauseLabel(cause: string, t: AgentTeamsTranslate): string;
 /** 任务详情的复盘行(原因/经验/边界标注/队长校准);无复盘返回 null。 */
 export declare function retroDetailText(task: ActivityTask, t: AgentTeamsTranslate): string | null;
+/**
+ * 复盘质量闭环:任务行/详情「待校准」徽标条件。与服务端
+ * retroPendingCalibration 同口径(high/critical + 终结 + 无 retro_note +
+ * 无 captainVerdict),并优先信任服务端快照透出的 pendingCalibration 标志。
+ */
+export declare function taskPendingCalibration(task: ActivityTask): boolean;
 //# sourceMappingURL=task-timing.d.ts.map

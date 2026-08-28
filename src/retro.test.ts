@@ -5,6 +5,7 @@ import {
   currentTaskElapsedMs,
   resolveTaskTiming,
   retroCalibrationHint,
+  retroPendingCalibration,
   summarizeTeamRetro,
   taskElapsedMs,
   taskTimingState,
@@ -250,5 +251,64 @@ describe('summarizeTeamRetro / retroCalibrationHint — 团队校准统计', () 
     expect(summary.completedWithTiming).toBe(0)
     expect(summary.byRole).toHaveLength(0)
     expect(retroCalibrationHint(summary)).toContain('样本不足')
+  })
+})
+
+describe('retroPendingCalibration — 复盘质量闭环「待校准」判定', () => {
+  const doneRetro = buildTaskRetro(
+    { estimatedMs: 60_000, claimedAt: 10_000, completedAt: 100_000 },
+    undefined,
+    100_000,
+  )
+
+  it('high 已完成 + 无 retro_note + 无 captainVerdict → 待校准', () => {
+    const t = task('t1', { status: 'completed', riskLevel: 'high', retro: doneRetro })
+    expect(retroPendingCalibration(t)).toBe(true)
+  })
+
+  it('critical 同样判定待校准', () => {
+    const t = task('t1', { status: 'completed', riskLevel: 'critical', retro: doneRetro })
+    expect(retroPendingCalibration(t)).toBe(true)
+  })
+
+  it('failed 同样判定待校准(cancelled 除外)', () => {
+    const t = task('t1', { status: 'failed', riskLevel: 'high', retro: doneRetro })
+    expect(retroPendingCalibration(t)).toBe(true)
+  })
+
+  it('有成员经验(retro_note)不待校准', () => {
+    const withNote = buildTaskRetro(
+      { estimatedMs: 60_000, claimedAt: 10_000, completedAt: 100_000, retroNote: '先读测试再动手' },
+      undefined,
+      100_000,
+    )
+    const t = task('t1', { status: 'completed', riskLevel: 'high', retro: withNote })
+    expect(retroPendingCalibration(t)).toBe(false)
+  })
+
+  it('有队长校准(captainVerdict)不待校准', () => {
+    const calibrated = { ...doneRetro, captainVerdict: 'useful' as const }
+    const t = task('t1', { status: 'completed', riskLevel: 'high', retro: calibrated })
+    expect(retroPendingCalibration(t)).toBe(false)
+  })
+
+  it('低/中风险不待校准', () => {
+    expect(retroPendingCalibration(task('t1', { status: 'completed', riskLevel: 'low', retro: doneRetro }))).toBe(false)
+    expect(retroPendingCalibration(task('t1', { status: 'completed', riskLevel: 'medium', retro: doneRetro }))).toBe(false)
+  })
+
+  it('cancelled 不推经验,不标待校准', () => {
+    const cancelledRetro = buildTaskRetro(
+      { status: 'cancelled', estimatedMs: 60_000, claimedAt: 10_000, completedAt: 100_000 },
+      undefined,
+      100_000,
+    )
+    const t = task('t1', { status: 'cancelled', riskLevel: 'high', retro: cancelledRetro })
+    expect(retroPendingCalibration(t)).toBe(false)
+  })
+
+  it('无 retro 或未设风险级恒为 false', () => {
+    expect(retroPendingCalibration(task('t1', { status: 'completed' }))).toBe(false)
+    expect(retroPendingCalibration(task('t1', { status: 'completed', retro: doneRetro }))).toBe(false)
   })
 })

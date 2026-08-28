@@ -1041,7 +1041,8 @@
 }
 
 .reviewChip,
-.helpingChip {
+.helpingChip,
+.calibrationChip {
   display: inline-flex;
   align-items: center;
   min-height: 16px;
@@ -1065,6 +1066,13 @@
 .helpingChip {
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent);
   color: var(--dsw-alias-state-business-primary);
+}
+
+/* 复盘质量闭环「待校准」:与政委门禁(黄)和协助(蓝)区分,用中性强调色,
+   表示"复盘闭环待补全"而非阻塞/风险。 */
+.calibrationChip {
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 14%, transparent);
+  color: var(--dsw-alias-label-secondary);
 }
 
 /* 自成长超时警示:任务行徽标(超预算=黄,超时=红)与 chip 描边。 */
@@ -1453,6 +1461,14 @@
 
 .taskDetailReview[data-verdict='reject'] {
   color: var(--dsw-alias-state-danger);
+}
+
+/* 复盘质量闭环:任务详情「待校准」行(无成员经验且无队长校准)。 */
+.taskDetailCalibration {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
 }
 
 .emptyHint {

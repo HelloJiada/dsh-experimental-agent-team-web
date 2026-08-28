@@ -74,6 +74,7 @@ import {
 import {
   distillBestPractice,
   readBestPractices,
+  selectBestPracticesForRole,
   updateBestPracticeVerdict,
   upsertBestPractice,
   writeBestPractices,
@@ -93,8 +94,10 @@ export interface ToolsConfig {
   memberMaxDepth?: number
   /** Team size cap in members, including captain and commissar. */
   maxMembers: number
-  /** Per executing-role member cap (default `2`): each executing role may
-   * have up to this many active members; captain/commissar exempt. */
+  /** Per executing-role member cap (default `1`): each executing role
+   * (the 5 preset behavioral roles, the task-level reviewer, and any custom
+   * role string) may have up to this many active members; captain/commissar
+   * exempt. */
   maxExecPerRole?: number
   /** A member-owned open task is "stalled" (helppable) after this many ms. */
   stallThresholdMs: number
@@ -116,6 +119,19 @@ function workspaceOf(agent: Agent): string {
 /** Resolved absolute state root. */
 function stateRootOf(workspace: string, config: ToolsConfig): string {
   return join(workspace, config.stateDir)
+}
+
+/**
+ * 自成长团队记忆:按角色从全局 best-practices 库选出可注入的经验条目。
+ * 无角色(或空角色)直接返回空;冷启动守卫(角色样本 <2)由
+ * {@link selectBestPracticesForRole} 内部处理,返回空即不注入。
+ */
+async function roleMemoriesFor(
+  stateRoot: string,
+  role: string | undefined,
+): Promise<readonly BestPracticeEntry[]> {
+  if (role === undefined || role.trim() === '') return []
+  return selectBestPracticesForRole(await readBestPractices(stateRoot), role.trim())
 }
 
 /** Process-local lock key scoped by workspace state root and team id. */
@@ -333,6 +349,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             joinedAt: Date.now(),
             status: 'idle',
           }
+          // 与 add_member 同一记忆注入路径:按角色取全局 best-practices 经验,
+          // 冷启动守卫触发时为空(不注入)。
+          const commissarMemories = await roleMemoriesFor(stateRoot, commissar.role)
           await spawnMember(
             ctx,
             memberRuntime(config),
@@ -343,6 +362,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             commissar,
             config.stateDir,
             exec.signal,
+            commissarMemories,
           )
           state.members.push(commissar)
           try {
@@ -378,10 +398,10 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
 
   ctx.tools.register(defineTool({
     name: 'agent_teams_add_member',
-    description: 'Add a durable continuable member. When name is omitted (or given as just the role), an auto-numbered name is generated per role — <role title> <Chinese ordinal>号, e.g. 技术员 一号, 侦察参谋 一号, 技术员 二号. By default it snapshots the captain\'s current LLM route and effort. Supply provider/model only for an explicitly requested role-specific route; a changed provider or model automatically uses the target model\'s default effort. Set reasoning_effort only to request one of the target model\'s supported ids explicitly (or "default" to force its default). The member waits for messages, works on assigned tasks, and can message the team.',
+    description: 'Add a durable continuable member. When name is omitted (or given as just the role), the member is named after the role title itself (技术员, 侦察参谋, …); only a second member of the same role gets a numbered suffix (技术员 二号). By default it snapshots the captain\'s current LLM route and effort. Supply provider/model only for an explicitly requested role-specific route; a changed provider or model automatically uses the target model\'s default effort. Set reasoning_effort only to request one of the target model\'s supported ids explicitly (or "default" to force its default). The member waits for messages, works on assigned tasks, and can message the team.',
     parameters: {
-      name: { type: 'string', description: 'Unique member name inside the team; when omitted (or just the role name) an auto-numbered name is generated (e.g. 技术员 一号).' },
-      role: { type: 'string', description: 'Role of the member — military-role system: researcher 侦察参谋 / data 情报分析员 / engineer 技术员 / qa 质检员 / designer 文宣干事 / security 警卫员 / docs 文书 / operator 后勤保障员; reviewer 审查员 is a task-level dynamic role (add when dedicated review is needed).' },
+      name: { type: 'string', description: 'Unique member name inside the team; when omitted (or just the role name) the member is named after the role title itself (e.g. 技术员); a second member of the same role gets a numbered suffix (e.g. 技术员 二号).' },
+      role: { type: 'string', description: 'Role of the member — 5 preset behavioral roles: researcher 侦察参谋 (想清楚: read first → root cause + plan → hand off) / engineer 技术员 (做出来: implement per plan → self-test → diff summary) / qa 质检员 (验明白: checklist → verify → pass/reject with evidence) / designer 文宣干事 (好看: visual plan with concrete values) / data 情报分析员 (算清楚: metrics → collect → reviewable report); reviewer 审查员 is a task-level dynamic role (add when dedicated review is needed). security 警卫员 / docs 文书 / operator 后勤保障员 are not preset — pass them as custom role strings only when the goal really needs them (no dedicated seat or behavior template, still subject to the per-role cap, default 1). A commissar (政委) is auto-created with the team and must not be added.' },
       provider: { type: 'string', description: 'Optional LLM provider route. Use only when the user explicitly requests a different provider; requires model.' },
       model: { type: 'string', description: 'Optional model override. Omit for the captain\'s current model (or the configured memberModel default).' },
       reasoning_effort: { type: 'string', description: 'Optional reasoning effort override: one of the target model\'s supported effort ids, or "default" to force its default. When omitted, the captain\'s effort is inherited only for the same provider/model; a changed route uses the target default.' },
@@ -411,9 +431,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const team = await requireCaptainTeam(workspace, config, captain)
       const created = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
-        // Auto-numbered naming: an omitted or role-only name becomes
-        // `<role title><Chinese ordinal>` based on the active count of the
-        // same canonical role; explicit custom names are respected unchanged.
+        // Role-based naming: an omitted or role-only name becomes the role
+        // title itself (技术员) — no ordinal, since each role defaults to a
+        // single member; a second member of the same canonical role gets a
+        // numbered suffix (技术员 二号). Explicit custom names, including
+        // legacy numbered ones like 技术员 一号, are respected unchanged.
         const memberName = resolveMemberName(args.name, args.role, countActiveExecRoleMembers(fresh.members, args.role))
         if (memberName === '') throw new Error('member name must not be empty')
         const memberKey = sanitizeKey(memberName)
@@ -431,7 +453,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           throw new Error(`team "${fresh.name}" is at its member cap (${config.maxMembers})`)
         }
         // Executing-role cap: each executing role may have at most
-        // `maxExecPerRole` (default 2) active members. The captain (never via
+        // `maxExecPerRole` (default 1) active members. The captain (never via
         // add_member) and the commissar (uniqueness-gated above) are exempt;
         // members without a role are not an executing role and stay uncapped
         // here (the maxMembers cap still applies).
@@ -458,6 +480,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           joinedAt: Date.now(),
           status: 'idle',
         }
+        // 自成长团队记忆注入:按成员角色从全局 best-practices 库取经验,
+        // 冷启动守卫(角色样本 <2)时返回空,memberPersona 不注入。
+        const memories = await roleMemoriesFor(stateRoot, args.role)
         await spawnMember(
           ctx,
           memberRuntime(config),
@@ -468,6 +493,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           member,
           config.stateDir,
           exec.signal,
+          memories,
         )
         fresh.members.push(member)
         try {
@@ -912,6 +938,22 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           output: { type: 'string' },
           attempt: { type: 'number', required: true },
           attempt_id: { type: 'string' },
+          estimate_level: { type: 'string' },
+          started_at: { type: 'number' },
+          signals: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              turns: { type: 'number' },
+              tool_calls: { type: 'number' },
+              output_bytes: { type: 'number' },
+              self_report: { type: 'string' },
+            },
+          },
+          actual_ms: { type: 'number' },
+          overrun_ms: { type: 'number' },
+          retro_cause: { type: 'string' },
+          overran: { type: 'boolean' },
         },
       },
       render: (args, value) => [{

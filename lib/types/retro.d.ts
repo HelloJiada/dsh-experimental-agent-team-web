@@ -125,6 +125,17 @@ export declare function summarizeTeamRetro(tasks: readonly TeamTask[], members?:
 /** 生成一条面向队长的复盘校准提示(自成长闭环的可读输出)。
  * 冷启动守卫:已结算样本 <2 时不出校准结论(方向决策 7)。 */
 export declare function retroCalibrationHint(summary: TeamRetroSummary): string;
+/**
+ * 复盘质量闭环:high/critical 任务终结生成 retro 后,若既无成员经验
+ * (retro_note)也无队长校准(captainVerdict),判定为「待校准」——
+ * 复盘三层之第二、三层均缺失,面板据此提示队长补全闭环。
+ *
+ * 边界:
+ * - 仅 completed / failed 判定(cancelled 不推经验,无校准价值);
+ * - 仅 riskLevel ∈ {high, critical} 判定(milestone 属门禁范畴,不在此列);
+ * - 无 retro(未终结)恒为 false。
+ */
+export declare function retroPendingCalibration(task: Pick<TeamTask, 'status' | 'riskLevel' | 'retro'>): boolean;
 /** 兼容导出:旧 buildTaskRetro 的 attempt 默认值。 */
 export type { RetroCaptainVerdict };
 //# sourceMappingURL=retro.d.ts.map

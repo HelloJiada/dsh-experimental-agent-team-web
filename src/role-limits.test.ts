@@ -69,18 +69,17 @@ describe('countActiveExecRoleMembers — 每角色上限统计', () => {
 })
 
 describe('DEFAULT_MAX_EXEC_PER_ROLE — 每角色默认上限', () => {
-  it('默认 2（同角色第 3 个活跃成员触发拒绝）', () => {
-    expect(DEFAULT_MAX_EXEC_PER_ROLE).toBe(2)
+  it('默认 1（同角色第 2 个活跃成员触发拒绝）', () => {
+    expect(DEFAULT_MAX_EXEC_PER_ROLE).toBe(1)
+    const oneEngineer = [
+      member('技术员', 'engineer'),
+    ]
+    expect(countActiveExecRoleMembers(oneEngineer, 'engineer')).toBe(DEFAULT_MAX_EXEC_PER_ROLE)
+    // 第 2 个同角色成员会令统计越过上限（add_member 处拒绝）。
     const twoEngineers = [
-      member('技术员一号', 'engineer'),
-      member('技术员二号', 'engineer'),
+      ...oneEngineer,
+      member('技术员 二号', 'engineer'),
     ]
-    expect(countActiveExecRoleMembers(twoEngineers, 'engineer')).toBe(DEFAULT_MAX_EXEC_PER_ROLE)
-    // 第 3 个同角色成员会令统计越过上限（add_member 处拒绝）。
-    const threeEngineers = [
-      ...twoEngineers,
-      member('技术员三号', 'engineer'),
-    ]
-    expect(countActiveExecRoleMembers(threeEngineers, 'engineer')).toBeGreaterThan(DEFAULT_MAX_EXEC_PER_ROLE)
+    expect(countActiveExecRoleMembers(twoEngineers, 'engineer')).toBeGreaterThan(DEFAULT_MAX_EXEC_PER_ROLE)
   })
 })

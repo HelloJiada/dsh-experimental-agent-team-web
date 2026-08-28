@@ -74,6 +74,9 @@ export interface TeamActivityTask {
     readonly signals?: TaskSignals;
     /** 复盘记录(终结时自动生成,自成长)。 */
     readonly retro?: TaskRetro;
+    /** 复盘质量闭环:high/critical 任务已终结生成 retro,但无成员经验且无队长
+     * 校准(待校准)。派生自 retroPendingCalibration,快照只透出 true。 */
+    readonly pendingCalibration?: boolean;
 }
 /** One captain-inbox preview row. */
 export interface TeamActivityMessage {

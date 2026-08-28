@@ -1,14 +1,17 @@
 /**
- * Auto-numbered member naming for `agent_teams_add_member`.
+ * Role-based member naming for `agent_teams_add_member`.
  *
- * When the captain omits a name (or passes only the role), the member is named
- * `<role title> <Chinese ordinal>号` — 技术员 一号, 侦察参谋 一号, 技术员 二号, …
- * (a space separates the title from the ordinal, so the UI never reads as a
- * duplicated role chip). The ordinal derives from the active member count of
- * the same canonical role (via `role-limits.ts`, so numbering and the per-role
- * cap agree), and the Chinese title comes from the client role/locale tables.
- * The commissar is unique and keeps the plain 政委 title (no number); an
- * explicit custom name is always respected as-is.
+ * When the captain omits a name (or passes only the role), the member is
+ * named after the role title itself — 技术员, 侦察参谋, 情报分析员, … — with no
+ * ordinal suffix (each role defaults to a single member, so a number adds
+ * nothing). Only when a second member of the same role is added (the
+ * per-role cap is configurable) does the auto-name fall back to a numbered
+ * suffix: `<role title> <Chinese ordinal>号` (技术员 二号). The ordinal derives
+ * from the active member count of the same canonical role (via
+ * `role-limits.ts`, so numbering and the per-role cap agree), and the Chinese
+ * title comes from the client role/locale tables. The commissar is unique and
+ * keeps the plain 政委 title (no number); an explicit custom name is always
+ * respected as-is — including legacy numbered names like 技术员 一号.
  * @module dsh-agent-team-web/member-naming
  */
 /** 1 → 一 … 9 → 九, 10 → 十; any other value falls back to the raw number. */
@@ -21,15 +24,17 @@ export declare function zhNumber(value: number): string;
 export declare function roleDisplayTitle(role: string | undefined): string;
 /**
  * Whether a provided name is "just the role" — empty, the raw role text, or
- * the role's display title — in which case auto-numbering applies.
+ * the role's display title — in which case role-based naming applies.
  */
 export declare function isRoleOnlyName(name: string, role: string | undefined): boolean;
 /**
  * Resolve the final member name. An explicit name that is not just the role is
- * respected unchanged (including already-numbered names like 技术员 二号). A
- * missing or role-only name is auto-numbered from the role title plus the
- * next Chinese ordinal for that role (`<title> <ordinal>号`, e.g. 技术员 一号).
- * The commissar keeps the unique 政委 title without a number. Roles without a
+ * respected unchanged (including legacy numbered names like 技术员 二号). A
+ * missing or role-only name is named after the role title itself (`<title>`,
+ * e.g. 技术员) — no ordinal, since each role defaults to a single member. When
+ * a second member of the same role is added (per-role cap raised), the name
+ * falls back to `<title> <ordinal>号` (e.g. 技术员 二号) to stay unique. The
+ * commissar keeps the unique 政委 title without a number. Roles without a
  * known title and without an explicit name cannot be named.
  * @param providedName - the caller-supplied name (may be empty/undefined).
  * @param role - the member's role text.

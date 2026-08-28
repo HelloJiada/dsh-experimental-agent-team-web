@@ -7,6 +7,7 @@ import {
   distillBestPractice,
   distillPracticeText,
   readBestPractices,
+  selectBestPracticesForRole,
   updateBestPracticeVerdict,
   upsertBestPractice,
   writeBestPractices,
@@ -120,5 +121,59 @@ describe('全局库文件读写', () => {
     const { readFile } = await import('node:fs/promises')
     const raw = await readFile(join(tempRoot, BEST_PRACTICES_FILE), 'utf8')
     expect(raw).toContain('bp-1')
+  })
+})
+
+describe('selectBestPracticesForRole — 团队记忆注入(按角色匹配 + 冷启动守卫)', () => {
+  it('按角色精确匹配,只返回该角色的条目', () => {
+    const entries = [
+      entry('bp-1', { role: 'engineer' }),
+      entry('bp-2', { role: 'researcher' }),
+      entry('bp-3', { role: 'engineer' }),
+    ]
+    const selected = selectBestPracticesForRole(entries, 'engineer')
+    expect(selected.map(item => item.id)).toEqual(['bp-1', 'bp-3'])
+  })
+
+  it('冷启动守卫:角色匹配样本 <2 时不注入', () => {
+    const entries = [entry('bp-1', { role: 'engineer' })]
+    expect(selectBestPracticesForRole(entries, 'engineer')).toHaveLength(0)
+    expect(selectBestPracticesForRole([], 'engineer')).toHaveLength(0)
+  })
+
+  it('无角色或空角色不注入', () => {
+    const entries = [entry('bp-1', { role: 'engineer' }), entry('bp-2', { role: 'engineer' })]
+    expect(selectBestPracticesForRole(entries, undefined)).toHaveLength(0)
+    expect(selectBestPracticesForRole(entries, '  ')).toHaveLength(0)
+  })
+
+  it('校准过的经验(useful)优先于未校准(pending),同级按更新时间倒序', () => {
+    const entries = [
+      entry('bp-pending-new', { role: 'engineer', verdict: 'pending', updatedAt: 3000 }),
+      entry('bp-useful', { role: 'engineer', verdict: 'useful', updatedAt: 1000 }),
+      entry('bp-pending-old', { role: 'engineer', verdict: 'pending', updatedAt: 2000 }),
+    ]
+    const selected = selectBestPracticesForRole(entries, 'engineer')
+    expect(selected.map(item => item.id)).toEqual(['bp-useful', 'bp-pending-new', 'bp-pending-old'])
+  })
+
+  it('注入上限:只取前 3 条,保持 persona 精简', () => {
+    const entries = Array.from({ length: 5 }, (_, index) => entry(`bp-${index}`, {
+      role: 'engineer',
+      updatedAt: 5000 - index,
+    }))
+    const selected = selectBestPracticesForRole(entries, 'engineer')
+    expect(selected).toHaveLength(3)
+    expect(selected[0]?.updatedAt).toBeGreaterThan(selected[2]?.updatedAt ?? 0)
+  })
+
+  it('已否决经验(verdict=useless,陈旧文件残留)不注入', () => {
+    const entries = [
+      entry('bp-useful-1', { role: 'engineer', verdict: 'useful' }),
+      entry('bp-useless', { role: 'engineer', verdict: 'useless', updatedAt: 9999 }),
+      entry('bp-useful-2', { role: 'engineer', verdict: 'useful' }),
+    ]
+    const selected = selectBestPracticesForRole(entries, 'engineer')
+    expect(selected.map(item => item.id)).toEqual(['bp-useful-1', 'bp-useful-2'])
   })
 })

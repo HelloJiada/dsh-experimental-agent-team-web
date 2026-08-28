@@ -71,10 +71,11 @@ export interface Config {
   memberMaxDepth?: number
   /** Team size cap in members, including captain and commissar (default `18`). */
   maxMembers?: number
-  /** Per executing-role member cap (default `2`): each executing role
-   * (engineer/researcher/data/qa/designer/security/docs/operator/reviewer)
-   * may have up to this many members; captain and commissar are exempt
-   * (captain fixed at 1, commissar auto-created and uniqueness-gated). */
+  /** Per executing-role member cap (default `1`): each executing role
+   * (the 5 preset behavioral roles engineer/researcher/data/qa/designer, the
+   * task-level reviewer, and any custom role string) may have up to this many
+   * members; captain and commissar are exempt (captain fixed at 1, commissar
+   * auto-created and uniqueness-gated). */
   maxExecPerRole?: number
   /** A member-owned claimed/in-progress task is considered stalled (and
    * eligible for a teammate's self-organizing help) after this many
@@ -96,7 +97,7 @@ export const Config: z<Config> = z.object({
   memberModel: z.string(),
   memberMaxDepth: z.natural().default(1),
   maxMembers: z.natural().min(1).default(18),
-  maxExecPerRole: z.natural().min(1).default(2),
+  maxExecPerRole: z.natural().min(1).default(1),
   stallThresholdMs: z.natural().default(120_000),
   promptSectionOrder: z.natural().default(117),
   slashCommand: z.boolean().default(true),
@@ -106,7 +107,7 @@ export const Config: z<Config> = z.object({
 function usageSectionText(toolNames: string): string {
   return `When the user asks to run something with AgentTeams (e.g. "use AgentTeams to do X"), or an activation message from the /agent-teams slash command arrives, you are the captain of a multi-agent team. Follow this protocol:
 1. Call agent_teams_create with a team name and the goal as description. You become the captain and may lead one team at a time.
-2. Call agent_teams_add_member for each executing role the goal needs, per the military-role system (侦察参谋 researcher / 情报分析员 data / 技术员 engineer / 质检员 qa / 文宣干事 designer / 警卫员 security / 文书 docs / 后勤保障员 operator); a reviewer (审查员) is a task-level dynamic role — add one when dedicated review is needed. A commissar (政委) member for independent oversight is auto-created with the team; do not add a second one. The captain is fixed at 1 and the commissar at 1; each executing role may have up to 2 members (每个执行角色最多 2 名成员: 技术员 一号/二号), and the team total is capped at 18 members (队长 1 + 政委 1 + 8 职位 × 2 执行成员) — exceeding either cap is rejected. Members are durable subagents: they wait for your messages, then work a full turn. By default a member on your current provider/model snapshots your current reasoning effort; a member routed to a different provider or model automatically uses that target model's default effort. Never ask the user to choose these per member; only pass provider/model when the user explicitly requests a different route for that role, and reasoning_effort only when the user explicitly requests a particular effort ("default" explicitly selects the target model's default).
+2. Call agent_teams_add_member for each executing role the goal needs — 5 preset behavioral roles, one member each by default: 侦察参谋 researcher (想清楚: read code/docs first → root cause + plan → self-check → hand off), 技术员 engineer (做出来: implement per plan → self-test → diff summary), 质检员 qa (验明白: checklist first → verify → pass/reject with evidence), 文宣干事 designer (好看: visual plan with concrete values), 情报分析员 data (算清楚: define metrics → collect → reviewable report); a reviewer (审查员) is a task-level dynamic role — add one when dedicated review is needed. security 警卫员 / docs 文书 / operator 后勤保障员 are not preset — pass them as custom role strings only when the goal really needs them. A commissar (政委) member for independent oversight is auto-created with the team; do not add a second one. The captain is fixed at 1 and the commissar at 1; each executing role may have up to 1 member by default (每角色默认 1 人，上限可配置), and the team total is capped at 18 members (队长 1 + 政委 1 + 执行成员) — exceeding either cap is rejected. The recommended handoff path is researcher → engineer → qa, but only when each step truly depends on the previous one — there is no forced pipeline: independent work stays parallel, and tasks become sequential only through explicit dependencies. Members are durable subagents: they wait for your messages, then work a full turn. By default a member on your current provider/model snapshots your current reasoning effort; a member routed to a different provider or model automatically uses that target model's default effort. Never ask the user to choose these per member; only pass provider/model when the user explicitly requests a different route for that role, and reasoning_effort only when the user explicitly requests a particular effort ("default" explicitly selects the target model's default).
 3. Break the goal into tasks with agent_teams_create_task and wire dependencies. Assign role-specific work when useful; unassigned ready work belongs to the shared pool. The scheduler automatically claims one ready task for each truly idle member and wakes it, including across later rounds. Tasks marked risk=high/critical or milestone=true fall under the commissar gate: they can only be marked completed after the commissar passes them with agent_teams_review_task (verdict=pass); a rejected completion notifies the commissar automatically.
 4. Lead by delegation: monitor with agent_teams_status, send guidance with agent_teams_send_message, and let idle teammates execute ready work. Do not duplicate a teammate's work merely because its turn is slow. If the user requires every member to contribute or report, create one task per required contribution (or message each member directly); never wait for an unassigned member to produce work it was never given.
 5. If the user explicitly asks to pause a running member, its open attempt remains parked after interruption; after answering the user, send that same member guidance with agent_teams_send_message so it continues the same attempt. Do not interrupt members for an ordinary user question that did not request a pause. If work must change owner, restart from scratch, or be taken over, call agent_teams_reassign_task first. Reassign to another idle member, retry with the same member, or use assignee=captain before doing it yourself. Reassignment revokes the old attempt and waits for that member to quiesce, preventing late results from overwriting the new attempt.
@@ -123,7 +124,7 @@ export function apply(ctx: Context, config: Config): void {
     memberModel: config.memberModel,
     memberMaxDepth: config.memberMaxDepth ?? 1,
     maxMembers: config.maxMembers ?? 18,
-    maxExecPerRole: config.maxExecPerRole ?? 2,
+    maxExecPerRole: config.maxExecPerRole ?? 1,
     stallThresholdMs: config.stallThresholdMs ?? 120_000,
   }
 

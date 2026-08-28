@@ -147,3 +147,18 @@ export function retroDetailText(task: ActivityTask, t: AgentTeamsTranslate): str
   if (retro.captainVerdict !== undefined) parts.push(`captain: ${retro.captainVerdict}`)
   return parts.join(' · ')
 }
+
+/**
+ * 复盘质量闭环:任务行/详情「待校准」徽标条件。与服务端
+ * retroPendingCalibration 同口径(high/critical + 终结 + 无 retro_note +
+ * 无 captainVerdict),并优先信任服务端快照透出的 pendingCalibration 标志。
+ */
+export function taskPendingCalibration(task: ActivityTask): boolean {
+  if (task.pendingCalibration === true) return true
+  const retro = task.retro
+  if (retro === undefined) return false
+  if (task.status !== 'completed' && task.status !== 'failed') return false
+  if (task.riskLevel !== 'high' && task.riskLevel !== 'critical') return false
+  const hasNote = retro.retroNote !== undefined && retro.retroNote.trim() !== ''
+  return !hasNote && retro.captainVerdict === undefined
+}

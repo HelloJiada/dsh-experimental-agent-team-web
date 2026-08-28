@@ -13,7 +13,7 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { memberActivity } from './members.ts'
 import { analyzeTeamSnapshot, type TeamIntelligence } from './intelligence.ts'
-import { currentTaskElapsedApprox, currentTaskElapsedMs, summarizeTeamRetro } from './retro.ts'
+import { currentTaskElapsedApprox, currentTaskElapsedMs, retroPendingCalibration, summarizeTeamRetro } from './retro.ts'
 import { readBestPractices } from './best-practices.ts'
 import {
   CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readMailbox, readUnreadMailbox, readTeam,
@@ -87,6 +87,9 @@ export interface TeamActivityTask {
   readonly signals?: TaskSignals
   /** 复盘记录(终结时自动生成,自成长)。 */
   readonly retro?: TaskRetro
+  /** 复盘质量闭环:high/critical 任务已终结生成 retro,但无成员经验且无队长
+   * 校准(待校准)。派生自 retroPendingCalibration,快照只透出 true。 */
+  readonly pendingCalibration?: boolean
 }
 
 /** One captain-inbox preview row. */
@@ -295,6 +298,8 @@ export async function assembleTeamSnapshot(
         ...task.overrunMs !== undefined ? { overrunMs: task.overrunMs } : {},
         ...signals !== undefined ? { signals } : {},
         ...task.retro !== undefined ? { retro: task.retro } : {},
+        // 复盘质量闭环:high/critical 任务缺成员经验与队长校准 → 面板标「待校准」。
+        ...retroPendingCalibration(task) ? { pendingCalibration: true } : {},
       }
     }),
     messageCount: captainInbox.length

@@ -388,6 +388,27 @@ export function retroCalibrationHint(summary: TeamRetroSummary): string {
   return parts.join(' ')
 }
 
+/**
+ * 复盘质量闭环:high/critical 任务终结生成 retro 后,若既无成员经验
+ * (retro_note)也无队长校准(captainVerdict),判定为「待校准」——
+ * 复盘三层之第二、三层均缺失,面板据此提示队长补全闭环。
+ *
+ * 边界:
+ * - 仅 completed / failed 判定(cancelled 不推经验,无校准价值);
+ * - 仅 riskLevel ∈ {high, critical} 判定(milestone 属门禁范畴,不在此列);
+ * - 无 retro(未终结)恒为 false。
+ */
+export function retroPendingCalibration(
+  task: Pick<TeamTask, 'status' | 'riskLevel' | 'retro'>,
+): boolean {
+  if (task.status !== 'completed' && task.status !== 'failed') return false
+  if (task.riskLevel !== 'high' && task.riskLevel !== 'critical') return false
+  const retro = task.retro
+  if (retro === undefined) return false
+  const hasNote = retro.retroNote !== undefined && retro.retroNote.trim() !== ''
+  return !hasNote && retro.captainVerdict === undefined
+}
+
 /** 成员角色回退:队长保持 captain,其余按姓名(无成员名单时的兜底)。 */
 function roleOf(assignee: string): string {
   if (assignee === '' || assignee === 'captain') return 'captain'

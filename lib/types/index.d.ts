@@ -35,10 +35,11 @@ export interface Config {
     memberMaxDepth?: number;
     /** Team size cap in members, including captain and commissar (default `18`). */
     maxMembers?: number;
-    /** Per executing-role member cap (default `2`): each executing role
-     * (engineer/researcher/data/qa/designer/security/docs/operator/reviewer)
-     * may have up to this many members; captain and commissar are exempt
-     * (captain fixed at 1, commissar auto-created and uniqueness-gated). */
+    /** Per executing-role member cap (default `1`): each executing role
+     * (the 5 preset behavioral roles engineer/researcher/data/qa/designer, the
+     * task-level reviewer, and any custom role string) may have up to this many
+     * members; captain and commissar are exempt (captain fixed at 1, commissar
+     * auto-created and uniqueness-gated). */
     maxExecPerRole?: number;
     /** A member-owned claimed/in-progress task is considered stalled (and
      * eligible for a teammate's self-organizing help) after this many

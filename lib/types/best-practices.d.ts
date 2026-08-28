@@ -55,4 +55,26 @@ export declare function distillBestPractice(retro: TaskRetro, source: {
     readonly sourceTaskSubject: string;
     readonly role: string;
 }): BestPracticeEntry | undefined;
+/**
+ * 团队记忆注入的冷启动守卫:与复盘校准口径一致,角色匹配样本 <2 时不注入,
+ * 避免把孤例经验当作行为模板写进成员系统提示。
+ */
+export declare const MIN_MEMBER_MEMORY_SAMPLES = 2;
+/** 单成员注入的经验条目上限(保持 persona 精简,防止记忆淹没规则)。 */
+export declare const MAX_MEMBER_MEMORY_ENTRIES = 3;
+/**
+ * 从全局经验库选出某角色的可注入记忆条目(团队记忆注入的数据源)。
+ *
+ * 规则:
+ * - 无角色(或空角色)不注入;按 `entry.role === role` 精确匹配;
+ * - 已否决的经验(verdict === 'useless',仅陈旧文件可能残留)一律不注入;
+ * - 冷启动守卫:角色匹配样本 < {@link MIN_MEMBER_MEMORY_SAMPLES} 时返回空(不注入);
+ * - 校准过的经验(useful/revised)优先于未校准(pending),同级按更新时间倒序;
+ * - 截取前 {@link MAX_MEMBER_MEMORY_ENTRIES} 条,保持 persona 精简。
+ *
+ * @param entries - 全局经验库全量条目(读盘原样传入)。
+ * @param role - 目标成员的角色(如 `engineer`、`researcher`)。
+ * @returns 可注入的经验条目(空数组 = 冷启动守卫触发或无角色)。
+ */
+export declare function selectBestPracticesForRole(entries: readonly BestPracticeEntry[], role: string | undefined): BestPracticeEntry[];
 //# sourceMappingURL=best-practices.d.ts.map

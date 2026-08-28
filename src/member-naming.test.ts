@@ -22,9 +22,6 @@ describe('roleDisplayTitle — 角色中文名', () => {
     expect(roleDisplayTitle('data')).toBe('情报分析员')
     expect(roleDisplayTitle('qa')).toBe('质检员')
     expect(roleDisplayTitle('designer')).toBe('文宣干事')
-    expect(roleDisplayTitle('security')).toBe('警卫员')
-    expect(roleDisplayTitle('docs')).toBe('文书')
-    expect(roleDisplayTitle('operator')).toBe('后勤保障员')
     expect(roleDisplayTitle('reviewer')).toBe('审查员')
     expect(roleDisplayTitle('commissar')).toBe('政委')
   })
@@ -33,6 +30,13 @@ describe('roleDisplayTitle — 角色中文名', () => {
     expect(roleDisplayTitle('技术员')).toBe('技术员')
     expect(roleDisplayTitle('Engineer')).toBe('技术员')
     expect(roleDisplayTitle('engineer-v2')).toBe('技术员')
+  })
+
+  it('降级角色（security/docs/operator）仍解析中文标题（兼容显示）', () => {
+    expect(roleDisplayTitle('security')).toBe('警卫员')
+    expect(roleDisplayTitle('docs')).toBe('文书')
+    expect(roleDisplayTitle('operator')).toBe('后勤保障员')
+    expect(roleDisplayTitle('警卫员')).toBe('警卫员')
   })
 
   it('自定义角色回退原始文本', () => {
@@ -60,21 +64,29 @@ describe('isRoleOnlyName — 是否纯角色名', () => {
   })
 })
 
-describe('resolveMemberName — 自动编号命名', () => {
-  it('缺省名按同角色活跃数 +1 编号（角色与序号间有空格）', () => {
-    expect(resolveMemberName(undefined, 'engineer', 0)).toBe('技术员 一号')
-    expect(resolveMemberName(undefined, 'engineer', 1)).toBe('技术员 二号')
-    expect(resolveMemberName('', 'researcher', 0)).toBe('侦察参谋 一号')
+describe('resolveMemberName — 角色名命名（去编号）', () => {
+  it('缺省名直接使用角色标题（首名不加序号）', () => {
+    expect(resolveMemberName(undefined, 'engineer', 0)).toBe('技术员')
+    expect(resolveMemberName('', 'researcher', 0)).toBe('侦察参谋')
+    expect(resolveMemberName(undefined, 'data', 0)).toBe('情报分析员')
+    expect(resolveMemberName(undefined, 'qa', 0)).toBe('质检员')
   })
 
-  it('纯角色名同样自动编号', () => {
-    expect(resolveMemberName('技术员', 'engineer', 0)).toBe('技术员 一号')
+  it('纯角色名同样收敛为角色标题', () => {
+    expect(resolveMemberName('技术员', 'engineer', 0)).toBe('技术员')
+    expect(resolveMemberName('engineer', 'engineer', 0)).toBe('技术员')
+    expect(resolveMemberName('侦察参谋', 'researcher', 0)).toBe('侦察参谋')
+  })
+
+  it('同角色第二名才加序号（每角色默认 1 人，上限可配置）', () => {
+    expect(resolveMemberName(undefined, 'engineer', 1)).toBe('技术员 二号')
     expect(resolveMemberName('engineer', 'engineer', 1)).toBe('技术员 二号')
     expect(resolveMemberName('侦察参谋', 'researcher', 1)).toBe('侦察参谋 二号')
   })
 
-  it('显式名（含已编号名）原样保留', () => {
+  it('显式名（含旧编号名）原样保留 — 旧团队兼容', () => {
     expect(resolveMemberName('张三', 'engineer', 0)).toBe('张三')
+    expect(resolveMemberName('技术员 一号', 'engineer', 0)).toBe('技术员 一号')
     expect(resolveMemberName('技术员 二号', 'engineer', 0)).toBe('技术员 二号')
     expect(resolveMemberName('王政委', 'commissar', 0)).toBe('王政委')
   })
@@ -84,8 +96,8 @@ describe('resolveMemberName — 自动编号命名', () => {
     expect(resolveMemberName('政委', 'commissar', 1)).toBe('政委')
   })
 
-  it('自定义角色回退原始角色文本 + 编号', () => {
-    expect(resolveMemberName(undefined, '审计员', 0)).toBe('审计员 一号')
+  it('自定义角色回退原始角色文本（首名不加序号）', () => {
+    expect(resolveMemberName(undefined, '审计员', 0)).toBe('审计员')
     expect(resolveMemberName('审计员', '审计员', 1)).toBe('审计员 二号')
   })
 

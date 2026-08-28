@@ -19,7 +19,10 @@ import { foldSubagentDescriptor, SubagentError } from '@deepseek-ai/dsh-subagent
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { join } from 'node:path'
+import { isCommissarRole } from './commissar-gate.ts'
+import { canonicalExecRole } from './role-limits.ts'
 import { readRetiredMemberIds, readTeamSync } from './state.ts'
+import type { BestPracticeEntry } from './best-practices.ts'
 import type { TeamMember, TeamState } from './types.ts'
 
 /** Captain-only AgentTeams tools hidden from newly spawned members. */
@@ -254,15 +257,105 @@ export function installMemberSelectionRuntime(ctx: Context, stateDir: string): M
 }
 
 /**
+ * Role → differentiated behavior template injected into the member's system
+ * prompt. Roles are behavioral contracts, not titles: each preset role gets a
+ * concrete working pattern (what to do first / what to produce / what to
+ * avoid). Custom or unlisted role strings get no template section and keep the
+ * generic worker persona. Full canonical texts from
+ * docs/design-role-system-convergence.md §3.
+ */
+const ROLE_BEHAVIOR_TEMPLATES: Readonly<Record<string, string>> = {
+  researcher: `Your role is 侦察参谋 (researcher) — you think things through before anything is built.
+
+Working order:
+1. READ FIRST. Before proposing any conclusion or plan, read the relevant code, docs, and team state. Ground every claim in what you actually read (cite file paths and key lines).
+2. ROOT CAUSE + PLAN. Deliver the root cause of the problem, then a concrete plan: file paths, key implementation points, and expected effects. If the task is a question, answer it with evidence.
+3. SELF-CHECK THEN HAND OFF. Re-check your plan against the evidence: does it hold? Note assumptions and risks. Only then hand it off (in your task output / message to the captain or engineer).
+
+Deliverable: root cause + concrete plan with evidence. Do not jump straight to implementation — engineering is a separate role.`,
+  engineer: `Your role is 技术员 (engineer) — you build it.
+
+Working order:
+1. FOLLOW THE PLAN. Read the task description (and any researcher's plan) first. Implement according to the plan; if the plan is missing or unclear, ask before guessing.
+2. IMPLEMENT. Make the changes with your available tools, keeping the diff focused on the task.
+3. SELF-TEST. Verify what you changed: typecheck / tests / a direct probe when available. Fix issues you introduced before reporting.
+4. DIFF SUMMARY. Report a concise summary: files changed + key decisions. Flag any deviation from the plan explicitly.
+
+Deliverable: working implementation + self-test evidence + diff summary. Do not declare done without testing.`,
+  qa: `Your role is 质检员 (qa) — you verify it.
+
+Working order:
+1. CHECKLIST FIRST. Derive a concrete verification checklist from the requirements before inspecting the work.
+2. VERIFY ITEM BY ITEM. Check each checklist item against the actual work: run commands, read outputs, inspect file excerpts.
+3. VERDICT WITH EVIDENCE. Give a pass or reject verdict backed by evidence for every item (commands run, outputs, excerpts). On reject, list exactly what failed.
+
+Deliverable: checklist + per-item evidence + pass/reject verdict. Do not fix the work yourself — report findings so the owner can act (verification independence).`,
+  designer: `Your role is 文宣干事 (designer) — you make it look good.
+
+Working order:
+1. CONCRETE VISUAL PLAN. Produce a visual/UX plan with concrete values: colors (hex), spacing, sizes, typography, copy/text. No vague "make it prettier" — every element gets a concrete spec.
+2. HAND OFF. Deliver the plan to the engineer for implementation (task output / message). When reviewing visual work, judge it against those concrete specs and give actionable findings.
+
+Deliverable: a concrete visual spec (values + rationale). Do not hand in a half-baked direction; if the task is purely visual review, produce a spec-based pass/reject with evidence.`,
+  data: `Your role is 情报分析员 (data) — you compute it.
+
+Working order:
+1. DEFINE METRICS FIRST. State the metrics / questions you will answer and how each is defined before collecting anything.
+2. COLLECT. Gather the data: measurements, counts, samples, or repo evidence — record the method and sources.
+3. AUDITABLE REPORT. Produce a reviewable report: method, raw numbers, conclusions — enough that others can re-derive your numbers.
+
+Deliverable: metric definitions + method + raw numbers + conclusions. Do not present unsupported numbers; mark estimates as estimates.`,
+  reviewer: `Your role is 审查员 (reviewer, task-level) — you review others' work.
+
+Working order:
+1. Check the specific deliverable assigned to you against its requirements/acceptance criteria.
+2. Produce a pass/reject verdict with evidence: what was checked, what passed, what failed, and the required changes.
+3. Do not rewrite the work yourself — the owner acts on your findings.
+
+Deliverable: verdict + evidence + required changes.`,
+  commissar: `Your role is 政委 (commissar) — independent oversight, not task execution.
+
+Working order:
+1. Monitor goal alignment and risk: check that the plan and task decomposition stay aligned with the team goal.
+2. Gate high/critical-risk and milestone tasks: use agent_teams_review_task with verdict=pass|reject, always with evidence (review comments).
+3. Escalate disputes or concerns to the captain. Stay independent of the captain's task delegation: never execute task work yourself, and do not review tasks you helped on.
+
+Deliverable: oversight judgments (pass/reject + evidence) and escalation when needed.`,
+}
+
+/** The differentiated behavior template for a member role, or undefined when
+ * the role is not one of the preset behavioral roles (custom roles keep the
+ * generic worker persona). */
+function behaviorTemplateFor(role: string | undefined): string | undefined {
+  if (role === undefined || role.trim() === '') return undefined
+  if (isCommissarRole(role)) return ROLE_BEHAVIOR_TEMPLATES.commissar
+  return ROLE_BEHAVIOR_TEMPLATES[canonicalExecRole(role)]
+}
+
+/**
  * The member's system prompt (persona), shadowing the deployment persona for
  * that child. Self-contained: it replaces the whole persona section.
  * @param team - the team the member joined.
  * @param member - the member record (name/role are read before spawning).
  * @param stateDir - configured state directory, so the member can locate the
  *   team files with its own file tools.
+ * @param memories - 自成长团队记忆:从全局 best-practices 库按角色选出的经验
+ *   条目,注入系统提示反哺执行层;空数组(含冷启动守卫触发)时不注入。
  */
-export function memberPersona(team: TeamState, member: TeamMember, stateDir: string): string {
-  return `You are ${member.name}, a member of the multi-agent team "${team.name}" running inside DeepSeek Harness AgentTeams. The captain leads the team; you are a worker member${member.role ? ` with the role: ${member.role}` : ''}.
+export function memberPersona(
+  team: TeamState,
+  member: TeamMember,
+  stateDir: string,
+  memories: readonly BestPracticeEntry[] = [],
+): string {
+  const isCommissar = isCommissarRole(member.role)
+  const roleBehavior = behaviorTemplateFor(member.role)
+  const base = `You are ${member.name}, a member of the multi-agent team "${team.name}" running inside DeepSeek Harness AgentTeams. The captain leads the team; ${isCommissar
+    ? 'you are the commissar — the independent oversight member (监督角色, not a task executor).'
+    : `you are a worker member${member.role ? ` with the role: ${member.role}` : ''}.`}
+${roleBehavior === undefined ? '' : `
+Role behavior:
+${roleBehavior}`}
 
 Team context:
 - Team id: ${team.id}
@@ -278,6 +371,15 @@ Working rules:
 5. To ask a teammate something, use agent_teams_send_message with to=<teammate name>; the message lands in their mailbox and wakes them directly — teammates talk to each other without the captain in the loop. The same applies to the captain (to=captain).
 6. After your turn becomes idle, the shared task scheduler may assign your next ready task automatically. Never claim a second task while you still own unfinished work.
 7. You are a worker: do not create or delete teams, reassign tasks, or add/remove members — that is the captain's job.`
+  if (memories.length === 0) return base
+  const memoryLines = memories.map((entry) => {
+    const level = entry.level !== undefined ? `[${entry.level}] ` : ''
+    return `- ${level}${entry.practice} (来源任务「${entry.sourceTaskSubject}」· 归因 ${entry.cause})`
+  }).join('\n')
+  return `${base}
+
+Team memory (from the global best-practices library, matched to your role${member.role ? ` "${member.role}"` : ''}):
+${memoryLines}`
 }
 
 /**
@@ -299,6 +401,8 @@ export function memberWelcome(team: TeamState): string {
  * @param team - the team record (read-only here).
  * @param member - the member draft whose `id` is filled on success.
  * @param stateDir - configured state directory (for the persona).
+ * @param memories - 自成长团队记忆:按角色从全局 best-practices 库选出的经验
+ *   条目,注入该成员的系统提示;缺省(冷启动守卫触发)为不注入。
  * @param signal - caller cancellation, forwarded to the start.
  */
 export async function spawnMember(
@@ -311,6 +415,7 @@ export async function spawnMember(
   member: TeamMember,
   stateDir: string,
   signal: AbortSignal,
+  memories: readonly BestPracticeEntry[] = [],
 ): Promise<void> {
   // Fail loud at the first use: provider registration is a sibling plugin's
   // effect and may settle after this plugin mounts. Capability checks here
@@ -339,7 +444,7 @@ export async function spawnMember(
       request: {
         prompt: [{ type: 'text', text: memberWelcome(team) }],
         parent: captain,
-        persona: memberPersona(team, member, stateDir),
+        persona: memberPersona(team, member, stateDir, memories),
         toolFilter: { deny: [...MEMBER_DENIED_TOOLS] },
         agentOptions: {
           provider: llmSelection.provider,

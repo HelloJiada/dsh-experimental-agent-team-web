@@ -54,6 +54,7 @@ import {
   memberElapsedText,
   memberTimingState,
   retroDetailText,
+  taskPendingCalibration,
   taskSignalsText,
   taskTimingState,
   taskTimingText,
@@ -437,6 +438,11 @@ function DependencyMap({ tasks, t, compact = false }: {
                 {retroDetailText(detailTask, t)}
               </span>
             )}
+            {taskPendingCalibration(detailTask) && !compact && (
+              <span className={css.taskDetailCalibration} data-calibration="pending">
+                {t('task.calibration.detail')}
+              </span>
+            )}
             <span className={css.taskDetailMeta}>{dependents.length === 0
               ? t('task.detail.noDownstream')
               : t('task.detail.unlocks', { tasks: formatTaskIds(dependents.map((task) => task.id), t) })}</span>
@@ -674,6 +680,7 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
                         <span key={task.id} className={css.assignmentChip} data-state={taskTone(task.state, task.status)} data-review={taskReviewPending(task) ? 'pending' : undefined} data-helping={taskHelper(task) !== undefined ? 'true' : undefined} data-timing={timingData(task)} title={`${task.id} · ${task.subject}`}>
                           {task.id}
                           {taskReviewPending(task) && <span className={css.reviewChip}>{t('task.review.pending')}</span>}
+                          {taskPendingCalibration(task) && <span className={css.calibrationChip}>{t('task.calibration.pending')}</span>}
                           {taskHelper(task) !== undefined && <span className={css.helpingChip}>{t('task.helping', { member: taskHelper(task) })}</span>}
                           {!compact && timingData(task) !== 'ok' && <span className={css.timingChip} data-timing={timingData(task)}>{t(timingData(task) === 'over' ? 'timing.over' : 'timing.warn')}</span>}
                         </span>

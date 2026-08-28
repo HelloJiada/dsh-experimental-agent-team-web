@@ -3,8 +3,9 @@
  *
  * The captain owns exactly one seat (never created via add_member), the
  * commissar is auto-created and uniqueness-gated, and every executing role
- * (engineer / researcher / data / qa / designer / security / docs / operator,
- * plus the task-level reviewer) may have at most `maxExecPerRole` (default 2)
+ * (the 5 preset behavioral roles engineer / researcher / data / qa / designer,
+ * plus the task-level reviewer and any custom role string such as
+ * security / docs / operator) may have at most `maxExecPerRole` (default 1)
  * active members. Role strings are matched canonically — trim/lowercase, strip
  * `-v2`/`_v2`/` v2` suffixes and Chinese military titles — in the same style
  * as `isCommissarRole`.
@@ -12,7 +13,7 @@
  */
 import type { TeamMember } from './types.ts';
 /** Default cap of active members per executing role (configurable via `maxExecPerRole`). */
-export declare const DEFAULT_MAX_EXEC_PER_ROLE = 2;
+export declare const DEFAULT_MAX_EXEC_PER_ROLE = 1;
 /**
  * Canonical executing-role key: trim/lowercase, strip `-v2` / `_v2` / ` v2`
  * suffixes, map Chinese military titles to their canonical key. Commissar

@@ -90,6 +90,8 @@ export declare const zh: {
     'retro.cause.onTime': string;
     'retro.cause.other': string;
     'retro.causeLabel': string;
+    'task.calibration.pending': string;
+    'task.calibration.detail': string;
     'task.detail.completed': string;
     'task.detail.noPrerequisite': string;
     'task.detail.ready': string;
@@ -230,6 +232,8 @@ export declare const en: {
     'retro.cause.onTime': string;
     'retro.cause.other': string;
     'retro.causeLabel': string;
+    'task.calibration.pending': string;
+    'task.calibration.detail': string;
     'task.detail.completed': string;
     'task.detail.noPrerequisite': string;
     'task.detail.ready': string;

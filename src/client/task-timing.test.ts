@@ -4,6 +4,7 @@ import {
   memberElapsedText,
   memberTimingState,
   taskElapsedMs,
+  taskPendingCalibration,
   taskSignalsText,
   taskTimingState,
   taskTimingText,
@@ -107,5 +108,50 @@ describe('taskTimingText / taskSignalsText — 面板文本', () => {
     expect(signals).toContain('工具 5')
     expect(signals).toContain('240 字符')
     expect(signals).toContain('深挖了 1400 行 CSS')
+  })
+})
+
+describe('taskPendingCalibration — 复盘质量闭环「待校准」徽标', () => {
+  const retro = (overrides: Partial<NonNullable<ActivityTask['retro']>> = {}): NonNullable<ActivityTask['retro']> => ({
+    attempt: 1,
+    actualMs: 40 * 60_000,
+    overran: true,
+    cause: 'underestimated',
+    summary: '任务超时完成。',
+    recommendation: '同类任务下次按 1.3~1.5 倍给出预估。',
+    createdAt: 1000,
+    ...overrides,
+  })
+
+  it('信任服务端 pendingCalibration 标志', () => {
+    const done = task({ status: 'completed', state: 'completed', pendingCalibration: true })
+    expect(taskPendingCalibration(done)).toBe(true)
+  })
+
+  it('按原始字段回推:high 已完成 + 无经验 + 无校准 → 待校准', () => {
+    const done = task({ status: 'completed', state: 'completed', riskLevel: 'high', retro: retro() })
+    expect(taskPendingCalibration(done)).toBe(true)
+  })
+
+  it('有成员经验(retro_note)不待校准', () => {
+    const done = task({ status: 'completed', state: 'completed', riskLevel: 'high', retro: retro({ retroNote: '先读测试' }) })
+    expect(taskPendingCalibration(done)).toBe(false)
+  })
+
+  it('有队长校准不待校准;非 high/critical 不待校准', () => {
+    const calibrated = task({ status: 'completed', state: 'completed', riskLevel: 'high', retro: retro({ captainVerdict: 'useful' }) })
+    expect(taskPendingCalibration(calibrated)).toBe(false)
+    const low = task({ status: 'completed', state: 'completed', riskLevel: 'low', retro: retro() })
+    expect(taskPendingCalibration(low)).toBe(false)
+  })
+
+  it('未终结或无复盘不待校准', () => {
+    expect(taskPendingCalibration(task({ riskLevel: 'high' }))).toBe(false)
+    expect(taskPendingCalibration(task({ status: 'completed', state: 'completed', riskLevel: 'high' }))).toBe(false)
+  })
+
+  it('纯空白 retro_note 视为无成员经验(与服务端 trim 口径一致)', () => {
+    const done = task({ status: 'completed', state: 'completed', riskLevel: 'high', retro: retro({ retroNote: '   ' }) })
+    expect(taskPendingCalibration(done)).toBe(true)
   })
 })

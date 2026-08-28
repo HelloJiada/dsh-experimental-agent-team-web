@@ -33,6 +33,8 @@ export interface ActivityTask {
   readonly depth: number
   /** True while the task awaits a commissar `pass` (commissar gate). */
   readonly reviewRequired?: boolean
+  /** Risk level when the captain set one (commissar gate). */
+  readonly riskLevel?: 'low' | 'medium' | 'high' | 'critical'
   /** Latest commissar review record, when one exists. */
   readonly review?: {
     readonly reviewerName: string
@@ -81,6 +83,9 @@ export interface ActivityTask {
     readonly hasHelper?: boolean
     readonly createdAt: number
   }
+  /** 复盘质量闭环:high/critical 任务终结生成 retro 后,无成员经验且无队长
+   * 校准(待校准)。服务端快照透出 true 时置位;客户端也可按原始字段回推。 */
+  readonly pendingCalibration?: boolean
 }
 
 /** One captain-inbox preview row. */

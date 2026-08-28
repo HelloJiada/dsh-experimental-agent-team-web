@@ -13,6 +13,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { type Agent } from '@deepseek-ai/dsh-agent';
+import type { BestPracticeEntry } from './best-practices.ts';
 import type { TeamMember, TeamState } from './types.ts';
 /** Runtime knobs for member spawning, resolved from plugin config. */
 export interface MemberRuntimeConfig {
@@ -71,8 +72,10 @@ export declare function installMemberSelectionRuntime(ctx: Context, stateDir: st
  * @param member - the member record (name/role are read before spawning).
  * @param stateDir - configured state directory, so the member can locate the
  *   team files with its own file tools.
+ * @param memories - 自成长团队记忆:从全局 best-practices 库按角色选出的经验
+ *   条目,注入系统提示反哺执行层;空数组(含冷启动守卫触发)时不注入。
  */
-export declare function memberPersona(team: TeamState, member: TeamMember, stateDir: string): string;
+export declare function memberPersona(team: TeamState, member: TeamMember, stateDir: string, memories?: readonly BestPracticeEntry[]): string;
 /**
  * The initial user message delivered when the member is created.
  * @param team - the team the member joined.
@@ -89,9 +92,11 @@ export declare function memberWelcome(team: TeamState): string;
  * @param team - the team record (read-only here).
  * @param member - the member draft whose `id` is filled on success.
  * @param stateDir - configured state directory (for the persona).
+ * @param memories - 自成长团队记忆:按角色从全局 best-practices 库选出的经验
+ *   条目,注入该成员的系统提示;缺省(冷启动守卫触发)为不注入。
  * @param signal - caller cancellation, forwarded to the start.
  */
-export declare function spawnMember(ctx: Context, config: MemberRuntimeConfig, selections: MemberSelectionRuntime, llmSelection: MemberLlmSelection, captain: Agent, team: TeamState, member: TeamMember, stateDir: string, signal: AbortSignal): Promise<void>;
+export declare function spawnMember(ctx: Context, config: MemberRuntimeConfig, selections: MemberSelectionRuntime, llmSelection: MemberLlmSelection, captain: Agent, team: TeamState, member: TeamMember, stateDir: string, signal: AbortSignal, memories?: readonly BestPracticeEntry[]): Promise<void>;
 /**
  * Deliver one message to a member as its next FIFO turn. Best effort: a
  * failure (member gone or not continuable) is logged and reported as `false`
