@@ -14,8 +14,8 @@ import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts'
 import { zh } from './locales.ts'
 
 /** Canonical role key → military-title locale key (see `role.*` in locales.ts).
- * Preset: captain + the 5 behavioral executing roles + reviewer + commissar.
- * security / docs / operator are compatibility entries for legacy members and
+ * Preset: captain + the 6 behavioral executing roles + reviewer + commissar.
+ * security / operator are compatibility entries for legacy members and
  * custom role strings (not preset, no dedicated seat or behavior template). */
 export const ROLE_TITLE_KEY: Record<string, AgentTeamsLocaleKey> = {
   captain: 'role.captain',
@@ -23,12 +23,12 @@ export const ROLE_TITLE_KEY: Record<string, AgentTeamsLocaleKey> = {
   engineer: 'role.engineer',
   qa: 'role.qa',
   designer: 'role.designer',
-  security: 'role.security',
-  reviewer: 'role.reviewer',
-  docs: 'role.docs',
   data: 'role.data',
-  operator: 'role.operator',
+  docs: 'role.docs',
+  reviewer: 'role.reviewer',
   commissar: 'role.commissar',
+  security: 'role.security',
+  operator: 'role.operator',
 }
 
 /** Normalize a role/name for canonical-key lookup: lowercase, trim, and
