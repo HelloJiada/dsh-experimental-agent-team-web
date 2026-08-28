@@ -155,6 +155,51 @@ describe('suggestAssignments — 任务→建议角色/成员 映射(纯函数)'
     expect(suggestion.suggestedMember).toBe('技术员 一号')
   })
 
+  it('R-28:中文军职角色串归一化——技术员→engineer 能匹配', () => {
+    const [suggestion] = suggestAssignments(
+      [{ id: 't1', subject: '实现调度器建议', status: 'pending' }],
+      [member('技术员 一号', { role: '技术员' })],
+    )
+    expect(suggestion.suggestedRole).toBe('engineer')
+    expect(suggestion.suggestedMember).toBe('技术员 一号')
+    expect(suggestion.roleHasMember).toBe(true)
+  })
+
+  it('R-28:中文军职角色串归一化——侦察参谋→researcher 能匹配', () => {
+    const [suggestion] = suggestAssignments(
+      [{ id: 't1', subject: '竞品调研与拆解', status: 'pending' }],
+      [member('侦察参谋 一号', { role: '侦察参谋' })],
+    )
+    expect(suggestion.suggestedRole).toBe('researcher')
+    expect(suggestion.suggestedMember).toBe('侦察参谋 一号')
+    expect(suggestion.roleHasMember).toBe(true)
+  })
+
+  it('R-28:中文军职 + 版本后缀(质检员-v2)同样归一化到 qa', () => {
+    const [suggestion] = suggestAssignments(
+      [{ id: 't1', subject: '验收面板布局', status: 'pending' }],
+      [member('质检员 一号', { role: '质检员-v2' })],
+    )
+    expect(suggestion.suggestedRole).toBe('qa')
+    expect(suggestion.suggestedMember).toBe('质检员 一号')
+  })
+
+  it('R-28:与 role-limits 同口径——中文角色与英文角色视为同一角色桶', () => {
+    // 中文「技术员」与英文 engineer 归一化到同一 key,负载均衡应横跨两者。
+    const suggestions = suggestAssignments(
+      [
+        { id: 't0', subject: '进行中任务', status: 'in_progress', assignee: '英文工程师' },
+        { id: 't1', subject: '实现调度器建议', status: 'pending' },
+      ],
+      [
+        member('英文工程师', { role: 'engineer' }),
+        member('中文技术员', { role: '技术员' }),
+      ],
+    )
+    // t0 已被「英文工程师」持有 → 建议应落到「中文技术员」。
+    expect(suggestions[1]?.suggestedMember).toBe('中文技术员')
+  })
+
   it('确定性:同一输入两次结果一致', () => {
     const tasks = [{ id: 't1', subject: '实现调度器建议', status: 'pending' }]
     expect(suggestAssignments(tasks, members)).toEqual(suggestAssignments(tasks, members))

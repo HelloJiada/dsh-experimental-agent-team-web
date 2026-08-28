@@ -15,6 +15,8 @@
  * @module dsh-agent-team-web/suggest
  */
 
+import { canonicalExecRole } from './role-limits.ts'
+
 /** 预设可建议的 6 个执行角色(与预设行为角色一一对应)。 */
 export type SuggestedRole = 'researcher' | 'engineer' | 'qa' | 'designer' | 'data' | 'docs' | 'security'
 
@@ -166,11 +168,6 @@ export function suggestRole(subject: string, description?: string): RoleSuggesti
 /** 终结态任务不参与建议。 */
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'cancelled'])
 
-/** 角色 key 归一化:小写、去空白、去版本后缀(engineer-v2 → engineer)。 */
-function canonicalRoleKey(role: string): string {
-  return role.trim().toLowerCase().replace(/[-_]\s*v\d+$/, '').trim()
-}
-
 /**
  * 对一组任务批量输出「任务→建议角色/成员」映射。纯函数。
  *
@@ -185,7 +182,11 @@ export function suggestAssignments(
   const roleMembers = new Map<string, readonly SuggestableMember[]>()
   for (const member of members) {
     if (member.status === 'removed' || member.role === undefined || member.role.trim() === '') continue
-    const key = canonicalRoleKey(member.role)
+    // R-28/F-10:复用 role-limits 的 canonicalExecRole(小写/去 vN 后缀/中文军职
+    // 映射),与按角色上限计数、isCommissarRole 同一套归一化口径——否则队长用
+    // 中文角色串(如 role:'侦察参谋')加成员时,建议分配永远选不到该成员。
+    const key = canonicalExecRole(member.role)
+    if (key === '') continue
     const list = roleMembers.get(key) ?? []
     roleMembers.set(key, [...list, member])
   }

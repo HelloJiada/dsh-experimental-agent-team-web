@@ -34,6 +34,12 @@ const MEMBER_DENIED_TOOLS = [
   'agent_teams_remove_member',
   'agent_teams_reassign_task',
   'agent_teams_create_task',
+  // R-29/F-11:retro_review(队长校准)与 best_practices(经验库/校准统计)同为
+  // 队长专属——运行期 requireCaptainTeam 守卫本就拒绝成员,但在成员工具列表
+  // 里出现两个"永远报错"的工具浪费 token 且误导,与 create/add_member 等
+  // 保持同一套"队长专属"deny 口径。
+  'agent_teams_retro_review',
+  'agent_teams_best_practices',
   'agent_teams_delete',
 ] as const
 

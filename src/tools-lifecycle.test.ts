@@ -398,9 +398,11 @@ describe('add_member best-practices 记忆注入', () => {
     expect(spawn?.request.persona).toContain('实现前先定验收标准')
     // R-20:pending 未校准条目不注入。
     expect(spawn?.request.persona).not.toContain('未校准经验不应注入')
+    // R-29:队长专属工具(含 retro_review/best_practices)全部在成员 deny 清单。
     expect(spawn?.request.toolFilter.deny).toEqual(expect.arrayContaining([
       'agent_teams_create', 'agent_teams_add_member', 'agent_teams_remove_member',
       'agent_teams_reassign_task', 'agent_teams_create_task', 'agent_teams_delete',
+      'agent_teams_retro_review', 'agent_teams_best_practices',
     ]))
   })
 
