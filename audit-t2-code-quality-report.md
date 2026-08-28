@@ -3,11 +3,11 @@
 - 审查人:技术员一号（engineer）
 - 审查范围:src/ 全部服务端模块(17 个) + 关键 client 纯函数模块;测试基线:41 个测试文件 / 362 个用例全部通过(vitest run,exit 0)
 - 审查维度:纯函数纯度 / 边界条件 / 时间处理 / 并发安全 / 错误处理 / 已知缺口
-- 严重度:P1(高)=0,P2(中)=7,P3(低)=6,P4(提示)=5
+- 严重度:P1(高)=0,P2(中)=8,P3(低)=6,P4(提示)=5
 
 ---
 
-## 一、P2 中等问题(7 个)
+## 一、P2 中等问题(8 个)
 
 ### P2-1 update_task 仅写 output 时丢弃 signals.turns 计数
 - 位置:`src/tools.ts:1077-1083`(对比 `1084-1090` 的 signal_note 分支保留了 turns)
@@ -45,6 +45,13 @@
 - 位置:`tools.ts:596-601`(remove_member)、`1791-1797`(delete)、`close-route.ts:128-137`(prepareTeamForArchive)——三处都只处理 `assignee === member.name`,不处理 `helper === member.name`
 - 复现路径:成员 H 正以 helper 身份协助任务 t(owner 停滞)→ 队长移除 H → t.helper / helperSince 残留 → `isHelppableTask`(scheduler.ts:132)永远拒绝再帮助 t;快照持续显示"helped by 已移除成员";t 的 helperEver 永久为 true(复盘标注"有 helper 介入"虽属实,但后续帮助通道被堵死)。
 - 修复建议:三处移除路径统一追加 `if (task.helper === member.name) { task.helper = undefined; task.helperSince = undefined }`。
+
+### P2-8 update_task 输出 schema 与实际返回值漂移,终结更新必然触发返回校验失败(审计过程中实测复现)
+- 位置:`src/tools.ts:975-1002`(输出 schema,`additionalProperties: false`)vs `1143-1181`(实际返回)
+- 复现:对任意任务执行终结更新(status=completed/failed/cancelled)。返回对象恒含 `retro`(1162-1180 行),若任务设了 estimate_ms 还含 `estimated_ms`(1160 行)——这两个字段**都不在输出 schema 中**;`additionalProperties: false` 下,返回校验必然报 "value.retro is not a declared property"。本次审计实测:t2 完成提交返回被拒,报 `started_at`/`signals`/`actual_ms`/`retro` 未声明(运行时加载的构建更旧,连后三个也未声明)。
+- 影响:状态变更本身已成功落盘(先于返回构造),但工具以"错误"结果回报成员——成员看到失败、实际已成功,极易误判重试或误报;任何带预估毫秒或复盘的任务都无法获得干净的完成确认。t1/t3/t4 的完成提交同样受此影响(磁盘均已完成,返回均被拒)。
+- 修复建议:把返回中的 `estimated_ms`、`retro` 补入输出 schema(与 status 工具 1464-1482 行的 retro 形状对齐),或给返回对象去掉 `additionalProperties: false`;并新增工具级测试断言终结更新的返回值通过 schema 校验。
+- 附注(环境层):本次会话运行时加载的插件构建早于磁盘 lib(10:42 重建),其注册 schema 更旧——即使源码修复,也需重启加载新构建才能生效;建议对插件包做"schema 与返回同源"的回归测试防止再次漂移。
 
 ---
 
@@ -131,4 +138,14 @@ retro.ts / suggest.ts / best-practices.ts / archive-filter.ts 均为真纯函数
 
 ## 五、总体评价
 
-框架代码质量整体高:纯函数边界清晰、JSON 边界校验完备(isTeamTask/isTeamState 等)、状态机严格(TASK_TRANSITIONS)、锁使用系统化且顺序一致、错误信息可操作、362 个用例全绿。未发现 P1(主线数据损坏/高危安全)问题;7 个 P2 集中在"闭环缺口"(中间态语义、并发原子性、状态清理)与"口径不一致",均为可快速修复的局部问题,建议按 P2-1→P2-7 顺序修复并补对应测试。
+框架代码质量整体高:纯函数边界清晰、JSON 边界校验完备(isTeamTask/isTeamState 等)、状态机严格(TASK_TRANSITIONS)、锁使用系统化且顺序一致、错误信息可操作、362 个用例全绿。未发现 P1(主线数据损坏/高危安全)问题;8 个 P2 集中在"闭环缺口"(中间态语义、并发原子性、状态清理)、"口径不一致"与"schema 漂移",均为可快速修复的局部问题,建议按 P2-1→P2-8 顺序修复并补对应测试。
+
+---
+
+## 六、修复状态跟踪(审查组补充)
+
+| # | 问题 | 状态 |
+|---|---|---|
+| P2-8 | update_task 输出 schema 缺 `estimated_ms`/`retro`(终结更新校验失败) | ✅ **已修复并提交**(commit `b433ef2`):schema 补齐 retro 对象(15 字段含 includes_gate_wait/has_helper)+ estimated_ms;新增 `src/tools-schema-consistency.test.ts` 5 用例回归(模拟宿主 additionalProperties:false 校验语义,真实执行终结/门禁/建议路径);lib 已重建。实测 25 files / 281 tests 全绿 |
+| P0/F-01 | 发布物 schema 缺 started_at/signals | ✅ 源码已修(4a1822f/d0798a8);lib 已重建;**待重发 0.1.2 + 重启运行进程** |
+| R-12 | vitest 计数虚高(362→276) | ✅ 已修复提交(`d80387a`):vitest.config.ts exclude `.claude/**` |
