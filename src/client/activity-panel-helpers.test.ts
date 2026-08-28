@@ -98,9 +98,13 @@ describe('taskTone — 徽标着色(状态宽化)', () => {
 })
 
 describe('timingData — 超时档位(面板 data-timing 消费)', () => {
-  it('无预估恒为 ok;超预算 1.5 倍为 over', () => {
+  it('无预估恒为 ok;超预算为 warn;超 1.5 倍为 over', () => {
     expect(timingData(task('t1'))).toBe('ok')
-    expect(timingData(task('t2', { estimateLevel: 'S', claimedAt: 0 }))).toBe('over')
+    // S 预算 15m:已用 ~20m > 15m 且 <= 22.5m → warn(宽边界,Date.now 竞态可忽略)。
+    expect(timingData(task('t2', { estimateLevel: 'S', claimedAt: Date.now() - 20 * 60_000 }))).toBe('warn')
+    // 已用 ~30m > 22.5m → over。
+    expect(timingData(task('t3', { estimateLevel: 'S', claimedAt: Date.now() - 30 * 60_000 }))).toBe('over')
+    expect(timingData(task('t4', { estimateLevel: 'S', claimedAt: 0 }))).toBe('over')
   })
 })
 
