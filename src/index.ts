@@ -29,6 +29,7 @@ import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
 import { handleProviderGrant } from './provider-grant-route.ts'
+import { registerProviderGrantsSettings } from './provider-grants.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -206,6 +207,15 @@ export function apply(ctx: Context, config: Config): void {
 
   registerAgentTeamsTools(ctx, resolved)
 
+  // Provider 授权中心（设计变更：面板 → DSH 设置页）：在 settings 服务上注册
+  // `agent-team-web-providers` 命名空间，设置页自动渲染 provider 开关表单。
+  // 注册是惰性的（settings 服务缺席的 headless profile 不注册）。此为注册
+  // 骨架：spawn 校验数据源（settings 优先 + provider-grants.json fallback
+  // 双通道）待 t6 核验结论后接线（决策 1）。
+  ctx.inject(['settings'], (settingsCtx) => {
+    registerProviderGrantsSettings(settingsCtx)
+  })
+
   // Deterministic activation surfaces: the closed-namespace `/agent-teams`
   // host command (surfaces in the Web GUI slash menu via the Harness
   // ui-commands client) and the plain-text gesture boundary for surfaces
@@ -293,11 +303,10 @@ export function apply(ctx: Context, config: Config): void {
     }),
   }), 'agent-teams: close route')
 
-  // Provider authorization route: the panel's switch POSTs here to grant or
-  // revoke a provider for AgentTeam members. R-17/H-1: the boot token is the
-  // write credential (same fence as /close); the grant is global (profile
-  // level) and persists to provider-grants.json under the first workspace.
-  // Handler extracted to provider-grant-route.ts for direct auth tests.
+  // Provider authorization route (第二写面,决策 2 保留):设置页通过 settings
+  // 服务持久化为主通道;此 HTTP 路由保留为 R-17 token 围栏的第二写面
+  // (面板时代遗留,双通道无害)。grant 全局(profile 级),落
+  // provider-grants.json(与 settings 双通道并存,spawn 校验接线见 t6 结论)。
   ctx.effect(() => webServer.register({
     kind: 'exact',
     path: '/plugins/agent-team-web/provider-grant',

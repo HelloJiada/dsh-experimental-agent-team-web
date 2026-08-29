@@ -63,11 +63,6 @@ export const zh = {
   'dependency.hint.parallel': '无前后依赖 · 点击查看详情',
   'dependency.hint.chain': '悬停高亮依赖链 · 点击固定',
   'dependency.hint.pinned': '{taskId} 已固定 · Esc 取消',
-  'provider.aria': 'LLM Provider 授权',
-  'provider.title': 'Provider 授权',
-  'provider.locked': '默认',
-  'provider.hint': '拨开开关授权成员使用该 Provider；未授权的 Provider 自动回退 deepseek-official',
-  'provider.grantError': '授权保存失败，请重试',
   'task.runningAria': '运行中',
   'task.review.pending': '待政委复核',
   'task.review.passed': '政委已复核（{reviewer}）',
@@ -329,11 +324,6 @@ export const en = {
   'archive.retro.noRetro': 'Missing retro',
   'archive.filterCount': 'Showing {shown} / {total} archived teams',
   'archive.filterEmpty': 'No archived teams match the filters',
-  'provider.aria': 'LLM provider authorization',
-  'provider.title': 'Provider access',
-  'provider.locked': 'Default',
-  'provider.hint': 'Flip a switch to let members use that provider; unauthorized providers fall back to deepseek-official',
-  'provider.grantError': 'Failed to save provider access, please retry',
 } satisfies Record<AgentTeamsLocaleKey, string>
 
 /** Translation function consumed by pure view helpers. */

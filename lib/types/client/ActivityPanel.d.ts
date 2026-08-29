@@ -29,29 +29,6 @@ export declare function taskTone(state: ActivityTask['state'], status: string): 
 export declare function timingData(task: ActivityTask): 'ok' | 'warn' | 'over';
 export declare function compactTaskLabel(subject: string): string;
 export declare function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate): string;
-/** Provider 授权中心行数据:一行一个 DSH 注册 provider,deepseek-official 恒锁定(不可关)。 */
-export declare function providerGrantRows(providers: readonly {
-    id: string;
-    name: string;
-    enabled: boolean;
-}[] | undefined): readonly {
-    id: string;
-    name: string;
-    enabled: boolean;
-    locked: boolean;
-}[];
-/** Provider switch 拨动请求契约:endpoint + 方法 + 载荷(enabled 取反)。R-17 token 头由调用方注入。 */
-export declare function providerToggleRequest(provider: {
-    id: string;
-    enabled: boolean;
-}): {
-    method: 'POST';
-    path: string;
-    body: {
-        provider: string;
-        enabled: boolean;
-    };
-};
 /** 健康档位:0-49 需要立即干预,50-79 存在风险,80+ 运行平稳。 */
 export declare function healthLevel(score: number): 'critical' | 'warn' | 'ok';
 /** 高风险消息计数(融合分析层)。 */

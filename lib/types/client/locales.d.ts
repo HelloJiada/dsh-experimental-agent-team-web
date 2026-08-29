@@ -61,11 +61,6 @@ export declare const zh: {
     'dependency.hint.parallel': string;
     'dependency.hint.chain': string;
     'dependency.hint.pinned': string;
-    'provider.aria': string;
-    'provider.title': string;
-    'provider.locked': string;
-    'provider.hint': string;
-    'provider.grantError': string;
     'task.runningAria': string;
     'task.review.pending': string;
     'task.review.passed': string;
@@ -325,11 +320,6 @@ export declare const en: {
     'archive.retro.noRetro': string;
     'archive.filterCount': string;
     'archive.filterEmpty': string;
-    'provider.aria': string;
-    'provider.title': string;
-    'provider.locked': string;
-    'provider.hint': string;
-    'provider.grantError': string;
 };
 /** Translation function consumed by pure view helpers. */
 export type AgentTeamsTranslate = (key: AgentTeamsLocaleKey, params?: Record<string, unknown>) => string;
