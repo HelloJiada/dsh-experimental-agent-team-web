@@ -131,10 +131,30 @@ export function toggleProviderModels(
   return next
 }
 
-/** 纯函数:角色预设行(t17 合并视图透传;模型选项改由 rolePresetModelGroups
- * 全 provider 分组提供)。 */
-export function rolePresetRows(views: readonly RolePresetView[]): readonly RolePresetRow[] {
-  return views
+/** 角色档位值(client 本地形状,与 host AgentTeamSettingsSchema 对齐;
+ * 不导入 host provider-grants.ts 以保 client bundle 纯净)。 */
+export interface RoleLlmDefaultValue {
+  readonly provider?: string
+  readonly model?: string
+  readonly reasoningEffort?: string
+}
+
+/** 纯函数(t20):实时合并角色档位——显示值 = 实时覆盖(scope snapshot)
+ * ?? base(/state 的 profile ?? DEFAULT,不含覆盖);overridden 由实时覆盖
+ * 判定(驱动「恢复默认」disabled 态与选中回显)。 */
+export function mergeRoleDefaults(
+  base: Readonly<Record<string, RoleLlmDefaultValue>> | undefined,
+  overrides: Readonly<Record<string, RoleLlmDefaultValue>> | undefined,
+): readonly RolePresetView[] {
+  const roles = [...new Set([
+    ...Object.keys(base ?? {}),
+    ...Object.keys(overrides ?? {}),
+  ])]
+  return roles.map(role => ({
+    role,
+    ...(overrides?.[role] ?? base?.[role]) ?? {},
+    overridden: overrides?.[role] !== undefined,
+  }))
 }
 
 /** 纯函数:角色档位覆盖写后的 roleDefaults map(value=undefined → 删覆盖)。 */
@@ -164,42 +184,37 @@ export function rolePresetModelGroups(
     .filter(group => group.models.length > 0)
 }
 
-/** 纯函数(t17):模型下拉当前选中值所在组(无覆盖/模型不在任何组 → undefined)。 */
-export function rolePresetSelectedGroup(
-  groups: readonly { providerId: string; models: readonly string[] }[],
-  value: { provider?: string; model?: string } | undefined,
-): string | undefined {
-  const model = value?.model
-  const provider = value?.provider
-  if (model === undefined) return undefined
-  return groups.find(group => group.providerId === provider && group.models.includes(model))?.providerId
-}
-
-/** 纯函数:从 /state 响应体取顶层 providers(含 models)与 roleDefaults 合并视图。 */
+/** 纯函数(t20):从 /state 响应体取设置中心数据——providers(含 models)+
+ * roleDefaultsBase(不含覆盖的 base:profile ?? DEFAULT)+ roleDefaultsOverrides
+ * (settings.roleDefaults 原文,初始值;实时覆盖由 scope snapshot 提供)。 */
 export function settingsCenterFromStateBody(body: unknown): {
   providers: readonly ProviderWithModels[]
-  roleDefaults: readonly RolePresetView[]
+  roleDefaultsBase: Record<string, RoleLlmDefaultValue>
+  roleDefaultsOverrides: Record<string, RoleLlmDefaultValue>
 } {
   const data = body as {
     providers?: readonly ProviderWithModels[]
-    roleDefaults?: readonly RolePresetView[]
+    roleDefaultsBase?: Record<string, RoleLlmDefaultValue>
+    roleDefaultsOverrides?: Record<string, RoleLlmDefaultValue>
   } | undefined
   return {
     providers: Array.isArray(data?.providers) ? data.providers : [],
-    roleDefaults: Array.isArray(data?.roleDefaults) ? data.roleDefaults : [],
+    roleDefaultsBase: data?.roleDefaultsBase ?? {},
+    roleDefaultsOverrides: data?.roleDefaultsOverrides ?? {},
   }
 }
 
 /** 从 /state 拉取设置中心数据(经授权 token)。 */
 export async function fetchSettingsCenter(): Promise<{
   providers: readonly ProviderWithModels[]
-  roleDefaults: readonly RolePresetView[]
+  roleDefaultsBase: Record<string, RoleLlmDefaultValue>
+  roleDefaultsOverrides: Record<string, RoleLlmDefaultValue>
 }> {
   const token = agentTeamsWebToken()
   const response = await fetch('/plugins/agent-team-web/state', {
     headers: token === undefined ? {} : { [TOKEN_HEADER]: token },
   })
-  if (!response.ok) return { providers: [], roleDefaults: [] }
+  if (!response.ok) return { providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {} }
   return settingsCenterFromStateBody(await response.json())
 }
 
@@ -285,31 +300,33 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
         </button>
       </header>
       <ul className={styles.list}>
-        {rows.map(row => {
-          // 当前模型覆盖值所在组(选中项须落在对应 optgroup 内)。
-          const selectedGroup = rolePresetSelectedGroup(groups, { provider: row.provider, model: row.model })
-          return (
-            <li key={row.role} className={styles.row} data-overridden={row.overridden}>
-              <span className={styles.nameWrap}>
-                <span className={styles.name} title={row.role}>{roleTitle(row.role, t)}</span>
-                <span className={styles.rowSub}>{row.role}</span>
-              </span>
-              <select
-                className={styles.select}
-                aria-label={`${row.role} ${t('settings.agentTeam.modelAria')}`}
-                value={row.model ?? ''}
-                onChange={(event) => {
-                  const model = event.target.value
-                  if (model === '') {
-                    // 继承:删覆盖,回落三源链。
-                    void write(row.role, undefined)
-                    return
-                  }
-                  // 选中模型所属组 → 直接写 {provider: 组 provider, model}(旧 provider 不保留)。
-                  const group = groups.find(g => g.models.includes(model))
-                  void write(row.role, { provider: group?.providerId, model })
-                }}
-              >
+        {rows.map(row => (
+          <li key={row.role} className={styles.row} data-overridden={row.overridden}>
+            <span className={styles.nameWrap}>
+              <span className={styles.name} title={row.role}>{roleTitle(row.role, t)}</span>
+              <span className={styles.rowSub}>{row.role}</span>
+            </span>
+            <select
+              className={styles.select}
+              aria-label={`${row.role} ${t('settings.agentTeam.modelAria')}`}
+              value={row.model ?? ''}
+              onChange={(event) => {
+                const model = event.target.value
+                if (model === '') {
+                  // 继承:删覆盖,回落三源链。
+                  void write(row.role, undefined)
+                  return
+                }
+                // 选中模型所属组 → 写 {provider: 组 provider, model}(旧 provider
+                // 不保留);次因②:保留当前 reasoningEffort(切模型不丢思考等级)。
+                const group = groups.find(g => g.models.includes(model))
+                void write(row.role, {
+                  provider: group?.providerId,
+                  model,
+                  reasoningEffort: row.reasoningEffort,
+                })
+              }}
+            >
                 <option value="">{t('settings.agentTeam.inherit')}</option>
                 {groups.map(group => (
                   <optgroup key={group.providerId} label={group.providerId}>
@@ -317,7 +334,6 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                       <option
                         key={`${group.providerId}/${model}`}
                         value={model}
-                        {...(selectedGroup === group.providerId && row.model === model ? { selected: true } : {})}
                       >
                         {model}
                       </option>
@@ -331,7 +347,13 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                 value={row.reasoningEffort ?? ''}
                 onChange={(event) => {
                   const effort = event.target.value
-                  void write(row.role, { ...row, reasoningEffort: effort === '' ? undefined : effort })
+                  // 次因①:只写三字段(provider/model/effort),不 spread 整个 row
+                  // (避免 role/overridden 落入 settings.roleDefaults)。
+                  void write(row.role, {
+                    provider: row.provider,
+                    model: row.model,
+                    reasoningEffort: effort === '' ? undefined : effort,
+                  })
                 }}
               >
                 <option value="">{t('settings.agentTeam.inherit')}</option>
@@ -339,7 +361,7 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
               </select>
             </li>
           )
-        })}
+        )}
       </ul>
     </section>
   )
@@ -347,17 +369,21 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
 
 /**
  * AgentTeam 设置中心 section:两张卡(模型调度授权 + 角色预设)。
- * 数据流:模型/角色列表 = /state 顶层;授权/覆盖状态 = settingsScope 命名
- * 空间 resolved value;开关/选择写面 = scope.set(宿主持久化)。
+ * t20 数据流:模型/角色 base = /state 顶层(一次性);授权/覆盖实时状态 =
+ * settingsScope 命名空间 resolved value(订阅自动刷新);显示值 = 实时覆盖
+ * ?? base;开关/选择写面 = scope.set(宿主持久化,写后 snapshot 更新即时回显)。
  */
 export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactNode | null {
   const { scope, t = (key: string) => key } = props
-  const [center, setCenter] = useState<{ providers: readonly ProviderWithModels[]; roleDefaults: readonly RolePresetView[] }>({ providers: [], roleDefaults: [] })
+  const [center, setCenter] = useState<{
+    providers: readonly ProviderWithModels[]
+    roleDefaultsBase: Record<string, RoleLlmDefaultValue>
+  }>({ providers: [], roleDefaultsBase: {} })
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     let alive = true
     void fetchSettingsCenter()
-      .then((data) => { if (alive) { setCenter(data); setLoading(false) } })
+      .then((data) => { if (alive) { setCenter({ providers: data.providers, roleDefaultsBase: data.roleDefaultsBase }); setLoading(false) } })
       .catch(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [])
@@ -366,7 +392,8 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
     () => scope?.getSnapshot() ?? EMPTY_SNAPSHOT,
   )
   const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
-  const roleRows = rolePresetRows(center.roleDefaults)
+  // t20 主因修复:实时合并——显示值 = 实时覆盖(scope snapshot) ?? base(/state)。
+  const roleRows = mergeRoleDefaults(center.roleDefaultsBase, snapshot.value?.roleDefaults)
   const modelGroups = rolePresetModelGroups(center.providers)
   return (
     <div className={styles.section} data-provider-grants data-loading={loading}>

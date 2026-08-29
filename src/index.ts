@@ -294,16 +294,23 @@ export function apply(ctx: Context, config: Config): void {
       // t10(t9 根因):provider 是全局事实,顶层直接算(不再依赖 teams[0]——
       // 无团队时设置页卡片恒空)。t13:含每 provider 模型列表(advisory)。
       const providers = await collectProviders(ctx, settingsAccess.enabledModels)
-      // t13:角色档位合并视图(settings 覆盖 → profile.roleLlmDefaults →
-      // DEFAULT_ROLE_LLM 三源链;overridden 标记供 RolePresetCard「默认」按钮)。
+      // t13:角色档位三源链(settings 覆盖 → profile.roleLlmDefaults →
+      // DEFAULT_ROLE_LLM)。t20:分开透出——合并视图(兼容)+ base(不含覆盖:
+      // profile ?? DEFAULT)+ 原始覆盖层(settings.roleDefaults 原文);client
+      // 用「实时覆盖(scope snapshot) ?? base」合并出实时显示,删覆盖后 base
+      // 立即可见(不再被陈旧合并视图掩盖)。
       const roleOverrides = settingsAccess.roleDefaults?.() ?? {}
       const roleKeys = [...new Set([
         ...Object.keys(DEFAULT_ROLE_LLM),
         ...Object.keys(resolved.roleLlmDefaults ?? {}),
         ...Object.keys(roleOverrides),
       ])]
+      const roleDefaultsBase: Record<string, { provider?: string; model?: string; reasoningEffort?: string }> = {}
+      for (const roleKey of roleKeys) {
+        roleDefaultsBase[roleKey] = resolved.roleLlmDefaults?.[roleKey] ?? DEFAULT_ROLE_LLM[roleKey]
+      }
       const roleDefaults = roleKeys.map(roleKey => {
-        const merged = roleOverrides[roleKey] ?? resolved.roleLlmDefaults?.[roleKey] ?? DEFAULT_ROLE_LLM[roleKey]
+        const merged = roleOverrides[roleKey] ?? roleDefaultsBase[roleKey]
         return {
           role: roleKey,
           ...merged ?? {},
@@ -314,6 +321,8 @@ export function apply(ctx: Context, config: Config): void {
         teams: snapshots.map(snapshot => redactSnapshotForHttp(snapshot, authorized)),
         providers,
         roleDefaults,
+        roleDefaultsBase,
+        roleDefaultsOverrides: roleOverrides,
       })
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',

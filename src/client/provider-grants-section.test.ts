@@ -1,22 +1,21 @@
 /**
- * AgentTeam 设置中心 section 纯逻辑测试(t13/t14)。
+ * AgentTeam 设置中心 section 纯逻辑测试(t13/t14/t20)。
  *
  * 与 activity-panel-helpers.test 同构(node 环境无 jsdom,直测导出纯函数):
- * providerGrantRows(t14:provider 粒度行,deepseek 锁定「默认」,enabled=全部
- * 模型已授权)、toggleProviderModels(provider 行 switch 联动全部模型 key)、
- * rolePresetRows、roleDefaultsMap、settingsCenterFromStateBody。
+ * providerGrantRows(t14)、toggleProviderModels、mergeRoleDefaults(t20 实时
+ * 合并)、rolePresetModelGroups、roleDefaultsMap、resetRoleDefaults、
+ * settingsCenterFromStateBody(t20 base/覆盖拆分)。
  * @module dsh-agent-team-web/client/provider-grants-section.test
  */
 
 import { describe, expect, it } from 'vitest'
 import {
+  mergeRoleDefaults,
   modelKeyOf,
   providerGrantRows,
   resetRoleDefaults,
   roleDefaultsMap,
   rolePresetModelGroups,
-  rolePresetRows,
-  rolePresetSelectedGroup,
   settingsCenterFromStateBody,
   toggleProviderModels,
 } from './ProviderGrantsSection.tsx'
@@ -92,18 +91,31 @@ describe('toggleProviderModels — provider 行 switch 联动全部模型(t14)',
   })
 })
 
-describe('rolePresetRows — 角色预设行(t17 合并视图透传)', () => {
-  const views = [
-    { role: 'engineer', provider: 'kimi-coding', model: 'kimi-k2.7-code', reasoningEffort: 'high', overridden: true },
-    { role: 'qa', overridden: false },
-  ]
+describe('mergeRoleDefaults — 实时合并(t20 主因修复)', () => {
+  const base = {
+    engineer: { model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+    qa: { model: 'deepseek-v4-flash' },
+  }
 
-  it('合并视图直接透传(模型选项改由全 provider 分组提供)', () => {
-    expect(rolePresetRows(views)).toEqual(views)
+  it('显示值 = 实时覆盖 ?? base;overridden 由实时覆盖判定', () => {
+    const rows = mergeRoleDefaults(base, { engineer: { model: 'custom-m1' } })
+    expect(rows).toEqual([
+      { role: 'engineer', model: 'custom-m1', overridden: true },
+      { role: 'qa', model: 'deepseek-v4-flash', overridden: false },
+    ])
+  })
+
+  it('删覆盖后回落 base(overridden 翻 false);base 缺失安全', () => {
+    const rows = mergeRoleDefaults(base, {})
+    expect(rows.find(r => r.role === 'engineer')).toMatchObject({ model: 'deepseek-v4-flash', reasoningEffort: 'high', overridden: false })
+    expect(mergeRoleDefaults(undefined, { engineer: { model: 'm' } })).toEqual([
+      { role: 'engineer', model: 'm', overridden: true },
+    ])
+    expect(mergeRoleDefaults(undefined, undefined)).toEqual([])
   })
 })
 
-describe('rolePresetModelGroups / rolePresetSelectedGroup — 模型下拉按 provider 分组(t17)', () => {
+describe('rolePresetModelGroups — 模型下拉按 provider 分组(t17)', () => {
   it('分组 = 全部含模型的 provider;无模型 provider 过滤', () => {
     expect(rolePresetModelGroups(PROVIDERS)).toEqual([
       { providerId: 'deepseek-official', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
@@ -112,13 +124,6 @@ describe('rolePresetModelGroups / rolePresetSelectedGroup — 模型下拉按 pr
       { providerId: 'cc-switch', models: ['cc-model-1'] },
     ])
     expect(rolePresetModelGroups([{ id: 'x', name: 'X' }])).toEqual([])
-  })
-
-  it('选中值所在组:按 provider+model 定位;无覆盖/模型不在任何组 → undefined', () => {
-    const groups = rolePresetModelGroups(PROVIDERS)
-    expect(rolePresetSelectedGroup(groups, { provider: 'kimi-coding', model: 'kimi-k2.7-code' })).toBe('kimi-coding')
-    expect(rolePresetSelectedGroup(groups, { provider: 'kimi-coding', model: 'no-such' })).toBeUndefined()
-    expect(rolePresetSelectedGroup(groups, undefined)).toBeUndefined()
   })
 })
 
@@ -141,17 +146,18 @@ describe('roleDefaultsMap — 角色档位覆盖写(「默认」= 删覆盖)', (
   })
 })
 
-describe('settingsCenterFromStateBody — /state 顶层数据解析(t13)', () => {
-  it('providers(含 models)与 roleDefaults 合并视图直取', () => {
+describe('settingsCenterFromStateBody — /state 顶层数据解析(t20 base/覆盖拆分)', () => {
+  it('providers + roleDefaultsBase + roleDefaultsOverrides 直取', () => {
     const body = {
       providers: PROVIDERS,
-      roleDefaults: [{ role: 'engineer', model: 'deepseek-v4-flash', overridden: true }],
+      roleDefaultsBase: { engineer: { model: 'deepseek-v4-flash' } },
+      roleDefaultsOverrides: { engineer: { model: 'custom-m1' } },
     }
     expect(settingsCenterFromStateBody(body)).toEqual(body)
   })
 
-  it('结构不符 → 空数组', () => {
-    expect(settingsCenterFromStateBody(undefined)).toEqual({ providers: [], roleDefaults: [] })
-    expect(settingsCenterFromStateBody({ teams: [] })).toEqual({ providers: [], roleDefaults: [] })
+  it('结构不符 → 空数组/空 map', () => {
+    expect(settingsCenterFromStateBody(undefined)).toEqual({ providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {} })
+    expect(settingsCenterFromStateBody({ teams: [] })).toEqual({ providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {} })
   })
 })

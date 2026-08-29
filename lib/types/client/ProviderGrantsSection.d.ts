@@ -78,9 +78,17 @@ export declare function providerGrantRows(providers: readonly ProviderWithModels
  * (删除该 provider 全部模型 key)。设计决策:provider 粒度展示,授权数据仍
  * 模型粒度(enabledModels 复合 key)不变。 */
 export declare function toggleProviderModels(current: Readonly<Record<string, boolean>> | undefined, provider: string, models: readonly string[] | undefined, nextEnabled: boolean): Record<string, boolean>;
-/** 纯函数:角色预设行(t17 合并视图透传;模型选项改由 rolePresetModelGroups
- * 全 provider 分组提供)。 */
-export declare function rolePresetRows(views: readonly RolePresetView[]): readonly RolePresetRow[];
+/** 角色档位值(client 本地形状,与 host AgentTeamSettingsSchema 对齐;
+ * 不导入 host provider-grants.ts 以保 client bundle 纯净)。 */
+export interface RoleLlmDefaultValue {
+    readonly provider?: string;
+    readonly model?: string;
+    readonly reasoningEffort?: string;
+}
+/** 纯函数(t20):实时合并角色档位——显示值 = 实时覆盖(scope snapshot)
+ * ?? base(/state 的 profile ?? DEFAULT,不含覆盖);overridden 由实时覆盖
+ * 判定(驱动「恢复默认」disabled 态与选中回显)。 */
+export declare function mergeRoleDefaults(base: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, overrides: Readonly<Record<string, RoleLlmDefaultValue>> | undefined): readonly RolePresetView[];
 /** 纯函数:角色档位覆盖写后的 roleDefaults map(value=undefined → 删覆盖)。 */
 export declare function roleDefaultsMap(current: Readonly<Record<string, {
     provider?: string;
@@ -107,28 +115,25 @@ export declare function rolePresetModelGroups(providers: readonly ProviderWithMo
     providerId: string;
     models: readonly string[];
 }[];
-/** 纯函数(t17):模型下拉当前选中值所在组(无覆盖/模型不在任何组 → undefined)。 */
-export declare function rolePresetSelectedGroup(groups: readonly {
-    providerId: string;
-    models: readonly string[];
-}[], value: {
-    provider?: string;
-    model?: string;
-} | undefined): string | undefined;
-/** 纯函数:从 /state 响应体取顶层 providers(含 models)与 roleDefaults 合并视图。 */
+/** 纯函数(t20):从 /state 响应体取设置中心数据——providers(含 models)+
+ * roleDefaultsBase(不含覆盖的 base:profile ?? DEFAULT)+ roleDefaultsOverrides
+ * (settings.roleDefaults 原文,初始值;实时覆盖由 scope snapshot 提供)。 */
 export declare function settingsCenterFromStateBody(body: unknown): {
     providers: readonly ProviderWithModels[];
-    roleDefaults: readonly RolePresetView[];
+    roleDefaultsBase: Record<string, RoleLlmDefaultValue>;
+    roleDefaultsOverrides: Record<string, RoleLlmDefaultValue>;
 };
 /** 从 /state 拉取设置中心数据(经授权 token)。 */
 export declare function fetchSettingsCenter(): Promise<{
     providers: readonly ProviderWithModels[];
-    roleDefaults: readonly RolePresetView[];
+    roleDefaultsBase: Record<string, RoleLlmDefaultValue>;
+    roleDefaultsOverrides: Record<string, RoleLlmDefaultValue>;
 }>;
 /**
  * AgentTeam 设置中心 section:两张卡(模型调度授权 + 角色预设)。
- * 数据流:模型/角色列表 = /state 顶层;授权/覆盖状态 = settingsScope 命名
- * 空间 resolved value;开关/选择写面 = scope.set(宿主持久化)。
+ * t20 数据流:模型/角色 base = /state 顶层(一次性);授权/覆盖实时状态 =
+ * settingsScope 命名空间 resolved value(订阅自动刷新);显示值 = 实时覆盖
+ * ?? base;开关/选择写面 = scope.set(宿主持久化,写后 snapshot 更新即时回显)。
  */
 export declare function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactNode | null;
 //# sourceMappingURL=ProviderGrantsSection.d.ts.map
