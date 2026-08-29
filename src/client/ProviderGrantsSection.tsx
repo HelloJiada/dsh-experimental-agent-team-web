@@ -208,7 +208,10 @@ function ModelGrantCard({ rows, providers, scope, snapshot, t }: {
       <ul className={styles.list}>
         {rows.map(row => (
           <li key={row.id} className={styles.row} data-enabled={row.enabled}>
-            <span className={styles.name} title={row.id}>{row.name}</span>
+            <span className={styles.nameWrap}>
+              <span className={styles.name} title={row.id}>{row.name}</span>
+              <span className={styles.rowSub}>{row.id}</span>
+            </span>
             {row.locked
               ? <span className={styles.pill}>{t('settings.agentTeam.locked')}</span>
               : (

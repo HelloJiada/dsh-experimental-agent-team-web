@@ -63,14 +63,33 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
 }
 
-.name {
+/* t15:显示名 + mono provider-id 双段母容器(替代 .name 的 flex:1)。
+ * 仅第一张卡 provider 行;第二张卡 RolePresetCard 不动。 */
+.nameWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
+  min-width: 0;
+}
+
+.name {
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   font-weight: 500;
   line-height: 20px;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* mono provider-id 子标注(t15,比主名小且淡)。 */
+.rowSub {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 16px;
   white-space: nowrap;
 }
 
