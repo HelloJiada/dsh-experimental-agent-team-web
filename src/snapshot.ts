@@ -34,6 +34,25 @@ function listProvidersSafe(ctx: Context): LlmProviderInfo[] {
   }
 }
 
+/**
+ * 全局 provider 列表(t10:t9 根因修复——provider 是全局事实,不再塞进
+ * 第一个团队快照):DSH 已注册全部 provider + 设置页授权状态。授权是全局
+ * (profile 级),deepseek-official 恒启用;其余看 settings 命名空间
+ * enabledProviders(经 apply 期捕获 scope 的闭包读取,settings 缺席时全为
+ * 未授权)。/state 顶层与每个团队快照共用此 helper。
+ */
+export function collectProviders(
+  ctx: Context,
+  enabledProviders?: () => Record<string, boolean>,
+): TeamProviderView[] {
+  const enabledMap = enabledProviders?.() ?? {}
+  return listProvidersSafe(ctx).map(provider => ({
+    id: provider.id,
+    name: provider.name,
+    enabled: provider.id === 'deepseek-official' || enabledMap[provider.id] === true,
+  }))
+}
+
 /** Visual task state for the activity panel. */
 export type VisualTaskState = 'blocked' | 'open' | 'running' | 'completed'
 
@@ -313,17 +332,9 @@ export async function assembleTeamSnapshot(
   const toolCalls = await deriveTaskToolCalls(ctx, stateRoot, state.id, state.members, tasks)
   const bestPractices = await readBestPractices(stateRoot)
   const calibration = summarizeTeamRetro(tasks, state.members)
-  // Provider 授权中心(单通道):DSH 已注册的全部 provider + 设置页授权状态。
-  // 授权是全局(profile 级),deepseek-official 恒启用;其余看 settings 命名
-  // 空间 enabledProviders(经 apply 期捕获 scope 的闭包读取,settings 缺席
-  // 时全为未授权)。
-  const enabledMap = options.enabledProviders?.() ?? {}
-  const registeredProviders = listProvidersSafe(ctx)
-  const providers: TeamProviderView[] = registeredProviders.map(provider => ({
-    id: provider.id,
-    name: provider.name,
-    enabled: provider.id === 'deepseek-official' || enabledMap[provider.id] === true,
-  }))
+  // Provider 授权中心(单通道):DSH 已注册的全部 provider + 设置页授权状态
+  // (t10:与 /state 顶层共用 collectProviders,见其上注释)。
+  const providers = collectProviders(ctx, options.enabledProviders)
   const base: TeamActivitySnapshot = {
     workspace,
     teamId: state.id,

@@ -13,7 +13,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { collectArchivedTeamsActivity, collectTeamsActivity } from './snapshot.ts'
+import { collectArchivedTeamsActivity, collectProviders, collectTeamsActivity } from './snapshot.ts'
 import { archiveTeamDir } from './state.ts'
 import type { TeamMember, TeamState } from './types.ts'
 
@@ -216,5 +216,26 @@ describe('collectTeamsActivity — providers 快照透出(授权中心数据源)
     await writeTeamOnDisk(stateRoot, team('team-plain'))
     const snapshots = await collectTeamsActivity(context(), [{ workspace, stateRoot }])
     expect(snapshots.find(s => s.teamId === 'team-plain')?.providers).toEqual([])
+  })
+
+  it('t10:collectProviders 顶层独立可用(不依赖团队快照,空库也返回注册表)', async () => {
+    // 无任何团队(stateRoot 空目录):/state 顶层 providers 仍应返回注册表。
+    const providers = collectProviders(llmContext([
+      { id: 'deepseek-official', name: 'DeepSeek Official' },
+      { id: 'xiaomi', name: 'Xiaomi' },
+    ]), () => ({ xiaomi: true }))
+    expect(providers).toEqual([
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: true },
+    ])
+    // settings 缺席(reader undefined)→ 非 deepseek 全未授权。
+    const noSettings = collectProviders(llmContext([
+      { id: 'deepseek-official', name: 'DeepSeek Official' },
+      { id: 'xiaomi', name: 'Xiaomi' },
+    ]))
+    expect(noSettings).toEqual([
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: false },
+    ])
   })
 })

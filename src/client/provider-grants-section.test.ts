@@ -8,7 +8,11 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { providerGrantRows, toggleEnabledMap } from './ProviderGrantsSection.tsx'
+import {
+  providerGrantRows,
+  providersFromStateBody,
+  toggleEnabledMap,
+} from './ProviderGrantsSection.tsx'
 
 const PROVIDERS = [
   { id: 'deepseek-official', name: 'DeepSeek Official' },
@@ -46,5 +50,17 @@ describe('toggleEnabledMap — 开关 toggle 后的命名空间值', () => {
 
   it('map 缺失 → 只含目标项', () => {
     expect(toggleEnabledMap(undefined, 'cc-switch', true)).toEqual({ 'cc-switch': true })
+  })
+})
+
+describe('providersFromStateBody — /state 顶层 providers(t10 全局化)', () => {
+  it('顶层 providers 直接返回(不依赖 teams)', () => {
+    expect(providersFromStateBody({ providers: PROVIDERS, teams: [] })).toEqual(PROVIDERS)
+  })
+
+  it('无顶层 providers / 结构不符 → 空数组', () => {
+    expect(providersFromStateBody({ teams: [{ providers: PROVIDERS }] })).toEqual([])
+    expect(providersFromStateBody(undefined)).toEqual([])
+    expect(providersFromStateBody({ providers: 'nope' })).toEqual([])
   })
 })

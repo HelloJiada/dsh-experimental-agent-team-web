@@ -64,6 +64,8 @@ export declare const zh: {
     'settings.providers.title': string;
     'settings.providers.locked': string;
     'settings.providers.toggleAria': string;
+    'settings.providers.loading': string;
+    'settings.providers.empty': string;
     'settings.providers.hint': string;
     'task.runningAria': string;
     'task.review.pending': string;
@@ -327,6 +329,8 @@ export declare const en: {
     'settings.providers.title': string;
     'settings.providers.locked': string;
     'settings.providers.toggleAria': string;
+    'settings.providers.loading': string;
+    'settings.providers.empty': string;
     'settings.providers.hint': string;
 };
 /** Translation function consumed by pure view helpers. */

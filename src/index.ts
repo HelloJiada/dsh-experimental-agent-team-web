@@ -33,7 +33,7 @@ import { wireSettingsGranted, type ProviderGrantAccess } from './provider-grants
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { collectArchivedTeamsActivity, collectTeamsActivity, redactSnapshotForHttp } from './snapshot.ts'
+import { collectArchivedTeamsActivity, collectProviders, collectTeamsActivity, redactSnapshotForHttp } from './snapshot.ts'
 import { TOKEN_GLOBAL } from './web-auth-constants.ts'
 import { assertTrustedAuthority, createWebToken, webRequestAuthorized } from './web-auth.ts'
 
@@ -289,7 +289,13 @@ export function apply(ctx: Context, config: Config): void {
       const snapshots = url.searchParams.get('archived') === '1'
         ? await collectArchivedTeamsActivity(ctx, roots, grantsAccess.enabledProviders)
         : await collectTeamsActivity(ctx, roots, grantsAccess.enabledProviders)
-      const body = JSON.stringify({ teams: snapshots.map(snapshot => redactSnapshotForHttp(snapshot, authorized)) })
+      // t10(t9 根因):provider 是全局事实,顶层直接算(不再依赖 teams[0]——
+      // 无团队时设置页卡片恒空)。与每个团队快照的 providers 同源同值。
+      const providers = collectProviders(ctx, grantsAccess.enabledProviders)
+      const body = JSON.stringify({
+        teams: snapshots.map(snapshot => redactSnapshotForHttp(snapshot, authorized)),
+        providers,
+      })
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',
         'cache-control': 'no-store',

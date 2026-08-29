@@ -48,15 +48,22 @@ export declare function providerGrantRows(providers: readonly {
 /** 纯函数:toggle 后的 enabledProviders map(保留其他项)。 */
 export declare function toggleEnabledMap(current: Readonly<Record<string, boolean>> | undefined, provider: string, nextEnabled: boolean): Record<string, boolean>;
 /** 从快照 /state 提取 DSH 已注册 provider 列表(经授权 token)。 */
+/** 纯函数:从 /state 响应体取顶层 providers(t10:provider 全局事实,不再依赖 teams[0])。 */
+export declare function providersFromStateBody(body: unknown): readonly {
+    id: string;
+    name: string;
+}[];
+/** 从快照 /state 提取 DSH 已注册 provider 列表(经授权 token,顶层 providers)。 */
 export declare function fetchRegisteredProviders(): Promise<readonly {
     id: string;
     name: string;
 }[]>;
 /**
  * Provider 授权设置页卡片:provider 列表 + 授权开关。
- * 数据流:provider 列表 = 快照 /state 透出(注册表实时);授权状态 =
- * settingsScope 命名空间 resolved value(推送失效自动刷新)。开关写面 =
- * scope.set('enabledProviders', nextMap)(宿主持久化)。
+ * 数据流:provider 列表 = /state 顶层 providers(注册表实时,全局事实);
+ * 授权状态 = settingsScope 命名空间 resolved value(推送失效自动刷新)。
+ * 开关写面 = scope.set('enabledProviders', nextMap)(宿主持久化)。
+ * t10:恒渲染卡片(标题+空态占位),不再因空列表隐藏整卡。
  */
 export declare function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactNode | null;
 //# sourceMappingURL=ProviderGrantsSection.d.ts.map

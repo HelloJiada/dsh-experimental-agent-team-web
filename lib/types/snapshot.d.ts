@@ -11,6 +11,14 @@ import type { Context } from '@deepseek-ai/cordis';
 import { type TeamIntelligence } from './intelligence.ts';
 import type { BestPracticeEntry } from './best-practices.ts';
 import type { EstimateLevel, MemberStatus, TaskRetro, TaskSignals, TeamState } from './types.ts';
+/**
+ * 全局 provider 列表(t10:t9 根因修复——provider 是全局事实,不再塞进
+ * 第一个团队快照):DSH 已注册全部 provider + 设置页授权状态。授权是全局
+ * (profile 级),deepseek-official 恒启用;其余看 settings 命名空间
+ * enabledProviders(经 apply 期捕获 scope 的闭包读取,settings 缺席时全为
+ * 未授权)。/state 顶层与每个团队快照共用此 helper。
+ */
+export declare function collectProviders(ctx: Context, enabledProviders?: () => Record<string, boolean>): TeamProviderView[];
 /** Visual task state for the activity panel. */
 export type VisualTaskState = 'blocked' | 'open' | 'running' | 'completed';
 /** One member row of the activity snapshot. */

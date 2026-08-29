@@ -85,30 +85,38 @@ export function toggleEnabledMap(
 }
 
 /** 从快照 /state 提取 DSH 已注册 provider 列表(经授权 token)。 */
+/** 纯函数:从 /state 响应体取顶层 providers(t10:provider 全局事实,不再依赖 teams[0])。 */
+export function providersFromStateBody(body: unknown): readonly { id: string; name: string }[] {
+  const providers = (body as { providers?: readonly { id: string; name: string }[] } | undefined)?.providers
+  return Array.isArray(providers) ? providers : []
+}
+
+/** 从快照 /state 提取 DSH 已注册 provider 列表(经授权 token,顶层 providers)。 */
 export async function fetchRegisteredProviders(): Promise<readonly { id: string; name: string }[]> {
   const token = agentTeamsWebToken()
   const response = await fetch('/plugins/agent-team-web/state', {
     headers: token === undefined ? {} : { [TOKEN_HEADER]: token },
   })
   if (!response.ok) return []
-  const body = await response.json() as { teams?: readonly { providers?: readonly { id: string; name: string }[] }[] }
-  return body.teams?.[0]?.providers ?? []
+  return providersFromStateBody(await response.json())
 }
 
 /**
  * Provider 授权设置页卡片:provider 列表 + 授权开关。
- * 数据流:provider 列表 = 快照 /state 透出(注册表实时);授权状态 =
- * settingsScope 命名空间 resolved value(推送失效自动刷新)。开关写面 =
- * scope.set('enabledProviders', nextMap)(宿主持久化)。
+ * 数据流:provider 列表 = /state 顶层 providers(注册表实时,全局事实);
+ * 授权状态 = settingsScope 命名空间 resolved value(推送失效自动刷新)。
+ * 开关写面 = scope.set('enabledProviders', nextMap)(宿主持久化)。
+ * t10:恒渲染卡片(标题+空态占位),不再因空列表隐藏整卡。
  */
 export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactNode | null {
   const { scope, t = (key: string) => key } = props
   const [providers, setProviders] = useState<readonly { id: string; name: string }[]>([])
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
     let alive = true
     void fetchRegisteredProviders()
-      .then((list) => { if (alive) setProviders(list) })
-      .catch(() => undefined)
+      .then((list) => { if (alive) { setProviders(list); setLoading(false) } })
+      .catch(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [])
   const snapshot = useSyncExternalStore(
@@ -116,39 +124,46 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
     () => scope?.getSnapshot() ?? EMPTY_SNAPSHOT,
   )
   const rows = providerGrantRows(providers, snapshot.value?.enabledProviders)
-  if (rows.length === 0) return null
   const toggle = async (row: ProviderGrantRow): Promise<void> => {
     if (scope === undefined || row.locked) return
     await scope.set('enabledProviders', toggleEnabledMap(snapshot.value?.enabledProviders, row.id, !row.enabled))
   }
   return (
-    <section className={styles.section} aria-label={t('settings.providers.title')} data-provider-grants>
+    <section className={styles.section} aria-label={t('settings.providers.title')} data-provider-grants data-loading={loading}>
       <header className={styles.head}>
         <span className={styles.title}>{t('settings.providers.title')}</span>
       </header>
-      <ul className={styles.list}>
-        {rows.map(row => (
-          <li key={row.id} className={styles.row} data-enabled={row.enabled}>
-            <span className={styles.name} title={row.id}>{row.name}</span>
-            <span className={styles.id}>{row.id}</span>
-            {row.locked
-              ? <span className={styles.locked}>{t('settings.providers.locked')}</span>
-              : (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={row.enabled}
-                  aria-label={`${row.name} ${t('settings.providers.toggleAria')}`}
-                  className={styles.switch}
-                  data-on={row.enabled}
-                  onClick={() => { void toggle(row) }}
-                >
-                  <span className={styles.switchThumb} />
-                </button>
-              )}
-          </li>
-        ))}
-      </ul>
+      {rows.length === 0
+        ? (
+          <p className={styles.empty}>
+            {t(loading ? 'settings.providers.loading' : 'settings.providers.empty')}
+          </p>
+        )
+        : (
+          <ul className={styles.list}>
+            {rows.map(row => (
+              <li key={row.id} className={styles.row} data-enabled={row.enabled}>
+                <span className={styles.name} title={row.id}>{row.name}</span>
+                <span className={styles.id}>{row.id}</span>
+                {row.locked
+                  ? <span className={styles.locked}>{t('settings.providers.locked')}</span>
+                  : (
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={row.enabled}
+                      aria-label={`${row.name} ${t('settings.providers.toggleAria')}`}
+                      className={styles.switch}
+                      data-on={row.enabled}
+                      onClick={() => { void toggle(row) }}
+                    >
+                      <span className={styles.switchThumb} />
+                    </button>
+                  )}
+              </li>
+            ))}
+          </ul>
+        )}
       <p className={styles.hint}>{t('settings.providers.hint')}</p>
     </section>
   )

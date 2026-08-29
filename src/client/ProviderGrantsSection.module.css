@@ -72,6 +72,15 @@
   line-height: 16px;
 }
 
+/* t10:空列表占位(loading/无 provider 时恒渲染卡片标题 + 占位)。 */
+.empty {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .hint {
   margin: 0;
   color: var(--dsw-alias-label-tertiary);

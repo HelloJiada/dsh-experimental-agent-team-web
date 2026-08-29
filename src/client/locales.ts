@@ -66,6 +66,8 @@ export const zh = {
   'settings.providers.title': 'Provider 授权',
   'settings.providers.locked': '默认',
   'settings.providers.toggleAria': '授权开关',
+  'settings.providers.loading': '加载中…',
+  'settings.providers.empty': '暂无可用 Provider',
   'settings.providers.hint': '未授权的 Provider 在成员创建时自动回退 deepseek-official',
   'task.runningAria': '运行中',
   'task.review.pending': '待政委复核',
@@ -331,6 +333,8 @@ export const en = {
   'settings.providers.title': 'Provider access',
   'settings.providers.locked': 'Default',
   'settings.providers.toggleAria': 'authorization switch',
+  'settings.providers.loading': 'Loading…',
+  'settings.providers.empty': 'No providers available',
   'settings.providers.hint': 'Unauthorized providers fall back to deepseek-official when members are created',
 } satisfies Record<AgentTeamsLocaleKey, string>
 
