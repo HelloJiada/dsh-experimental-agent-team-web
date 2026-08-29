@@ -3,10 +3,15 @@
  *
  * 设计变更（docs/provider-grant-center-design.md 新增节）：Provider 授权是
  * 全局（profile 级）设置，从活动面板迁至 DSH 设置页。设置页通过标准
- * settings 服务读写授权（天然鉴权 + profile 级）。决策 2/1（政委拍板）：
- * provider-grants.json 持久化与 HTTP 路由保留为第二写面，settings 为
- * 主通道——spawn 校验的「settings 优先 + 文件 fallback」双通道接线待 t6
- * 核验结论后落地；本模块当前提供注册骨架与读取/判定纯函数。
+ * settings 服务读写授权（天然鉴权 + profile 级）。
+ *
+ * 接线（t6 核验结论，照 harness 先例 agent-presets this.settings /
+ * llm-deepseek setSource）：ctx.settings 是可选服务，只在 `ctx.inject(
+ * ['settings'])` 作用域内绑定，apply 期父 ctx 上不可假定存在——因此不能
+ * 在工具 execute 时直读 ctx.settings（那会恒返回空）。正确链路：
+ * apply 时在 inject 作用域内捕获 `register()` 返回的 SettingsScope（含
+ * 同步 get()），经闭包写入可变的 providerGrantedFor 持有者，工具 execute
+ * 读持有者；settings 作用域释放时清空持有者。
  *
  * 注意：本仓库不直接依赖 @deepseek-ai/dsh-settings（宿主提供该服务），
  * 此处用本地最小契约（SettingsSurface）访问 `ctx.settings`——与 index.ts
@@ -15,7 +20,6 @@
  * `agent-team-web.providers` 会抛 TypeError，故用连字符变体）。
  * @module dsh-agent-team-web/provider-grants
  */
-import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 /** 品牌化 settings 命名空间字符串（编译期类型，运行时即原字符串）。 */
 export type SettingsNamespace = string & {
@@ -31,9 +35,9 @@ export declare const AGENT_TEAM_PROVIDERS_NS: SettingsNamespace;
 export declare const ProviderGrantsSchema: z<{
     enabledProviders: Record<string, boolean>;
 }>;
-/** 宿主 settings 服务的最小契约面（本仓库只用到 register/describe 子集）。 */
+/** 宿主 settings 服务的最小契约面（register 返回命名空间 scope）。 */
 export interface SettingsSurface {
-    register(ns: SettingsNamespace, schema: unknown): unknown;
+    register(ns: SettingsNamespace, schema: unknown): SettingsScope;
     describe(options?: {
         redactSecrets?: boolean;
     }): readonly SettingsDescriptor[];
@@ -46,12 +50,25 @@ export interface SettingsDescriptor {
     readonly revision: number;
     readonly applies: 'live' | 'restart';
 }
-/** 从任意上下文读取宿主 settings 服务（headless/无 settings 时返回 undefined）。 */
-export declare function settingsOf(ctx: Context): SettingsSurface | undefined;
-/** 在 settings 服务上注册 Provider 授权命名空间（设置页自动渲染该 section）。 */
-export declare function registerProviderGrantsSettings(sctx: unknown): void;
-/** 从 settings 命名空间 resolved value 读出已启用 provider 集合（读不到/无服务 → 空）。 */
-export declare function readEnabledProviders(ctx: Context): ReadonlySet<string>;
-/** 授权判定：deepseek-official 恒授权；其余 provider 需在设置页拨开开关。 */
-export declare function providerGranted(grants: ReadonlySet<string>, provider: string): boolean;
+/** 命名空间 owner 侧句柄（与宿主 dsh-settings SettingsScope 同构的子集）。 */
+export interface SettingsScope {
+    /** 当前 resolved value：schema 默认值 → base → 用户层。同步。 */
+    get(): unknown;
+    watch(callback: (next: unknown, prev: unknown) => void | Promise<void>): () => void;
+    update(patch: object): Promise<void>;
+    replace(section: object): Promise<void>;
+}
+/** 注册 Provider 授权命名空间，返回命名空间 scope（设置页渲染 + spawn 校验共用）。 */
+export declare function registerProviderGrantsSettings(sctx: unknown): SettingsScope;
+/** 授权判定（基于命名空间 scope 的 resolved value）：deepseek-official 恒
+ * 授权；其余 provider 需设置页 enabledProviders 开关为 true。 */
+export declare function grantedFromScope(scope: SettingsScope, provider: string): boolean;
+/** 工具侧授权判定的可变持有者：apply 期接线写入，settings 作用域释放清空。 */
+export interface ProviderGrantedHolder {
+    providerGrantedFor?: (provider: string) => boolean;
+}
+/** apply 期接线（在 ctx.inject(['settings']) 作用域内调用）：
+ * 捕获 scope 经闭包写入 holder.providerGrantedFor；settings 作用域释放时
+ * 清空（sctx.effect 注册 disposer）。工具 execute 通过 holder 读授权。 */
+export declare function wireSettingsGranted(settingsCtx: unknown, holder: ProviderGrantedHolder): void;
 //# sourceMappingURL=provider-grants.d.ts.map

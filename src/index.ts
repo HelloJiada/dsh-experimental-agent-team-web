@@ -29,7 +29,7 @@ import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
 import { handleProviderGrant } from './provider-grant-route.ts'
-import { registerProviderGrantsSettings } from './provider-grants.ts'
+import { wireSettingsGranted } from './provider-grants.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -209,11 +209,13 @@ export function apply(ctx: Context, config: Config): void {
 
   // Provider 授权中心（设计变更：面板 → DSH 设置页）：在 settings 服务上注册
   // `agent-team-web-providers` 命名空间，设置页自动渲染 provider 开关表单。
-  // 注册是惰性的（settings 服务缺席的 headless profile 不注册）。此为注册
-  // 骨架：spawn 校验数据源（settings 优先 + provider-grants.json fallback
-  // 双通道）待 t6 核验结论后接线（决策 1）。
+  // t6 接线（照 harness 先例）：在 inject 作用域内捕获 register() 返回的
+  // SettingsScope，经闭包写入 resolved.providerGrantedFor（工具 execute 读）；
+  // settings 作用域释放时清空。headless 无 settings 服务 → 不注册，
+  // providerGrantedFor 保持 undefined → spawn 校验退化为仅 deepseek-official
+  // 恒授权（与默认语义一致）。
   ctx.inject(['settings'], (settingsCtx) => {
-    registerProviderGrantsSettings(settingsCtx)
+    wireSettingsGranted(settingsCtx, resolved)
   })
 
   // Deterministic activation surfaces: the closed-namespace `/agent-teams`

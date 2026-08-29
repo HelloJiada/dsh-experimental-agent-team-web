@@ -37,6 +37,10 @@ export interface ToolsConfig {
         model?: string;
         reasoningEffort?: string;
     }>;
+    /** Provider 授权判定(t6 接线,settings scope 闭包):deepseek-official 恒
+     * 授权,其余 provider 看设置页开关;undefined(无 settings 服务)→ 仅
+     * deepseek-official 授权。 */
+    providerGrantedFor?: (provider: string) => boolean;
     /** A member-owned open task is "stalled" (helppable) after this many ms. */
     stallThresholdMs: number;
 }

@@ -375,6 +375,50 @@ describe('agent_teams_add_member — 添加成员', () => {
     expect(persistedEngineer?.model).toBe('deepseek-v4-flash')
   })
 
+  it('provider 授权:设置页已授权 provider → 不回退,成员按显式路由 spawn', async () => {
+    // t6 接线:授权判定走 config.providerGrantedFor(settings scope 闭包);
+    // 设置页 enabledProviders 含 kimi-coding → 授权放行,不触发回退。
+    const tools = new Map<string, CapturedTool>()
+    const grantedCtx = {
+      tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
+      agents: { get: () => undefined },
+      logger: { warn: () => undefined, debug: () => undefined },
+      on: () => undefined,
+      effect: () => () => undefined,
+      llm: { resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
+        provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
+      }) },
+      subagents: {
+        registerContinuableSetup: () => undefined,
+        followup: async () => undefined,
+        getProvider: () => ({
+          prepareContinuable: {},
+          capabilities: { persona: true, toolFilter: true },
+        }),
+        list: () => ['spawn'],
+        startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
+      },
+    } as unknown as Context
+    registerAgentTeamsTools(grantedCtx, {
+      ...config,
+      providerGrantedFor: (provider: string) => provider === 'kimi-coding',
+    })
+    const grantedTool = (name: string): CapturedTool => {
+      const def = tools.get(name)
+      if (def === undefined) throw new Error(`tool "${name}" not registered`)
+      return def
+    }
+    const result = await grantedTool('agent_teams_add_member').execute(
+      { role: 'engineer', provider: 'kimi-coding', model: 'kimi-k2.7-code' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { member_name: string; provider: string; model: string }
+    expect(result.member_name).toBe('技术员')
+    expect(result.provider).toBe('kimi-coding') // 设置页已授权 → 无回退
+    expect(result.model).toBe('kimi-k2.7-code')
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    expect(persisted?.members.find(m => m.name === '技术员')?.provider).toBe('kimi-coding')
+  })
+
   it('R-26:spawn(网络)在锁外——add_member 进行中,同队 status 不被阻塞', async () => {
     // 让 startContinuable 挂起 300ms,模拟慢网络 spawn。
     let releaseSpawn!: () => void
