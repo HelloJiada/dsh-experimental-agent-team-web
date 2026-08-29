@@ -29,6 +29,7 @@ import {
   countActiveExecRoleMembers,
   DEFAULT_MAX_EXEC_PER_ROLE,
   execRoleCap,
+  canonicalExecRole,
 } from './role-limits.ts'
 import { resolveMemberName } from './member-naming.ts'
 import {
@@ -59,6 +60,7 @@ import {
   writeTeam,
 } from './state.ts'
 import {
+  DEFAULT_ROLE_LLM,
   deliverToMember,
   installRetiredMemberGuard,
   installMemberSelectionRuntime,
@@ -113,6 +115,9 @@ export interface ToolsConfig {
   maxExecPerRole?: number
   /** Per-role cap overrides keyed by canonical role (e.g. `{ engineer: 2 }`). */
   maxExecPerRoleByRole?: Record<string, number>
+  /** Per-role default LLM selection for members (auto-assign model + effort),
+   * overriding the built-in DEFAULT_ROLE_LLM table. */
+  roleLlmDefaults?: Record<string, { provider?: string; model?: string; reasoningEffort?: string }>
   /** A member-owned open task is "stalled" (helppable) after this many ms. */
   stallThresholdMs: number
 }
@@ -421,6 +426,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           // the captain not to add a second one, and add_member guards it too.
           const commissarSelection = await resolveMemberLlmSelection(ctx, captain, {
             defaultModel: config.memberModel,
+            ...DEFAULT_ROLE_LLM.commissar === undefined ? {} : { roleDefaults: DEFAULT_ROLE_LLM.commissar },
           }, exec.signal)
           const commissar: TeamMember = {
             id: '',
@@ -553,11 +559,16 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       })
 
       // 锁外执行:LLM 选型 + 团队记忆读取 + 子代理 spawn(网络/慢,不占团队锁)。
+      // 角色自动分配:显式 provider/model 永远优先;否则取该角色的默认档位
+      // (profile roleLlmDefaults 覆盖内置 DEFAULT_ROLE_LLM 表);再否则继承队长路由。
+      const roleKey = canonicalExecRole(args.role)
+      const roleDefaults = config.roleLlmDefaults?.[roleKey] ?? DEFAULT_ROLE_LLM[roleKey]
       const selection = await resolveMemberLlmSelection(ctx, captain, {
         provider: args.provider,
         model: args.model,
         defaultModel: config.memberModel,
         reasoningEffort: args.reasoning_effort,
+        ...roleDefaults === undefined ? {} : { roleDefaults },
       }, exec.signal)
       const member: TeamMember = {
         id: '',

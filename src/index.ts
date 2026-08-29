@@ -59,6 +59,16 @@ export const name = 'agent-team-web'
 export const inject = ['tools', 'llm', 'subagents', 'systemPrompt', 'agents']
 
 /** Plugin configuration. */
+/** Per-role default LLM selection for members (auto-assign model + effort). */
+export interface MemberLlmDefaults {
+  /** Provider route; requires an explicit model. Omit to inherit the captain's. */
+  provider?: string
+  /** Model id (e.g. `deepseek-v4-pro`). */
+  model?: string
+  /** Reasoning effort (`off`/`low`/`high`/`max`) or `default` for the model default. */
+  reasoningEffort?: string
+}
+
 export interface Config {
   /**
    * State directory name under the captain's workspace; team state lives at
@@ -84,6 +94,12 @@ export interface Config {
    * (e.g. `{ engineer: 2 }`). A role not listed falls back to `maxExecPerRole`
    * (default 1). Values must be ≥ 1. */
   maxExecPerRoleByRole?: Record<string, number>
+  /** Per-role default LLM selection for members (auto-assign model + effort).
+   * Keyed by canonical role key (e.g. `{ security: { model: 'deepseek-v4-pro',
+   * reasoningEffort: 'max' } }`). A role with no entry falls back to the
+   * built-in role table, then to inheriting the captain's route. An explicit
+   * provider/model on add_member always wins. */
+  roleLlmDefaults?: Record<string, MemberLlmDefaults>
   /** A member-owned claimed/in-progress task is considered stalled (and
    * eligible for a teammate's self-organizing help) after this many
    * milliseconds without an update (default `120_000` = 2 minutes). */
@@ -114,6 +130,11 @@ export const Config: z<Config> = z.object({
   maxMembers: z.natural().min(1).default(18),
   maxExecPerRole: z.natural().min(1).default(1),
   maxExecPerRoleByRole: z.dict(z.natural().min(1)).default({}),
+  roleLlmDefaults: z.dict(z.object({
+    provider: z.string(),
+    model: z.string(),
+    reasoningEffort: z.string(),
+  })).default({}),
   stallThresholdMs: z.natural().default(120_000),
   promptSectionOrder: z.natural().default(117),
   slashCommand: z.boolean().default(true),
@@ -151,6 +172,7 @@ export function apply(ctx: Context, config: Config): void {
     maxMembers: config.maxMembers ?? 18,
     maxExecPerRole: config.maxExecPerRole ?? 1,
     maxExecPerRoleByRole: config.maxExecPerRoleByRole,
+    roleLlmDefaults: config.roleLlmDefaults,
     stallThresholdMs: config.stallThresholdMs ?? 120_000,
   }
 

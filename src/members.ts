@@ -81,6 +81,10 @@ export interface MemberLlmSelectionRequest {
   defaultModel?: string
   /** Explicit reasoning effort; "default" selects the target model's default effort. */
   reasoningEffort?: string
+  /** Role-based default (auto-assign): provider/model/effort for the member's
+   * canonical role, consulted when no explicit route is given. Absent fields
+   * inside it fall through to the captain-inherit path below. */
+  roleDefaults?: Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>
 }
 
 /** Process-local bridge between spawn admission and synchronous child setup. */
@@ -95,6 +99,24 @@ export interface MemberSelectionRuntime {
 }
 
 const MEMBER_LABEL_PREFIX = 'agent-team-web:'
+
+/**
+ * Built-in per-role default LLM selection (auto-assign model + effort).
+ * Consulted when add_member carries no explicit provider/model and the
+ * profile has no `roleLlmDefaults` entry for the role. Roles absent here
+ * inherit the captain's route (existing behavior).
+ */
+export const DEFAULT_ROLE_LLM: Readonly<Record<string, Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>>> = {
+  researcher: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+  engineer: { model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+  qa: { model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+  designer: { model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+  data: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+  docs: { model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+  security: { model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+  reviewer: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+  commissar: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+}
 
 function pendingSelectionKey(parentSessionId: string, label: string): string {
   return `${parentSessionId}\u0000${label}`
@@ -161,8 +183,8 @@ export async function resolveMemberLlmSelection(
   const current = captain.session.requestHeader()?.config
   const currentProvider = current?.provider ?? captain.options.provider
   const currentModel = current?.model ?? captain.options.model
-  const provider = explicitProvider ?? currentProvider
-  const model = explicitModel ?? defaultModel ?? currentModel
+  const provider = explicitProvider ?? request.roleDefaults?.provider ?? currentProvider
+  const model = explicitModel ?? request.roleDefaults?.model ?? defaultModel ?? currentModel
   if (provider === undefined || model === undefined) {
     throw new Error('cannot resolve the member LLM route from the current captain session')
   }
@@ -170,12 +192,19 @@ export async function resolveMemberLlmSelection(
   // Effort ids belong to one exact provider/model capability. Preserve the
   // captain's effort only on the same route; a changed route must resolve its
   // own default. Explicit effort still wins, while "default" forces that
-  // target-default behavior even when the route did not change.
+  // target-default behavior even when the route did not change. Role defaults
+  // (auto-assign) sit between: their effort applies on their own route, and
+  // the captain-inherit path stays intact when no role default exists.
+  const roleEffort = request.roleDefaults?.reasoningEffort?.trim()
   const sameRoute = provider === currentProvider && model === currentModel
   const reasoningEffort = explicitEffort === undefined
-    ? sameRoute
-      ? current?.reasoningEffort
-      : undefined
+    ? roleEffort !== undefined && roleEffort !== ''
+      ? roleEffort === 'default'
+        ? undefined
+        : ReasoningEffortId(roleEffort)
+      : sameRoute
+        ? current?.reasoningEffort
+        : undefined
     : explicitEffort === 'default'
       ? undefined
       : ReasoningEffortId(explicitEffort)

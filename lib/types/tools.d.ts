@@ -30,6 +30,13 @@ export interface ToolsConfig {
     maxExecPerRole?: number;
     /** Per-role cap overrides keyed by canonical role (e.g. `{ engineer: 2 }`). */
     maxExecPerRoleByRole?: Record<string, number>;
+    /** Per-role default LLM selection for members (auto-assign model + effort),
+     * overriding the built-in DEFAULT_ROLE_LLM table. */
+    roleLlmDefaults?: Record<string, {
+        provider?: string;
+        model?: string;
+        reasoningEffort?: string;
+    }>;
     /** A member-owned open task is "stalled" (helppable) after this many ms. */
     stallThresholdMs: number;
 }

@@ -41,12 +41,31 @@ export interface MemberLlmSelectionRequest {
     defaultModel?: string;
     /** Explicit reasoning effort; "default" selects the target model's default effort. */
     reasoningEffort?: string;
+    /** Role-based default (auto-assign): provider/model/effort for the member's
+     * canonical role, consulted when no explicit route is given. Absent fields
+     * inside it fall through to the captain-inherit path below. */
+    roleDefaults?: Readonly<{
+        provider?: string;
+        model?: string;
+        reasoningEffort?: string;
+    }>;
 }
 /** Process-local bridge between spawn admission and synchronous child setup. */
 export interface MemberSelectionRuntime {
     /** Make one selection visible while Harness materializes the fresh child. */
     withPending<T>(parentSessionId: string, label: string, selection: MemberLlmSelection, operation: () => Promise<T>): Promise<T>;
 }
+/**
+ * Built-in per-role default LLM selection (auto-assign model + effort).
+ * Consulted when add_member carries no explicit provider/model and the
+ * profile has no `roleLlmDefaults` entry for the role. Roles absent here
+ * inherit the captain's route (existing behavior).
+ */
+export declare const DEFAULT_ROLE_LLM: Readonly<Record<string, Readonly<{
+    provider?: string;
+    model?: string;
+    reasoningEffort?: string;
+}>>>;
 /**
  * Resolve one member's complete model selection. Ordinary members snapshot the
  * captain's current request route and reasoning effort. When provider or model

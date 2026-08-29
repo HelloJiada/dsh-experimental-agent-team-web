@@ -142,6 +142,71 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     await expect(resolveMemberLlmSelection(baseCtx(), captain('/ws'), { provider: '  ' }))
       .rejects.toThrow(/member LLM provider must not be empty/)
   })
+
+  it('roleDefaults:无显式路由时按角色档位取 provider/model/effort(自动分配)', async () => {
+    const cap = captain('/ws', {
+      session: {
+        header: { cwd: '/ws', id: 'session-captain' },
+        id: 'session-captain',
+        requestHeader: () => ({ config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } }),
+      },
+      options: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    } as unknown as Agent)
+    const ctx = baseCtx({
+      llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
+    })
+    // security 角色默认档位:pro + max,覆盖队长继承的 flash + high。
+    const selection = await resolveMemberLlmSelection(ctx, cap, {
+      roleDefaults: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+    })
+    expect(selection.provider).toBe('deepseek-official')
+    expect(selection.model).toBe('deepseek-v4-pro')
+    expect(selection.reasoningEffort).toBe('max')
+  })
+
+  it('roleDefaults:显式 provider/model 永远优先于角色档位', async () => {
+    const cap = captain('/ws', {
+      session: {
+        header: { cwd: '/ws', id: 'session-captain' },
+        id: 'session-captain',
+        requestHeader: () => ({ config: { provider: 'p', model: 'm', reasoningEffort: 'high' } }),
+      },
+      options: { provider: 'p', model: 'm' },
+    } as unknown as Agent)
+    const ctx = baseCtx({
+      llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
+    })
+    const selection = await resolveMemberLlmSelection(ctx, cap, {
+      provider: 'explicit-p',
+      model: 'explicit-m',
+      reasoningEffort: 'low',
+      roleDefaults: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+    })
+    expect(selection.provider).toBe('explicit-p')
+    expect(selection.model).toBe('explicit-m')
+    expect(selection.reasoningEffort).toBe('low')
+  })
+
+  it('roleDefaults:角色档位只给 effort、model 缺失时仍从队长继承', async () => {
+    const cap = captain('/ws', {
+      session: {
+        header: { cwd: '/ws', id: 'session-captain' },
+        id: 'session-captain',
+        requestHeader: () => ({ config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } }),
+      },
+      options: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    } as unknown as Agent)
+    const ctx = baseCtx({
+      llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
+    })
+    // 角色档位只声明 effort(low),provider/model 回退队长。
+    const selection = await resolveMemberLlmSelection(ctx, cap, {
+      roleDefaults: { reasoningEffort: 'low' },
+    })
+    expect(selection.provider).toBe('deepseek-official')
+    expect(selection.model).toBe('deepseek-v4-flash')
+    expect(selection.reasoningEffort).toBe('low')
+  })
 })
 
 describe('spawnMember — 成员派生', () => {
