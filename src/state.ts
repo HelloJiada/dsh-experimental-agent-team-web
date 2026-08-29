@@ -27,7 +27,6 @@ export const CAPTAIN_KEY = 'captain'
 const MAILBOX_DELIVERY_LEASE_MS = 60_000
 /** Durable deny-list for AgentTeams members that must never be resumed. */
 const RETIRED_MEMBERS_FILE = 'retired-members.json'
-const PROVIDER_GRANTS_FILE = 'provider-grants.json'
 
 /**
  * In-process per-team mutation queues (promise chains).
@@ -343,55 +342,6 @@ export async function recordRetiredMemberIds(stateRoot: string, memberIds: reado
     await atomicWriteText(
       join(stateRoot, RETIRED_MEMBERS_FILE),
       `${JSON.stringify([...retired].sort(), null, 2)}\n`,
-    )
-  })
-}
-
-/**
- * Durable provider-authorization grants (全局, profile 级): which LLM
- * providers the user has enabled for AgentTeam members via the panel switch.
- * `deepseek-official` is implicitly granted (never stored); every other
- * provider defaults to disabled until the user flips it on.
- * @param stateRoot - resolved absolute state root directory.
- */
-export async function readProviderGrants(stateRoot: string): Promise<Set<string>> {
-  try {
-    const parsed: unknown = JSON.parse(stripLeadingBom(
-      await readFile(join(stateRoot, PROVIDER_GRANTS_FILE), 'utf8'),
-    ))
-    if (!Array.isArray(parsed) || parsed.some(value => typeof value !== 'string' || value === '')) {
-      throw new Error('invalid AgentTeams provider grant index')
-    }
-    return new Set(parsed)
-  } catch (error: unknown) {
-    if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return new Set()
-    }
-    throw error
-  }
-}
-
-/** Whether a provider is authorized for AgentTeam members (deepseek-official
- * is implicitly granted; others require an explicit panel switch). */
-export async function providerGranted(stateRoot: string, provider: string): Promise<boolean> {
-  if (provider === 'deepseek-official') return true
-  const grants = await readProviderGrants(stateRoot)
-  return grants.has(provider)
-}
-
-/** Atomically grant or revoke one provider (panel switch persistence). */
-export async function setProviderGrant(stateRoot: string, provider: string, enabled: boolean): Promise<void> {
-  const normalized = provider.trim()
-  if (normalized === '') throw new Error('provider must not be empty')
-  if (normalized === 'deepseek-official') return // implicit, never stored
-  await withTeamLock(`provider-grants:${stateRoot}`, async () => {
-    const grants = await readProviderGrants(stateRoot)
-    if (enabled) grants.add(normalized)
-    else grants.delete(normalized)
-    await mkdir(stateRoot, { recursive: true, mode: 0o700 })
-    await atomicWriteText(
-      join(stateRoot, PROVIDER_GRANTS_FILE),
-      `${JSON.stringify([...grants].sort(), null, 2)}\n`,
     )
   })
 }

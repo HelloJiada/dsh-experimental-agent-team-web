@@ -17,6 +17,7 @@ import {
   registerProviderGrantsSettings,
   settingsNamespace,
   wireSettingsGranted,
+  type ProviderGrantAccess,
   type SettingsDescriptor,
   type SettingsScope,
   type SettingsSurface,
@@ -32,14 +33,28 @@ function scopeOf(value: unknown): SettingsScope {
   }
 }
 
+/** 可变假 scope:记录 update 调用并让 get() 反映最新值。 */
+function mutableScope(initial: unknown, updates: Array<object>): SettingsScope {
+  let value: unknown = initial
+  return {
+    get: () => value,
+    watch: () => () => undefined,
+    update: async (patch) => {
+      updates.push(patch)
+      value = { ...(value as Record<string, unknown>), ...patch as Record<string, unknown> }
+    },
+    replace: async (section) => { value = section },
+  }
+}
+
 /** 最小 settings 服务桩:记录注册,返回假 scope;describe 可注入 value。 */
-function fakeSettings(overrides: { value?: unknown } = {}): SettingsSurface & { registrations: Map<string, { schema: unknown; value: unknown }> } {
+function fakeSettings(overrides: { value?: unknown; scope?: SettingsScope } = {}): SettingsSurface & { registrations: Map<string, { schema: unknown; value: unknown }> } {
   const registrations = new Map<string, { schema: unknown; value: unknown }>()
   return {
     registrations,
     register(ns, schema) {
       registrations.set(String(ns), { schema, value: overrides.value })
-      return scopeOf(overrides.value)
+      return overrides.scope ?? scopeOf(overrides.value)
     },
     describe(): SettingsDescriptor[] {
       return [...registrations].map(([ns, registration]) => ({
@@ -102,35 +117,57 @@ describe('grantedFromScope — 基于 scope resolved value 的授权判定', () 
   })
 })
 
-describe('wireSettingsGranted — apply 期接线(scope 闭包 → holder)', () => {
-  it('接线后 holder.providerGrantedFor 经 scope 判定;作用域释放后清空', () => {
-    const settings = fakeSettings({ value: { enabledProviders: { 'kimi-coding': true } } })
+describe('wireSettingsGranted — apply 期接线(scope 闭包 → access 三通道)', () => {
+  it('接线后 providerGrantedFor/enabledProviders/setProviderGrant 经 scope 生效;作用域释放全清空', async () => {
+    const updates: Array<object> = []
+    const scope = mutableScope({ enabledProviders: { 'kimi-coding': true } }, updates)
+    const settings = fakeSettings({ scope, value: { enabledProviders: { 'kimi-coding': true } } })
     let disposer: (() => void) | undefined
     const settingsCtx = {
       settings,
       effect: (fn: () => () => void) => { disposer = fn() },
     }
-    const holder: { providerGrantedFor?: (provider: string) => boolean } = {}
-    wireSettingsGranted(settingsCtx, holder)
+    const access: ProviderGrantAccess = {}
+    wireSettingsGranted(settingsCtx, access)
 
-    expect(holder.providerGrantedFor?.( 'kimi-coding')).toBe(true)
-    expect(holder.providerGrantedFor?.('xiaomi')).toBe(false)
-    expect(holder.providerGrantedFor?.('deepseek-official')).toBe(true)
+    // 读判定
+    expect(access.providerGrantedFor?.('kimi-coding')).toBe(true)
+    expect(access.providerGrantedFor?.('xiaomi')).toBe(false)
+    expect(access.providerGrantedFor?.('deepseek-official')).toBe(true)
+    // 快照读
+    expect(access.enabledProviders?.()).toEqual({ 'kimi-coding': true })
+    // 写面:授权 xiaomi → scope.update 收到完整 enabledProviders 重建(map),
+    // 且 get() 反映新值(后续判定立即生效)。
+    await access.setProviderGrant?.('xiaomi', true)
+    expect(updates).toEqual([{ enabledProviders: { 'kimi-coding': true, xiaomi: true } }])
+    expect(access.providerGrantedFor?.('xiaomi')).toBe(true)
+    expect(access.enabledProviders?.()).toEqual({ 'kimi-coding': true, xiaomi: true })
 
     disposer?.()
-    expect(holder.providerGrantedFor).toBeUndefined()
+    expect(access.providerGrantedFor).toBeUndefined()
+    expect(access.enabledProviders).toBeUndefined()
+    expect(access.setProviderGrant).toBeUndefined()
+  })
+
+  it('写面 deepseek-official → no-op 不落盘', async () => {
+    const updates: Array<object> = []
+    const scope = mutableScope({ enabledProviders: {} }, updates)
+    const access: ProviderGrantAccess = {}
+    wireSettingsGranted({ settings: fakeSettings({ scope }), effect: () => () => undefined }, access)
+    await access.setProviderGrant?.('deepseek-official', true)
+    expect(updates).toEqual([])
   })
 
   it('settingsCtx 无 effect(最小上下文)→ 仍完成接线,不抛错', () => {
     const settings = fakeSettings({ value: { enabledProviders: {} } })
-    const holder: { providerGrantedFor?: (provider: string) => boolean } = {}
-    wireSettingsGranted({ settings }, holder)
-    expect(holder.providerGrantedFor?.('deepseek-official')).toBe(true)
+    const access: ProviderGrantAccess = {}
+    wireSettingsGranted({ settings }, access)
+    expect(access.providerGrantedFor?.('deepseek-official')).toBe(true)
   })
 
-  it('无 settings 服务 → 抛错,holder 不被写入', () => {
-    const holder: { providerGrantedFor?: (provider: string) => boolean } = {}
-    expect(() => wireSettingsGranted({}, holder)).toThrow(/settings service is not available/)
-    expect(holder.providerGrantedFor).toBeUndefined()
+  it('无 settings 服务 → 抛错,access 不被写入', () => {
+    const access: ProviderGrantAccess = {}
+    expect(() => wireSettingsGranted({}, access)).toThrow(/settings service is not available/)
+    expect(access.providerGrantedFor).toBeUndefined()
   })
 })

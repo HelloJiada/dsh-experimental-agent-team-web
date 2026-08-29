@@ -63,12 +63,18 @@ export declare function registerProviderGrantsSettings(sctx: unknown): SettingsS
 /** 授权判定（基于命名空间 scope 的 resolved value）：deepseek-official 恒
  * 授权；其余 provider 需设置页 enabledProviders 开关为 true。 */
 export declare function grantedFromScope(scope: SettingsScope, provider: string): boolean;
-/** 工具侧授权判定的可变持有者：apply 期接线写入，settings 作用域释放清空。 */
-export interface ProviderGrantedHolder {
+/** 授权判定的工具侧/写面共享访问对象（apply 期接线写入，作用域释放清空）。 */
+export interface ProviderGrantAccess {
+    /** spawn 校验授权判定（tools.ts 读）；undefined → 仅 deepseek-official 恒授权。 */
     providerGrantedFor?: (provider: string) => boolean;
+    /** 当前 enabledProviders 快照（快照透出/设置页初始值）；undefined → 空 map。 */
+    enabledProviders?: () => Record<string, boolean>;
+    /** 授权写入（HTTP 路由第二写面）；undefined → 写面不可用（settings 缺席）。 */
+    setProviderGrant?: (provider: string, enabled: boolean) => Promise<void>;
 }
 /** apply 期接线（在 ctx.inject(['settings']) 作用域内调用）：
- * 捕获 scope 经闭包写入 holder.providerGrantedFor；settings 作用域释放时
- * 清空（sctx.effect 注册 disposer）。工具 execute 通过 holder 读授权。 */
-export declare function wireSettingsGranted(settingsCtx: unknown, holder: ProviderGrantedHolder): void;
+ * 捕获 scope 经闭包写入 access（读/写/快照三通道）；settings 作用域释放时
+ * 全部清空（sctx.effect 注册 disposer）。工具 execute 与 HTTP 路由通过
+ * access 读写授权。 */
+export declare function wireSettingsGranted(settingsCtx: unknown, access: ProviderGrantAccess): void;
 //# sourceMappingURL=provider-grants.d.ts.map

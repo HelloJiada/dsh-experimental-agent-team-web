@@ -131,6 +131,10 @@ export interface TeamSnapshotOptions {
     readonly includeRemoved?: boolean;
     /** Archived teams have no meaningful live activity after their sessions stop. */
     readonly historic?: boolean;
+    /** Provider 授权中心(单通道):settings 命名空间 enabledProviders 快照读取
+     * 函数(apply 期捕获 scope 的闭包);undefined → 全部非 deepseek provider
+     * 未授权。 */
+    readonly enabledProviders?: () => Record<string, boolean>;
 }
 /**
  * Assemble one team snapshot from its durable files plus live activity.
@@ -150,7 +154,7 @@ export declare function assembleTeamSnapshot(ctx: Context, stateRoot: string, wo
 export declare function collectTeamsActivity(ctx: Context, roots: readonly {
     workspace: string;
     stateRoot: string;
-}[]): Promise<TeamActivitySnapshot[]>;
+}[], enabledProviders?: () => Record<string, boolean>): Promise<TeamActivitySnapshot[]>;
 /**
  * Collect every archived team under the given workspace state roots (the
  * `archive/` subdirectory of each state root). Used by the historic panel
@@ -162,7 +166,7 @@ export declare function collectTeamsActivity(ctx: Context, roots: readonly {
 export declare function collectArchivedTeamsActivity(ctx: Context, roots: readonly {
     workspace: string;
     stateRoot: string;
-}[]): Promise<TeamActivitySnapshot[]>;
+}[], enabledProviders?: () => Record<string, boolean>): Promise<TeamActivitySnapshot[]>;
 /**
  * R-17/H-1: project one full snapshot for the HTTP `/state` route.
  *

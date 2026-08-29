@@ -29,7 +29,7 @@ import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
 import { handleProviderGrant } from './provider-grant-route.ts'
-import { wireSettingsGranted } from './provider-grants.ts'
+import { wireSettingsGranted, type ProviderGrantAccess } from './provider-grants.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -205,17 +205,24 @@ export function apply(ctx: Context, config: Config): void {
     text: usageSectionText(toolNames),
   })
 
-  registerAgentTeamsTools(ctx, resolved)
-
   // Provider 授权中心（设计变更：面板 → DSH 设置页）：在 settings 服务上注册
   // `agent-team-web-providers` 命名空间，设置页自动渲染 provider 开关表单。
   // t6 接线（照 harness 先例）：在 inject 作用域内捕获 register() 返回的
-  // SettingsScope，经闭包写入 resolved.providerGrantedFor（工具 execute 读）；
-  // settings 作用域释放时清空。headless 无 settings 服务 → 不注册，
-  // providerGrantedFor 保持 undefined → spawn 校验退化为仅 deepseek-official
-  // 恒授权（与默认语义一致）。
+  // SettingsScope，经闭包写入 grantsAccess（读判定/快照/写面三通道）；工具
+  // execute 与 HTTP 路由、快照采集经 grantsAccess 读写授权；settings 作用域
+  // 释放时全部清空。headless 无 settings 服务 → 不注册，providerGrantedFor
+  // 保持 undefined → spawn 校验退化为仅 deepseek-official 恒授权（默认语义）。
+  const grantsAccess: ProviderGrantAccess = {}
   ctx.inject(['settings'], (settingsCtx) => {
-    wireSettingsGranted(settingsCtx, resolved)
+    wireSettingsGranted(settingsCtx, grantsAccess)
+  })
+
+  registerAgentTeamsTools(ctx, {
+    ...resolved,
+    // t6 接线:授权判定经 grantsAccess(apply 期捕获 settings scope 的闭包)
+    // 延迟读取——注入回调在 apply 之后才执行,此处只需稳定引用。
+    providerGrantedFor: (provider) => grantsAccess.providerGrantedFor?.(provider)
+      ?? (provider === 'deepseek-official'),
   })
 
   // Deterministic activation surfaces: the closed-namespace `/agent-teams`
@@ -277,9 +284,11 @@ export function apply(ctx: Context, config: Config): void {
         stateRoot: join(workspace.path, resolved.stateDir),
       }))
       // ?archived=1 serves teams moved to archive/ (post-delete review).
+      // providers 快照透出读 settings 命名空间 resolved value(单通道真源),
+      // 经 grantsAccess.enabledProviders 闭包(apply 期捕获 scope)。
       const snapshots = url.searchParams.get('archived') === '1'
-        ? await collectArchivedTeamsActivity(ctx, roots)
-        : await collectTeamsActivity(ctx, roots)
+        ? await collectArchivedTeamsActivity(ctx, roots, grantsAccess.enabledProviders)
+        : await collectTeamsActivity(ctx, roots, grantsAccess.enabledProviders)
       const body = JSON.stringify({ teams: snapshots.map(snapshot => redactSnapshotForHttp(snapshot, authorized)) })
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',
@@ -306,13 +315,14 @@ export function apply(ctx: Context, config: Config): void {
   }), 'agent-teams: close route')
 
   // Provider authorization route (第二写面,决策 2 保留):设置页通过 settings
-  // 服务持久化为主通道;此 HTTP 路由保留为 R-17 token 围栏的第二写面
-  // (面板时代遗留,双通道无害)。grant 全局(profile 级),落
-  // provider-grants.json(与 settings 双通道并存,spawn 校验接线见 t6 结论)。
+  // 服务持久化为主通道;此 HTTP 路由保留为 R-17 token 围栏的第二写面。
+  // 单通道结论(t6+队长拍板)后不再写 provider-grants.json —— 经 grantsAccess.
+  // setProviderGrant 写 settings 命名空间(settings 唯一真源,无文件双源漂移);
+  // settings 缺席时路由返回 503。
   ctx.effect(() => webServer.register({
     kind: 'exact',
     path: '/plugins/agent-team-web/provider-grant',
-    handler: (req, res) => handleProviderGrant(resolved.stateDir, workspaceRegistry, req, res, {
+    handler: (req, res) => handleProviderGrant(grantsAccess, req, res, {
       token: webToken,
       trustedHosts,
     }),

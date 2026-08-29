@@ -16,7 +16,7 @@ import { analyzeTeamSnapshot, type TeamIntelligence } from './intelligence.ts'
 import { currentTaskElapsedApprox, currentTaskElapsedMs, retroPendingCalibration, summarizeTeamRetro } from './retro.ts'
 import { readBestPractices } from './best-practices.ts'
 import {
-  CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readMailbox, readProviderGrants, readUnreadMailbox, readTeam,
+  CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readMailbox, readUnreadMailbox, readTeam,
   taskAwaitingInput, taskBlockedByReview, taskDepthsById, taskVisualState,
 } from './state.ts'
 import type { BestPracticeEntry } from './best-practices.ts'
@@ -161,6 +161,10 @@ export interface TeamSnapshotOptions {
   readonly includeRemoved?: boolean
   /** Archived teams have no meaningful live activity after their sessions stop. */
   readonly historic?: boolean
+  /** Provider 授权中心(单通道):settings 命名空间 enabledProviders 快照读取
+   * 函数(apply 期捕获 scope 的闭包);undefined → 全部非 deepseek provider
+   * 未授权。 */
+  readonly enabledProviders?: () => Record<string, boolean>
 }
 
 /** The current task of a member: its first unfinished owned task. */
@@ -299,14 +303,16 @@ export async function assembleTeamSnapshot(
   const toolCalls = await deriveTaskToolCalls(ctx, stateRoot, state.id, state.members, tasks)
   const bestPractices = await readBestPractices(stateRoot)
   const calibration = summarizeTeamRetro(tasks, state.members)
-  // Provider 授权中心:DSH 已注册的全部 provider + 面板 switch 授权状态。
-  // 授权是全局(profile 级),deepseek-official 恒启用;其余看 provider-grants。
-  const grants = await readProviderGrants(stateRoot)
+  // Provider 授权中心(单通道):DSH 已注册的全部 provider + 设置页授权状态。
+  // 授权是全局(profile 级),deepseek-official 恒启用;其余看 settings 命名
+  // 空间 enabledProviders(经 apply 期捕获 scope 的闭包读取,settings 缺席
+  // 时全为未授权)。
+  const enabledMap = options.enabledProviders?.() ?? {}
   const registeredProviders = listProvidersSafe(ctx)
   const providers: TeamProviderView[] = registeredProviders.map(provider => ({
     id: provider.id,
     name: provider.name,
-    enabled: provider.id === 'deepseek-official' || grants.has(provider.id),
+    enabled: provider.id === 'deepseek-official' || enabledMap[provider.id] === true,
   }))
   const base: TeamActivitySnapshot = {
     workspace,
@@ -393,6 +399,7 @@ export async function assembleTeamSnapshot(
 export async function collectTeamsActivity(
   ctx: Context,
   roots: readonly { workspace: string; stateRoot: string }[],
+  enabledProviders?: () => Record<string, boolean>,
 ): Promise<TeamActivitySnapshot[]> {
   const snapshots: TeamActivitySnapshot[] = []
   for (const root of roots) {
@@ -410,7 +417,7 @@ export async function collectTeamsActivity(
       try {
         const state = await readTeam(root.stateRoot, entry.name)
         if (state === undefined) continue
-        snapshots.push(await assembleTeamSnapshot(ctx, root.stateRoot, root.workspace, state))
+        snapshots.push(await assembleTeamSnapshot(ctx, root.stateRoot, root.workspace, state, { enabledProviders }))
       } catch {
         ctx.logger.warn(`agent-team-web: skipped unreadable team state "${entry.name}" in workspace "${root.workspace}"`)
       }
@@ -430,6 +437,7 @@ export async function collectTeamsActivity(
 export async function collectArchivedTeamsActivity(
   ctx: Context,
   roots: readonly { workspace: string; stateRoot: string }[],
+  enabledProviders?: () => Record<string, boolean>,
 ): Promise<TeamActivitySnapshot[]> {
   const snapshots: TeamActivitySnapshot[] = []
   for (const root of roots) {
@@ -442,7 +450,7 @@ export async function collectArchivedTeamsActivity(
           join(root.stateRoot, 'archive'),
           root.workspace,
           state,
-          { includeRemoved: true, historic: true },
+          { includeRemoved: true, historic: true, enabledProviders },
         ))
       } catch {
         ctx.logger.warn(`agent-team-web: skipped unreadable archived team "${teamId}" in workspace "${root.workspace}"`)

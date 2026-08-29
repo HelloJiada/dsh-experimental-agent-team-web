@@ -88,19 +88,36 @@ export function grantedFromScope(scope: SettingsScope, provider: string): boolea
   return value?.enabledProviders?.[provider] === true
 }
 
-/** 工具侧授权判定的可变持有者：apply 期接线写入，settings 作用域释放清空。 */
-export interface ProviderGrantedHolder {
+/** 授权判定的工具侧/写面共享访问对象（apply 期接线写入，作用域释放清空）。 */
+export interface ProviderGrantAccess {
+  /** spawn 校验授权判定（tools.ts 读）；undefined → 仅 deepseek-official 恒授权。 */
   providerGrantedFor?: (provider: string) => boolean
+  /** 当前 enabledProviders 快照（快照透出/设置页初始值）；undefined → 空 map。 */
+  enabledProviders?: () => Record<string, boolean>
+  /** 授权写入（HTTP 路由第二写面）；undefined → 写面不可用（settings 缺席）。 */
+  setProviderGrant?: (provider: string, enabled: boolean) => Promise<void>
 }
 
 /** apply 期接线（在 ctx.inject(['settings']) 作用域内调用）：
- * 捕获 scope 经闭包写入 holder.providerGrantedFor；settings 作用域释放时
- * 清空（sctx.effect 注册 disposer）。工具 execute 通过 holder 读授权。 */
-export function wireSettingsGranted(settingsCtx: unknown, holder: ProviderGrantedHolder): void {
+ * 捕获 scope 经闭包写入 access（读/写/快照三通道）；settings 作用域释放时
+ * 全部清空（sctx.effect 注册 disposer）。工具 execute 与 HTTP 路由通过
+ * access 读写授权。 */
+export function wireSettingsGranted(settingsCtx: unknown, access: ProviderGrantAccess): void {
   const scope = registerProviderGrantsSettings(settingsCtx)
-  holder.providerGrantedFor = (provider: string) => grantedFromScope(scope, provider)
+  access.providerGrantedFor = (provider: string) => grantedFromScope(scope, provider)
+  access.enabledProviders = () => {
+    const value = scope.get() as { enabledProviders?: Record<string, boolean> } | undefined
+    return value?.enabledProviders ?? {}
+  }
+  access.setProviderGrant = async (provider: string, enabled: boolean): Promise<void> => {
+    if (provider === 'deepseek-official') return // 隐式恒授权,永不落盘
+    const current = scope.get() as { enabledProviders?: Record<string, boolean> } | undefined
+    await scope.update({ enabledProviders: { ...(current?.enabledProviders ?? {}), [provider]: enabled } })
+  }
   const dispose = (): void => {
-    holder.providerGrantedFor = undefined
+    access.providerGrantedFor = undefined
+    access.enabledProviders = undefined
+    access.setProviderGrant = undefined
   }
   const effect = (settingsCtx as { effect?: (fn: () => () => void) => void }).effect
   if (effect !== undefined) {

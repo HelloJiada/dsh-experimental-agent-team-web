@@ -121,19 +121,6 @@ export declare function readRetiredMemberIds(stateRoot: string): Promise<Set<str
 /** Atomically add session ids to the durable retired-member deny-list. */
 export declare function recordRetiredMemberIds(stateRoot: string, memberIds: readonly string[]): Promise<void>;
 /**
- * Durable provider-authorization grants (全局, profile 级): which LLM
- * providers the user has enabled for AgentTeam members via the panel switch.
- * `deepseek-official` is implicitly granted (never stored); every other
- * provider defaults to disabled until the user flips it on.
- * @param stateRoot - resolved absolute state root directory.
- */
-export declare function readProviderGrants(stateRoot: string): Promise<Set<string>>;
-/** Whether a provider is authorized for AgentTeam members (deepseek-official
- * is implicitly granted; others require an explicit panel switch). */
-export declare function providerGranted(stateRoot: string, provider: string): Promise<boolean>;
-/** Atomically grant or revoke one provider (panel switch persistence). */
-export declare function setProviderGrant(stateRoot: string, provider: string, enabled: boolean): Promise<void>;
-/**
  * Find the team owned by one captain session (at most one per captain).
  * @param stateRoot - resolved absolute state root directory.
  * @param captainSessionId - the owning session id.

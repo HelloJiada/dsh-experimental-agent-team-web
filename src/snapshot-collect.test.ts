@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { collectArchivedTeamsActivity, collectTeamsActivity } from './snapshot.ts'
-import { archiveTeamDir, setProviderGrant } from './state.ts'
+import { archiveTeamDir } from './state.ts'
 import type { TeamMember, TeamState } from './types.ts'
 
 function member(name: string, overrides: Partial<TeamMember> = {}): TeamMember {
@@ -153,15 +153,14 @@ describe('collectTeamsActivity — providers 快照透出(授权中心数据源)
     } as unknown as Context
   }
 
-  it('透出全部注册 provider;deepseek-official 恒 enabled,其余看 grants 落盘', async () => {
+  it('透出全部注册 provider;deepseek-official 恒 enabled,其余看 settings enabledProviders', async () => {
     await writeTeamOnDisk(stateRoot, team('team-prov'))
-    await setProviderGrant(stateRoot, 'xiaomi', true)
 
     const snapshots = await collectTeamsActivity(llmContext([
       { id: 'deepseek-official', name: 'DeepSeek Official' },
       { id: 'kimi-coding', name: 'Kimi Coding' },
       { id: 'xiaomi', name: 'Xiaomi' },
-    ]), [{ workspace, stateRoot }])
+    ]), [{ workspace, stateRoot }], () => ({ 'kimi-coding': false, xiaomi: true }))
     const snapshot = snapshots.find(s => s.teamId === 'team-prov')
     expect(snapshot?.providers).toEqual([
       { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true },
@@ -170,17 +169,24 @@ describe('collectTeamsActivity — providers 快照透出(授权中心数据源)
     ])
   })
 
-  it('grants 撤销后快照 enabled 立即翻转(无需重启)', async () => {
+  it('授权撤销后快照 enabled 立即翻转(无需重启);settings 缺席时全为未授权', async () => {
     await writeTeamOnDisk(stateRoot, team('team-prov2'))
-    await setProviderGrant(stateRoot, 'xiaomi', true)
-    await setProviderGrant(stateRoot, 'xiaomi', false)
 
-    const snapshots = await collectTeamsActivity(llmContext([
+    const granted = await collectTeamsActivity(llmContext([
+      { id: 'deepseek-official', name: 'DeepSeek Official' },
+      { id: 'xiaomi', name: 'Xiaomi' },
+    ]), [{ workspace, stateRoot }], () => ({ xiaomi: true }))
+    expect(granted.find(s => s.teamId === 'team-prov2')?.providers).toEqual([
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: true },
+    ])
+
+    // settings 未接线(reader undefined)→ 非 deepseek 全部未授权(单通道默认)。
+    const noSettings = await collectTeamsActivity(llmContext([
       { id: 'deepseek-official', name: 'DeepSeek Official' },
       { id: 'xiaomi', name: 'Xiaomi' },
     ]), [{ workspace, stateRoot }])
-    const snapshot = snapshots.find(s => s.teamId === 'team-prov2')
-    expect(snapshot?.providers).toEqual([
+    expect(noSettings.find(s => s.teamId === 'team-prov2')?.providers).toEqual([
       { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true },
       { id: 'xiaomi', name: 'Xiaomi', enabled: false },
     ])
