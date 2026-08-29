@@ -22,6 +22,7 @@ import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { agentTeamsWebToken } from './activity-monitor.ts'
 import type { AgentTeamsTranslate } from './locales.ts'
+import { roleTitle } from './roles.ts'
 import { TOKEN_HEADER } from '../web-auth-constants.ts'
 import styles from './ProviderGrantsSection.module.css'
 
@@ -61,11 +62,8 @@ export interface ProviderGrantRow {
   readonly locked: boolean
 }
 
-/** 角色预设行。 */
-export interface RolePresetRow extends RolePresetView {
-  /** 该角色可选的模型(按选中 provider 过滤)。 */
-  readonly modelOptions: readonly string[]
-}
+/** 角色预设行(t17:合并视图直接透传,模型选项改由全 provider 分组提供)。 */
+export type RolePresetRow = RolePresetView
 
 /** 注入面:scope(读写命名空间) + t(文案)。 */
 export interface ProviderGrantsSectionInjected {
@@ -133,15 +131,10 @@ export function toggleProviderModels(
   return next
 }
 
-/** 纯函数:角色预设行(合并视图 + 按选中 provider 过滤模型选项)。 */
-export function rolePresetRows(
-  views: readonly RolePresetView[],
-  providers: readonly ProviderWithModels[],
-): readonly RolePresetRow[] {
-  return views.map(view => {
-    const providerModels = providers.find(p => p.id === view.provider)?.models ?? []
-    return { ...view, modelOptions: providerModels }
-  })
+/** 纯函数:角色预设行(t17 合并视图透传;模型选项改由 rolePresetModelGroups
+ * 全 provider 分组提供)。 */
+export function rolePresetRows(views: readonly RolePresetView[]): readonly RolePresetRow[] {
+  return views
 }
 
 /** 纯函数:角色档位覆盖写后的 roleDefaults map(value=undefined → 删覆盖)。 */
@@ -154,6 +147,32 @@ export function roleDefaultsMap(
   if (value === undefined) delete next[roleKey] // 「默认」= 删覆盖
   else next[roleKey] = value
   return next
+}
+
+/** 纯函数(t17):「恢复默认」= 清空全部 roleDefaults 覆盖,所有角色回落三源链。 */
+export function resetRoleDefaults(): Record<string, { provider?: string; model?: string; reasoningEffort?: string }> {
+  return {}
+}
+
+/** 纯函数(t17):模型下拉按 provider 分组——返回全部含模型的 provider 组
+ * (advisory models),供 <optgroup> 渲染;选中任一项即写该组 provider。 */
+export function rolePresetModelGroups(
+  providers: readonly ProviderWithModels[],
+): readonly { providerId: string; models: readonly string[] }[] {
+  return providers
+    .map(provider => ({ providerId: provider.id, models: provider.models ?? [] }))
+    .filter(group => group.models.length > 0)
+}
+
+/** 纯函数(t17):模型下拉当前选中值所在组(无覆盖/模型不在任何组 → undefined)。 */
+export function rolePresetSelectedGroup(
+  groups: readonly { providerId: string; models: readonly string[] }[],
+  value: { provider?: string; model?: string } | undefined,
+): string | undefined {
+  const model = value?.model
+  const provider = value?.provider
+  if (model === undefined) return undefined
+  return groups.find(group => group.providerId === provider && group.models.includes(model))?.providerId
 }
 
 /** 纯函数:从 /state 响应体取顶层 providers(含 models)与 roleDefaults 合并视图。 */
@@ -234,10 +253,11 @@ function ModelGrantCard({ rows, providers, scope, snapshot, t }: {
   )
 }
 
-/** 卡片二:角色预设。 */
-function RolePresetCard({ rows, providers, scope, snapshot, t }: {
+/** 卡片二:角色预设(t17 方案甲——无表头/无职位列/无默认按钮列;
+ * 右上「恢复默认」;模型下拉按 provider 分组)。 */
+function RolePresetCard({ rows, groups, scope, snapshot, t }: {
   readonly rows: readonly RolePresetRow[]
-  readonly providers: readonly ProviderWithModels[]
+  readonly groups: readonly { providerId: string; models: readonly string[] }[]
   readonly scope: SettingsScope<ProviderGrantsSectionValue> | undefined
   readonly snapshot: SettingsScopeSnapshot<ProviderGrantsSectionValue>
   readonly t: AgentTeamsTranslate
@@ -246,65 +266,80 @@ function RolePresetCard({ rows, providers, scope, snapshot, t }: {
     if (scope === undefined) return
     await scope.set('roleDefaults', roleDefaultsMap(snapshot.value?.roleDefaults, role, value))
   }
+  const resetAll = async (): Promise<void> => {
+    if (scope === undefined) return
+    await scope.set('roleDefaults', resetRoleDefaults())
+  }
   if (rows.length === 0) return null
   return (
     <section className={styles.card} aria-label={t('settings.agentTeam.rolePreset')}>
       <header className={styles.head}>
         <span className={styles.title}>{t('settings.agentTeam.rolePreset')}</span>
+        <button
+          type="button"
+          className={styles.resetBtn}
+          disabled={!rows.some(row => row.overridden)}
+          onClick={() => { void resetAll() }}
+        >
+          {t('settings.agentTeam.reset')}
+        </button>
       </header>
       <ul className={styles.list}>
-        {rows.map(row => (
-          <li key={row.role} className={styles.row} data-overridden={row.overridden}>
-            <span className={styles.name}>{row.role}</span>
-            <select
-              className={styles.select}
-              aria-label={`${row.role} ${t('settings.agentTeam.providerAria')}`}
-              value={row.provider ?? ''}
-              onChange={(event) => {
-                const provider = event.target.value
-                void write(row.role, provider === ''
-                  ? { provider: undefined, model: undefined, reasoningEffort: undefined }
-                  : { provider, model: undefined, reasoningEffort: undefined })
-              }}
-            >
-              <option value="">{t('settings.agentTeam.inherit')}</option>
-              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id}</option>)}
-            </select>
-            <select
-              className={styles.select}
-              aria-label={`${row.role} ${t('settings.agentTeam.modelAria')}`}
-              value={row.model ?? ''}
-              disabled={(row.provider ?? '') === ''}
-              onChange={(event) => {
-                const model = event.target.value
-                void write(row.role, { ...row, model: model === '' ? undefined : model })
-              }}
-            >
-              <option value="">{t('settings.agentTeam.inherit')}</option>
-              {row.modelOptions.map(model => <option key={model} value={model}>{model}</option>)}
-            </select>
-            <select
-              className={styles.select}
-              aria-label={`${row.role} ${t('settings.agentTeam.effortAria')}`}
-              value={row.reasoningEffort ?? ''}
-              onChange={(event) => {
-                const effort = event.target.value
-                void write(row.role, { ...row, reasoningEffort: effort === '' ? undefined : effort })
-              }}
-            >
-              <option value="">{t('settings.agentTeam.inherit')}</option>
-              {EFFORT_OPTIONS.map(effort => <option key={effort} value={effort}>{effort}</option>)}
-            </select>
-            <button
-              type="button"
-              className={styles.defaultBtn}
-              disabled={!row.overridden}
-              onClick={() => { void write(row.role, undefined) }}
-            >
-              {t('settings.agentTeam.default')}
-            </button>
-          </li>
-        ))}
+        {rows.map(row => {
+          // 当前模型覆盖值所在组(选中项须落在对应 optgroup 内)。
+          const selectedGroup = rolePresetSelectedGroup(groups, { provider: row.provider, model: row.model })
+          return (
+            <li key={row.role} className={styles.row} data-overridden={row.overridden}>
+              <span className={styles.nameWrap}>
+                <span className={styles.name} title={row.role}>{roleTitle(row.role, t)}</span>
+                <span className={styles.rowSub}>{row.role}</span>
+              </span>
+              <select
+                className={styles.select}
+                aria-label={`${row.role} ${t('settings.agentTeam.modelAria')}`}
+                value={row.model ?? ''}
+                onChange={(event) => {
+                  const model = event.target.value
+                  if (model === '') {
+                    // 继承:删覆盖,回落三源链。
+                    void write(row.role, undefined)
+                    return
+                  }
+                  // 选中模型所属组 → 直接写 {provider: 组 provider, model}(旧 provider 不保留)。
+                  const group = groups.find(g => g.models.includes(model))
+                  void write(row.role, { provider: group?.providerId, model })
+                }}
+              >
+                <option value="">{t('settings.agentTeam.inherit')}</option>
+                {groups.map(group => (
+                  <optgroup key={group.providerId} label={group.providerId}>
+                    {group.models.map(model => (
+                      <option
+                        key={`${group.providerId}/${model}`}
+                        value={model}
+                        {...(selectedGroup === group.providerId && row.model === model ? { selected: true } : {})}
+                      >
+                        {model}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <select
+                className={styles.select}
+                aria-label={`${row.role} ${t('settings.agentTeam.effortAria')}`}
+                value={row.reasoningEffort ?? ''}
+                onChange={(event) => {
+                  const effort = event.target.value
+                  void write(row.role, { ...row, reasoningEffort: effort === '' ? undefined : effort })
+                }}
+              >
+                <option value="">{t('settings.agentTeam.inherit')}</option>
+                {EFFORT_OPTIONS.map(effort => <option key={effort} value={effort}>{effort}</option>)}
+              </select>
+            </li>
+          )
+        })}
       </ul>
     </section>
   )
@@ -331,7 +366,8 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
     () => scope?.getSnapshot() ?? EMPTY_SNAPSHOT,
   )
   const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
-  const roleRows = rolePresetRows(center.roleDefaults, center.providers)
+  const roleRows = rolePresetRows(center.roleDefaults)
+  const modelGroups = rolePresetModelGroups(center.providers)
   return (
     <div className={styles.section} data-provider-grants data-loading={loading}>
       {providerRows.length === 0 && roleRows.length === 0
@@ -339,7 +375,7 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
         : (
           <>
             <ModelGrantCard rows={providerRows} providers={center.providers} scope={scope} snapshot={snapshot} t={t} />
-            <RolePresetCard rows={roleRows} providers={center.providers} scope={scope} snapshot={snapshot} t={t} />
+            <RolePresetCard rows={roleRows} groups={modelGroups} scope={scope} snapshot={snapshot} t={t} />
           </>
         )}
     </div>

@@ -12,8 +12,11 @@ import { describe, expect, it } from 'vitest'
 import {
   modelKeyOf,
   providerGrantRows,
+  resetRoleDefaults,
   roleDefaultsMap,
+  rolePresetModelGroups,
   rolePresetRows,
+  rolePresetSelectedGroup,
   settingsCenterFromStateBody,
   toggleProviderModels,
 } from './ProviderGrantsSection.tsx'
@@ -89,17 +92,39 @@ describe('toggleProviderModels — provider 行 switch 联动全部模型(t14)',
   })
 })
 
-describe('rolePresetRows — 角色预设行(模型选项按选中 provider 过滤)', () => {
+describe('rolePresetRows — 角色预设行(t17 合并视图透传)', () => {
   const views = [
     { role: 'engineer', provider: 'kimi-coding', model: 'kimi-k2.7-code', reasoningEffort: 'high', overridden: true },
     { role: 'qa', overridden: false },
   ]
 
-  it('合并视图透传 + modelOptions 按 provider 过滤;未选 provider 无模型选项', () => {
-    const rows = rolePresetRows(views, PROVIDERS)
-    expect(rows).toHaveLength(2)
-    expect(rows[0]).toMatchObject({ role: 'engineer', modelOptions: ['kimi-k2.7-code'] })
-    expect(rows[1]).toMatchObject({ role: 'qa', modelOptions: [] })
+  it('合并视图直接透传(模型选项改由全 provider 分组提供)', () => {
+    expect(rolePresetRows(views)).toEqual(views)
+  })
+})
+
+describe('rolePresetModelGroups / rolePresetSelectedGroup — 模型下拉按 provider 分组(t17)', () => {
+  it('分组 = 全部含模型的 provider;无模型 provider 过滤', () => {
+    expect(rolePresetModelGroups(PROVIDERS)).toEqual([
+      { providerId: 'deepseek-official', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
+      { providerId: 'kimi-coding', models: ['kimi-k2.7-code'] },
+      { providerId: 'xiaomi', models: ['xiaomi-m1'] },
+      { providerId: 'cc-switch', models: ['cc-model-1'] },
+    ])
+    expect(rolePresetModelGroups([{ id: 'x', name: 'X' }])).toEqual([])
+  })
+
+  it('选中值所在组:按 provider+model 定位;无覆盖/模型不在任何组 → undefined', () => {
+    const groups = rolePresetModelGroups(PROVIDERS)
+    expect(rolePresetSelectedGroup(groups, { provider: 'kimi-coding', model: 'kimi-k2.7-code' })).toBe('kimi-coding')
+    expect(rolePresetSelectedGroup(groups, { provider: 'kimi-coding', model: 'no-such' })).toBeUndefined()
+    expect(rolePresetSelectedGroup(groups, undefined)).toBeUndefined()
+  })
+})
+
+describe('resetRoleDefaults — 「恢复默认」全清(t17)', () => {
+  it('返回空 map(scope.set 后所有角色回落三源链)', () => {
+    expect(resetRoleDefaults()).toEqual({})
   })
 })
 

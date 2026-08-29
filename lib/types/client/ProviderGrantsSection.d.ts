@@ -54,11 +54,8 @@ export interface ProviderGrantRow {
     readonly enabled: boolean;
     readonly locked: boolean;
 }
-/** 角色预设行。 */
-export interface RolePresetRow extends RolePresetView {
-    /** 该角色可选的模型(按选中 provider 过滤)。 */
-    readonly modelOptions: readonly string[];
-}
+/** 角色预设行(t17:合并视图直接透传,模型选项改由全 provider 分组提供)。 */
+export type RolePresetRow = RolePresetView;
 /** 注入面:scope(读写命名空间) + t(文案)。 */
 export interface ProviderGrantsSectionInjected {
     scope: SettingsScope<ProviderGrantsSectionValue>;
@@ -81,8 +78,9 @@ export declare function providerGrantRows(providers: readonly ProviderWithModels
  * (删除该 provider 全部模型 key)。设计决策:provider 粒度展示,授权数据仍
  * 模型粒度(enabledModels 复合 key)不变。 */
 export declare function toggleProviderModels(current: Readonly<Record<string, boolean>> | undefined, provider: string, models: readonly string[] | undefined, nextEnabled: boolean): Record<string, boolean>;
-/** 纯函数:角色预设行(合并视图 + 按选中 provider 过滤模型选项)。 */
-export declare function rolePresetRows(views: readonly RolePresetView[], providers: readonly ProviderWithModels[]): readonly RolePresetRow[];
+/** 纯函数:角色预设行(t17 合并视图透传;模型选项改由 rolePresetModelGroups
+ * 全 provider 分组提供)。 */
+export declare function rolePresetRows(views: readonly RolePresetView[]): readonly RolePresetRow[];
 /** 纯函数:角色档位覆盖写后的 roleDefaults map(value=undefined → 删覆盖)。 */
 export declare function roleDefaultsMap(current: Readonly<Record<string, {
     provider?: string;
@@ -97,6 +95,26 @@ export declare function roleDefaultsMap(current: Readonly<Record<string, {
     model?: string;
     reasoningEffort?: string;
 }>;
+/** 纯函数(t17):「恢复默认」= 清空全部 roleDefaults 覆盖,所有角色回落三源链。 */
+export declare function resetRoleDefaults(): Record<string, {
+    provider?: string;
+    model?: string;
+    reasoningEffort?: string;
+}>;
+/** 纯函数(t17):模型下拉按 provider 分组——返回全部含模型的 provider 组
+ * (advisory models),供 <optgroup> 渲染;选中任一项即写该组 provider。 */
+export declare function rolePresetModelGroups(providers: readonly ProviderWithModels[]): readonly {
+    providerId: string;
+    models: readonly string[];
+}[];
+/** 纯函数(t17):模型下拉当前选中值所在组(无覆盖/模型不在任何组 → undefined)。 */
+export declare function rolePresetSelectedGroup(groups: readonly {
+    providerId: string;
+    models: readonly string[];
+}[], value: {
+    provider?: string;
+    model?: string;
+} | undefined): string | undefined;
 /** 纯函数:从 /state 响应体取顶层 providers(含 models)与 roleDefaults 合并视图。 */
 export declare function settingsCenterFromStateBody(body: unknown): {
     providers: readonly ProviderWithModels[];

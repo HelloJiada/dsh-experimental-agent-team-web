@@ -66,11 +66,10 @@ export declare const zh: {
     'settings.agentTeam.rolePreset': string;
     'settings.agentTeam.locked': string;
     'settings.agentTeam.toggleAria': string;
-    'settings.agentTeam.providerAria': string;
     'settings.agentTeam.modelAria': string;
     'settings.agentTeam.effortAria': string;
     'settings.agentTeam.inherit': string;
-    'settings.agentTeam.default': string;
+    'settings.agentTeam.reset': string;
     'settings.agentTeam.loading': string;
     'settings.agentTeam.empty': string;
     'task.runningAria': string;
@@ -337,11 +336,10 @@ export declare const en: {
     'settings.agentTeam.rolePreset': string;
     'settings.agentTeam.locked': string;
     'settings.agentTeam.toggleAria': string;
-    'settings.agentTeam.providerAria': string;
     'settings.agentTeam.modelAria': string;
     'settings.agentTeam.effortAria': string;
     'settings.agentTeam.inherit': string;
-    'settings.agentTeam.default': string;
+    'settings.agentTeam.reset': string;
     'settings.agentTeam.loading': string;
     'settings.agentTeam.empty': string;
 };

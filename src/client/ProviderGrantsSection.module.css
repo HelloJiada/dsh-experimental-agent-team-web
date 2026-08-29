@@ -146,11 +146,11 @@
   transform: translateX(14px);
 }
 
-/* 角色预设选择器与「默认」按钮(t13 保留)。 */
+/* 角色预设选择器(t17:深色主题深底浅字,不用 bg-layer-1 白底)。 */
 .select {
   flex: 1;
   min-width: 0;
-  max-width: 180px;
+  max-width: 200px;
   box-sizing: border-box;
   padding: 2px 4px;
   border: 1px solid var(--dsw-alias-border-l2);
@@ -165,19 +165,35 @@
   opacity: 0.55;
 }
 
-.defaultBtn {
+/* t17:深色主题下拉配色(背景 rgb(38,40,43) + 浅字 #e8e8e8)。 */
+@media (prefers-color-scheme: dark) {
+  .select {
+    background: rgb(38, 40, 43);
+    color: #e8e8e8;
+  }
+}
+
+/* t17:「恢复默认」按钮(描边透明底,灰字,hover 品牌蓝)。 */
+.resetBtn {
   flex: none;
-  padding: 2px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
   font-size: 11px;
   line-height: 16px;
   cursor: pointer;
+  transition: color 120ms ease-in-out, border-color 120ms ease-in-out;
 }
 
-.defaultBtn:disabled {
+.resetBtn:hover:not(:disabled) {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.resetBtn:disabled {
   opacity: 0.45;
   cursor: default;
 }
