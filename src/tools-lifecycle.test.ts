@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
 import { BEST_PRACTICES_FILE, type BestPracticeEntry } from './best-practices.ts'
+import { AGENT_TEAM_PROVIDERS_NS, wireSettingsGranted } from './provider-grants.ts'
 import { readTeam } from './state.ts'
 import type { TeamMember, TeamState, TeamTask } from './types.ts'
 
@@ -417,6 +418,75 @@ describe('agent_teams_add_member — 添加成员', () => {
     expect(result.model).toBe('kimi-k2.7-code')
     const persisted = await readTeam(stateRoot, 'team-tools')
     expect(persisted?.members.find(m => m.name === '技术员')?.provider).toBe('kimi-coding')
+  })
+
+  it('provider 授权:真实 scope 穿透——inject 捕获的 settings scope 真正被 execute 使用', async () => {
+    // 全链路验证(t6 接线):wireSettingsGranted(inject 作用域捕获 register()
+    // 返回的 scope,经闭包写入 config.providerGrantedFor)→ registerAgentTeamsTools
+    // → add_member execute 读 config.providerGrantedFor。工具 ctx 不含 settings
+    // stub —— 若接线断裂(直读 ctx.settings 或 scope 未穿透),授权判定恒 false,
+    // 本用例必回退 deepseek-official 而失败。
+    const tools = new Map<string, CapturedTool>()
+    const executeCtx = {
+      tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
+      agents: { get: () => undefined },
+      logger: { warn: () => undefined, debug: () => undefined },
+      on: () => undefined,
+      effect: () => () => undefined,
+      llm: { resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
+        provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
+      }) },
+      subagents: {
+        registerContinuableSetup: () => undefined,
+        followup: async () => undefined,
+        getProvider: () => ({
+          prepareContinuable: {},
+          capabilities: { persona: true, toolFilter: true },
+        }),
+        list: () => ['spawn'],
+        startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
+      },
+    } as unknown as Context
+    // 模拟 apply 期:settings 服务在 inject 作用域内注册命名空间并返回 scope。
+    const scope = {
+      get: () => ({ enabledProviders: { 'kimi-coding': true, xiaomi: false } }),
+      watch: () => () => undefined,
+      update: async () => undefined,
+      replace: async () => undefined,
+    }
+    const settingsCtx = {
+      settings: {
+        register: () => scope,
+        describe: () => [{ ns: AGENT_TEAM_PROVIDERS_NS, schema: {}, value: { enabledProviders: { 'kimi-coding': true } }, revision: 0, applies: 'live' }],
+      },
+      effect: () => () => undefined,
+    }
+    const wiredConfig = { ...config }
+    wireSettingsGranted(settingsCtx, wiredConfig)
+    registerAgentTeamsTools(executeCtx, wiredConfig)
+    const execTool = (name: string): CapturedTool => {
+      const def = tools.get(name)
+      if (def === undefined) throw new Error(`tool "${name}" not registered`)
+      return def
+    }
+    // 已授权(kimi-coding):scope 穿透 → 无回退,按显式路由 spawn。
+    const granted = await execTool('agent_teams_add_member').execute(
+      { role: 'engineer', provider: 'kimi-coding', model: 'kimi-k2.7-code' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { member_name: string; provider: string }
+    expect(granted.provider).toBe('kimi-coding')
+    // 未授权(xiaomi):scope 判定 false → 回退 deepseek-official(软约束)。
+    const revoked = await execTool('agent_teams_add_member').execute(
+      { role: 'qa', provider: 'xiaomi', model: 'xiaomi-m1' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { member_name: string; provider: string }
+    expect(revoked.provider).toBe('deepseek-official')
+    // deepseek-official 恒授权,不走 scope 判定。
+    const builtin = await execTool('agent_teams_add_member').execute(
+      { role: 'researcher', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { member_name: string; provider: string }
+    expect(builtin.provider).toBe('deepseek-official')
   })
 
   it('R-26:spawn(网络)在锁外——add_member 进行中,同队 status 不被阻塞', async () => {
