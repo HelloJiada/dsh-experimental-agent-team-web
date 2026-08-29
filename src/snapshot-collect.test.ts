@@ -85,6 +85,26 @@ describe('collectTeamsActivity — 活动团队采集', () => {
     expect(teamA?.tasks[0]?.id).toBe('t1')
   })
 
+  it('t7:成员快照透出落盘 LLM 路由(provider/model/reasoningEffort),旧数据缺省不输出', async () => {
+    await writeTeamOnDisk(stateRoot, team('team-llm', {
+      members: [
+        member('技术员', { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' }),
+        // 旧数据(无 model/reasoningEffort)→ 字段不输出。
+        member('老兵', { provider: undefined, model: undefined, reasoningEffort: undefined }),
+      ],
+    }))
+
+    const snapshots = await collectTeamsActivity(context(), [{ workspace, stateRoot }])
+    const snapshot = snapshots.find(s => s.teamId === 'team-llm')
+    const engineer = snapshot?.members.find(m => m.name === '技术员')
+    expect(engineer?.provider).toBe('deepseek-official')
+    expect(engineer?.model).toBe('deepseek-v4-flash')
+    expect(engineer?.reasoningEffort).toBe('high')
+    const legacy = snapshot?.members.find(m => m.name === '老兵')
+    expect(legacy?.model).toBeUndefined()
+    expect(legacy?.reasoningEffort).toBeUndefined()
+  })
+
   it('非团队目录(无 team.json)被跳过,不产生快照', async () => {
     await mkdir(join(stateRoot, 'not-a-team'), { recursive: true })
     const snapshots = await collectTeamsActivity(context(), [{ workspace, stateRoot }])

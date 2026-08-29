@@ -31,6 +31,10 @@ export interface TeamActivityMember {
     /** The id of a task this member is helping on, when any (self-organizing). */
     readonly helpingTask?: string;
     readonly unread: number;
+    /** 成员落盘 LLM 路由(创建时捕获),供面板模型小字标注;旧数据可缺省。 */
+    readonly provider?: string;
+    readonly model?: string;
+    readonly reasoningEffort?: string;
 }
 /** One task row of the activity snapshot. */
 export interface TeamActivityTask {

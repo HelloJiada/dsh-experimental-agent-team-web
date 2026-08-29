@@ -569,6 +569,19 @@
   white-space: nowrap;
 }
 
+/* t7:成员模型+推理能力小字(比角色小字更小更淡,tertiary 淡化)。 */
+.memberModel {
+  flex: none;
+  overflow: hidden;
+  margin-left: 4px;
+  color: color-mix(in srgb, var(--dsw-alias-label-tertiary) 78%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+  line-height: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .captainSummary,
 .memberStatusLine {
   overflow: hidden;

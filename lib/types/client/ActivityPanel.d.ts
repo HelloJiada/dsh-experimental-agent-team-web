@@ -22,6 +22,12 @@ import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-clie
 import { type ActivityMember, type ActivityTask, type ActivityTeam } from './activity-monitor.ts';
 import type { AgentTeamsTranslate } from './locales.ts';
 export declare function taskStatusLabel(status: string, t: AgentTeamsTranslate): string;
+/** 成员模型小字标签(t7,用户最终格式):`ds-v4-flash · high`。
+ * deepseek-official → 品牌缩写 `ds` + 完整型号去 provider 前缀段
+ * (`deepseek-v4-flash` → `ds-v4-flash`);其他 provider 取 id 首段为品牌,
+ * 模型带该前缀则去掉、否则保留完整;effort(high/max/low/off)以 ` · ` 跟后。
+ * model 缺失 → null(旧数据不显示小字)。 */
+export declare function memberModelLabel(provider: string | undefined, model: string | undefined, reasoningEffort: string | undefined): string | null;
 export declare function formatTaskIds(ids: readonly string[], t: AgentTeamsTranslate): string;
 /** Badge/bar coloring key: visual state, widened for terminal statuses. */
 export declare function taskTone(state: ActivityTask['state'], status: string): string;

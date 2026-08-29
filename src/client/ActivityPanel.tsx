@@ -170,6 +170,33 @@ export function taskStatusLabel(status: string, t: AgentTeamsTranslate): string 
   return key === undefined ? status : t(key)
 }
 
+/** 成员模型小字标签(t7,用户最终格式):`ds-v4-flash · high`。
+ * deepseek-official → 品牌缩写 `ds` + 完整型号去 provider 前缀段
+ * (`deepseek-v4-flash` → `ds-v4-flash`);其他 provider 取 id 首段为品牌,
+ * 模型带该前缀则去掉、否则保留完整;effort(high/max/low/off)以 ` · ` 跟后。
+ * model 缺失 → null(旧数据不显示小字)。 */
+export function memberModelLabel(
+  provider: string | undefined,
+  model: string | undefined,
+  reasoningEffort: string | undefined,
+): string | null {
+  const trimmed = model?.trim()
+  if (trimmed === undefined || trimmed === '') return null
+  const p = provider?.trim()
+  let label: string
+  if (p === 'deepseek-official') {
+    label = `ds-${trimmed.startsWith('deepseek-') ? trimmed.slice('deepseek-'.length) : trimmed}`
+  } else if (p !== undefined && p !== '') {
+    const brand = p.split('-')[0] ?? p
+    const prefix = `${brand}-`
+    label = trimmed.startsWith(prefix) ? `${brand}-${trimmed.slice(prefix.length)}` : trimmed
+  } else {
+    label = trimmed
+  }
+  const effort = reasoningEffort?.trim()
+  return effort === undefined || effort === '' ? label : `${label} · ${effort}`
+}
+
 export function formatTaskIds(ids: readonly string[], t: AgentTeamsTranslate): string {
   return ids.join(t('format.listSeparator'))
 }
@@ -651,6 +678,7 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
           {execMembers.length === 0 && <span className={css.emptyHint}>{t('members.empty')}</span>}
           {execMembers.map((member) => {
             const owned = team.tasks.filter((task) => task.assignee === member.name)
+            const modelLabel = memberModelLabel(member.provider, member.model, member.reasoningEffort)
             return (
               <div key={member.id} className={css.memberBlock} data-activity={member.activity}>
                 <span className={css.memberBranch} aria-hidden><span /></span>
@@ -676,6 +704,8 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
                     <span className={css.memberLine}>
                       <span className={css.memberName}>{nameTitle(member.name, t)}</span>
                       {member.role !== '' && !isRoleName(member.name) && <span className={css.memberRole}>{roleTitle(member.role, t)}</span>}
+                      {/* t7:模型 + 推理能力小字(比角色小字更小更淡);旧数据无 model 不显示。 */}
+                      {modelLabel !== null && <span className={css.memberModel}>{modelLabel}</span>}
                     </span>
                     <span className={css.memberStatusLine}>
                       {memberStatusText(member, team.tasks, t)}

@@ -29,6 +29,7 @@ import {
   healthLevel,
   healthRiskCount,
   loadBarFor,
+  memberModelLabel,
   taskStatusLabel,
   taskSummary,
   taskTone,
@@ -209,5 +210,30 @@ describe('loadBarFor — 成员负载条', () => {
       ],
     } as unknown as TeamIntelligence
     expect(loadBarFor(team({ intelligence }), member)).toBeNull()
+  })
+})
+
+describe('memberModelLabel — 成员模型小字(t7 最终格式 ds-v4-flash · high)', () => {
+  it('deepseek-official:品牌 ds + 模型去 provider 前缀段', () => {
+    expect(memberModelLabel('deepseek-official', 'deepseek-v4-flash', 'high')).toBe('ds-v4-flash · high')
+    expect(memberModelLabel('deepseek-official', 'deepseek-v4-pro', undefined)).toBe('ds-v4-pro')
+    expect(memberModelLabel('deepseek-official', 'deepseek-v4-flash-vision-exp', 'low')).toBe('ds-v4-flash-vision-exp · low')
+  })
+
+  it('其他 provider:品牌取 id 首段,模型带该前缀则去前缀,否则保留完整', () => {
+    expect(memberModelLabel('kimi-coding', 'kimi-k2.7-code', 'high')).toBe('kimi-k2.7-code · high')
+    expect(memberModelLabel('xiaomi', 'custom-model', 'max')).toBe('custom-model · max')
+  })
+
+  it('自定义/未知 provider 保留完整模型 id;effort 缺失不加后缀', () => {
+    expect(memberModelLabel('my-provider', 'my-model-v1', 'off')).toBe('my-model-v1 · off')
+    expect(memberModelLabel(undefined, 'plain-model', 'high')).toBe('plain-model · high')
+    expect(memberModelLabel('deepseek-official', 'deepseek-v4-flash', '')).toBe('ds-v4-flash')
+  })
+
+  it('model 缺失/空白 → null(旧数据不显示小字)', () => {
+    expect(memberModelLabel('deepseek-official', undefined, 'high')).toBeNull()
+    expect(memberModelLabel('deepseek-official', '  ', 'high')).toBeNull()
+    expect(memberModelLabel(undefined, undefined, undefined)).toBeNull()
   })
 })
