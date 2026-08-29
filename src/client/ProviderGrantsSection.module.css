@@ -1,9 +1,18 @@
-/* Provider 授权设置页卡片(t8):provider 行 + 迷你开关。 */
+/* AgentTeam 设置中心(t13):两张卡(模型调度授权 + 角色预设)。 */
 
 .section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-module) 88%, transparent);
 }
 
 .head {
@@ -40,6 +49,46 @@
 
 .row[data-enabled='true'] {
   background: color-mix(in srgb, var(--dsw-alias-state-success) 8%, var(--dsw-alias-bg-module));
+}
+
+.row[data-overridden='true'] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-info) 45%, transparent);
+}
+
+/* 角色预设选择器与「默认」按钮 */
+.select {
+  flex: 1;
+  min-width: 0;
+  max-width: 180px;
+  box-sizing: border-box;
+  padding: 2px 4px;
+  border: 1px solid var(--dsw-alias-line-strong);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.select:disabled {
+  opacity: 0.55;
+}
+
+.defaultBtn {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-line-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.defaultBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .name {

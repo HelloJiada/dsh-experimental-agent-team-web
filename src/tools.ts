@@ -118,10 +118,13 @@ export interface ToolsConfig {
   /** Per-role default LLM selection for members (auto-assign model + effort),
    * overriding the built-in DEFAULT_ROLE_LLM table. */
   roleLlmDefaults?: Record<string, { provider?: string; model?: string; reasoningEffort?: string }>
-  /** Provider 授权判定(t6 接线,settings scope 闭包):deepseek-official 恒
-   * 授权,其余 provider 看设置页开关;undefined(无 settings 服务)→ 仅
-   * deepseek-official 授权。 */
-  providerGrantedFor?: (provider: string) => boolean
+  /** 模型授权判定(t13,settings scope 闭包):`${provider}/${model}` 复合 key,
+   * deepseek-official 名下恒授权;undefined(无 settings 服务)→ 仅 deepseek
+   * 授权。 */
+  modelGrantedFor?: (provider: string, model: string) => boolean
+  /** 角色档位覆盖(t13,settings scope 闭包):settings.roleDefaults[roleKey]
+   * 存在即覆盖;undefined → 走 profile.roleLlmDefaults → DEFAULT_ROLE_LLM。 */
+  roleDefaultsFor?: (roleKey: string) => { provider?: string; model?: string; reasoningEffort?: string } | undefined
   /** A member-owned open task is "stalled" (helppable) after this many ms. */
   stallThresholdMs: number
 }
@@ -564,9 +567,12 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
 
       // 锁外执行:LLM 选型 + 团队记忆读取 + 子代理 spawn(网络/慢,不占团队锁)。
       // 角色自动分配:显式 provider/model 永远优先;否则取该角色的默认档位
-      // (profile roleLlmDefaults 覆盖内置 DEFAULT_ROLE_LLM 表);再否则继承队长路由。
+      // (t13 三源链:settings.roleDefaults 覆盖 → profile roleLlmDefaults →
+      // 内置 DEFAULT_ROLE_LLM);再否则继承队长路由。
       const roleKey = canonicalExecRole(args.role)
-      const roleDefaults = config.roleLlmDefaults?.[roleKey] ?? DEFAULT_ROLE_LLM[roleKey]
+      const roleDefaults = config.roleDefaultsFor?.(roleKey)
+        ?? config.roleLlmDefaults?.[roleKey]
+        ?? DEFAULT_ROLE_LLM[roleKey]
       const selection = await resolveMemberLlmSelection(ctx, captain, {
         provider: args.provider,
         model: args.model,
@@ -574,20 +580,20 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         reasoningEffort: args.reasoning_effort,
         ...roleDefaults === undefined ? {} : { roleDefaults },
       }, exec.signal)
-      // Provider 授权中心(设置页迁移):显式指定或角色档位指定的非默认
-      // provider,需用户在 DSH 设置页授权后才可用(deepseek-official 恒授权)。
-      // 判定走 config.providerGrantedFor(t6 接线,settings scope 闭包);
-      // 无 settings 服务(undefined)→ 仅 deepseek-official 授权。继承队长
-      // 路由的 provider 不拦截(队长自己正在用的即视为可用)。未授权时尝试
-      // 回退 deepseek-official + warn;回退失败则保留原 selection(软约束)。
+      // AgentTeam 设置中心(t13):显式指定或角色档位指定的非默认 provider 的
+      // 模型,需在设置页授权后才可用(deepseek-official 名下恒授权)。判定走
+      // config.modelGrantedFor(`${provider}/${model}` 复合 key,settings scope
+      // 闭包);无 settings 服务(undefined)→ 仅 deepseek 授权。继承队长路由
+      // 的 provider 不拦截(队长自己正在用的即视为可用)。未授权时尝试回退
+      // deepseek-official + warn;回退失败则保留原 selection(软约束)。
       const explicitlyRouted = args.provider !== undefined
         || (roleDefaults !== undefined && roleDefaults.provider !== undefined)
       let effectiveSelection = selection
       if (explicitlyRouted && selection.provider !== 'deepseek-official') {
-        const granted = config.providerGrantedFor?.(selection.provider)
+        const granted = config.modelGrantedFor?.(selection.provider, selection.model)
           ?? (selection.provider === 'deepseek-official')
         if (!granted) {
-          ctx.logger.warn(`agent-team-web: provider "${selection.provider}" is not authorized for AgentTeams members (enable it in the settings page); falling back to deepseek-official`)
+          ctx.logger.warn(`agent-team-web: model "${selection.provider}/${selection.model}" is not authorized for AgentTeams members (enable it in the settings page); falling back to deepseek-official`)
           // 模型档位回退默认:绝不携带原路由的显式 model(如 kimi-k2.7-code),
           // 按 角色默认档位 → 配置 memberModel → 队长当前 model 取 deepseek
           // 档位,避免 provider/model 错配;显式 reasoningEffort 仍尊重

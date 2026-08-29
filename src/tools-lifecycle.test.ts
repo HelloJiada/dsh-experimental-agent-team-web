@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
 import { BEST_PRACTICES_FILE, type BestPracticeEntry } from './best-practices.ts'
-import { AGENT_TEAM_PROVIDERS_NS, wireSettingsGranted } from './provider-grants.ts'
+import { AGENT_TEAM_SETTINGS_NS, wireAgentTeamSettings } from './provider-grants.ts'
 import { readTeam } from './state.ts'
 import type { TeamMember, TeamState, TeamTask } from './types.ts'
 
@@ -376,9 +376,9 @@ describe('agent_teams_add_member — 添加成员', () => {
     expect(persistedEngineer?.model).toBe('deepseek-v4-flash')
   })
 
-  it('provider 授权:设置页已授权 provider → 不回退,成员按显式路由 spawn', async () => {
-    // t6 接线:授权判定走 config.providerGrantedFor(settings scope 闭包);
-    // 设置页 enabledProviders 含 kimi-coding → 授权放行,不触发回退。
+  it('模型授权:设置页已授权模型 → 不回退,成员按显式路由 spawn', async () => {
+    // t13 接线:授权判定走 config.modelGrantedFor(settings scope 闭包);
+    // 设置页 enabledModels 含 kimi-coding/kimi-k2.7-code → 授权放行,不触发回退。
     const tools = new Map<string, CapturedTool>()
     const grantedCtx = {
       tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
@@ -402,7 +402,7 @@ describe('agent_teams_add_member — 添加成员', () => {
     } as unknown as Context
     registerAgentTeamsTools(grantedCtx, {
       ...config,
-      providerGrantedFor: (provider: string) => provider === 'kimi-coding',
+      modelGrantedFor: (provider: string, model: string) => provider === 'kimi-coding' && model === 'kimi-k2.7-code',
     })
     const grantedTool = (name: string): CapturedTool => {
       const def = tools.get(name)
@@ -420,10 +420,10 @@ describe('agent_teams_add_member — 添加成员', () => {
     expect(persisted?.members.find(m => m.name === '技术员')?.provider).toBe('kimi-coding')
   })
 
-  it('provider 授权:真实 scope 穿透——inject 捕获的 settings scope 真正被 execute 使用', async () => {
-    // 全链路验证(t6 接线):wireSettingsGranted(inject 作用域捕获 register()
-    // 返回的 scope,经闭包写入 config.providerGrantedFor)→ registerAgentTeamsTools
-    // → add_member execute 读 config.providerGrantedFor。工具 ctx 不含 settings
+  it('模型授权:真实 scope 穿透——inject 捕获的 settings scope 真正被 execute 使用', async () => {
+    // 全链路验证(t13 接线):wireAgentTeamSettings(inject 作用域捕获 register()
+    // 返回的 scope,经闭包写入 config.modelGrantedFor)→ registerAgentTeamsTools
+    // → add_member execute 读 config.modelGrantedFor。工具 ctx 不含 settings
     // stub —— 若接线断裂(直读 ctx.settings 或 scope 未穿透),授权判定恒 false,
     // 本用例必回退 deepseek-official 而失败。
     const tools = new Map<string, CapturedTool>()
@@ -449,7 +449,7 @@ describe('agent_teams_add_member — 添加成员', () => {
     } as unknown as Context
     // 模拟 apply 期:settings 服务在 inject 作用域内注册命名空间并返回 scope。
     const scope = {
-      get: () => ({ enabledProviders: { 'kimi-coding': true, xiaomi: false } }),
+      get: () => ({ enabledModels: { 'kimi-coding/kimi-k2.7-code': true }, roleDefaults: {} }),
       watch: () => () => undefined,
       update: async () => undefined,
       replace: async () => undefined,
@@ -457,25 +457,25 @@ describe('agent_teams_add_member — 添加成员', () => {
     const settingsCtx = {
       settings: {
         register: () => scope,
-        describe: () => [{ ns: AGENT_TEAM_PROVIDERS_NS, schema: {}, value: { enabledProviders: { 'kimi-coding': true } }, revision: 0, applies: 'live' }],
+        describe: () => [{ ns: AGENT_TEAM_SETTINGS_NS, schema: {}, value: { enabledModels: { 'kimi-coding/kimi-k2.7-code': true } }, revision: 0, applies: 'live' }],
       },
       effect: () => () => undefined,
     }
     const wiredConfig = { ...config }
-    wireSettingsGranted(settingsCtx, wiredConfig)
+    wireAgentTeamSettings(settingsCtx, wiredConfig)
     registerAgentTeamsTools(executeCtx, wiredConfig)
     const execTool = (name: string): CapturedTool => {
       const def = tools.get(name)
       if (def === undefined) throw new Error(`tool "${name}" not registered`)
       return def
     }
-    // 已授权(kimi-coding):scope 穿透 → 无回退,按显式路由 spawn。
+    // 已授权(kimi-coding/kimi-k2.7-code):scope 穿透 → 无回退,按显式路由 spawn。
     const granted = await execTool('agent_teams_add_member').execute(
       { role: 'engineer', provider: 'kimi-coding', model: 'kimi-k2.7-code' },
       execOf(agent(workspace, CAPTAIN_ID)),
     ) as { member_name: string; provider: string }
     expect(granted.provider).toBe('kimi-coding')
-    // 未授权(xiaomi):scope 判定 false → 回退 deepseek-official(软约束)。
+    // 未授权(xiaomi/xiaomi-m1):scope 判定 false → 回退 deepseek-official(软约束)。
     const revoked = await execTool('agent_teams_add_member').execute(
       { role: 'qa', provider: 'xiaomi', model: 'xiaomi-m1' },
       execOf(agent(workspace, CAPTAIN_ID)),

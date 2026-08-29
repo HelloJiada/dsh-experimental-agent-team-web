@@ -34,23 +34,44 @@ function listProvidersSafe(ctx: Context): LlmProviderInfo[] {
   }
 }
 
+/** provider 的模型列表(advisory,非权威全集),ctx.llm 缺失/抛错时容空。 */
+async function listModelsSafe(ctx: Context, providerId: string): Promise<string[]> {
+  try {
+    const llm = (ctx as unknown as { llm?: { listModels(provider: string): Promise<readonly { id: string }[]> } }).llm
+    if (llm?.listModels === undefined) return []
+    const models = await llm.listModels(providerId)
+    return models.map(model => model.id)
+  } catch {
+    return []
+  }
+}
+
 /**
- * 全局 provider 列表(t10:t9 根因修复——provider 是全局事实,不再塞进
- * 第一个团队快照):DSH 已注册全部 provider + 设置页授权状态。授权是全局
- * (profile 级),deepseek-official 恒启用;其余看 settings 命名空间
- * enabledProviders(经 apply 期捕获 scope 的闭包读取,settings 缺席时全为
- * 未授权)。/state 顶层与每个团队快照共用此 helper。
+ * 全局 provider 列表(t13:模型粒度授权——每 provider 合并其模型列表
+ * (advisory),授权状态看 enabledModels 复合 key `${provider}/${model}`;
+ * provider 级 enabled = 存在任一已授权模型)。deepseek-official 恒启用。
+ * /state 顶层与每个团队快照共用此 helper(异步:listModels 逐 provider)。
  */
-export function collectProviders(
+export async function collectProviders(
   ctx: Context,
-  enabledProviders?: () => Record<string, boolean>,
-): TeamProviderView[] {
-  const enabledMap = enabledProviders?.() ?? {}
-  return listProvidersSafe(ctx).map(provider => ({
-    id: provider.id,
-    name: provider.name,
-    enabled: provider.id === 'deepseek-official' || enabledMap[provider.id] === true,
-  }))
+  enabledModels?: () => Record<string, boolean>,
+): Promise<TeamProviderView[]> {
+  const enabledMap = enabledModels?.() ?? {}
+  const providers = listProvidersSafe(ctx)
+  const views: TeamProviderView[] = []
+  for (const provider of providers) {
+    const models = await listModelsSafe(ctx, provider.id)
+    const grantedAny = provider.id === 'deepseek-official'
+      || models.some(model => enabledMap[`${provider.id}/${model}`] === true)
+      || Object.keys(enabledMap).some(key => key.startsWith(`${provider.id}/`) && enabledMap[key] === true)
+    views.push({
+      id: provider.id,
+      name: provider.name,
+      enabled: grantedAny,
+      ...models.length > 0 ? { models } : {},
+    })
+  }
+  return views
 }
 
 /** Visual task state for the activity panel. */
@@ -159,11 +180,13 @@ export interface TeamActivitySnapshot {
   readonly providers?: readonly TeamProviderView[]
 }
 
-/** Provider 授权中心的一行(面板 switch 列表)。 */
+/** Provider 授权中心的一行(设置页/快照):models 为 advisory 列表。 */
 export interface TeamProviderView {
   readonly id: string
   readonly name: string
   readonly enabled: boolean
+  /** 该 provider 的模型列表(advisory,ctx.llm.listModels 容空)。 */
+  readonly models?: readonly string[]
 }
 
 /** 自成长校准统计的快照视图(面板展示用,复用 retro.ts 纯函数)。 */
@@ -184,10 +207,9 @@ export interface TeamSnapshotOptions {
   readonly includeRemoved?: boolean
   /** Archived teams have no meaningful live activity after their sessions stop. */
   readonly historic?: boolean
-  /** Provider 授权中心(单通道):settings 命名空间 enabledProviders 快照读取
-   * 函数(apply 期捕获 scope 的闭包);undefined → 全部非 deepseek provider
-   * 未授权。 */
-  readonly enabledProviders?: () => Record<string, boolean>
+  /** AgentTeam 设置中心(t13):settings 命名空间 enabledModels 快照读取
+   * 函数(apply 期捕获 scope 的闭包);undefined → 非 deepseek 全未授权。 */
+  readonly enabledModels?: () => Record<string, boolean>
 }
 
 /** The current task of a member: its first unfinished owned task. */
@@ -332,9 +354,8 @@ export async function assembleTeamSnapshot(
   const toolCalls = await deriveTaskToolCalls(ctx, stateRoot, state.id, state.members, tasks)
   const bestPractices = await readBestPractices(stateRoot)
   const calibration = summarizeTeamRetro(tasks, state.members)
-  // Provider 授权中心(单通道):DSH 已注册的全部 provider + 设置页授权状态
-  // (t10:与 /state 顶层共用 collectProviders,见其上注释)。
-  const providers = collectProviders(ctx, options.enabledProviders)
+  // AgentTeam 设置中心(t13:模型粒度授权,与 /state 顶层共用 collectProviders)。
+  const providers = await collectProviders(ctx, options.enabledModels)
   const base: TeamActivitySnapshot = {
     workspace,
     teamId: state.id,
@@ -420,7 +441,7 @@ export async function assembleTeamSnapshot(
 export async function collectTeamsActivity(
   ctx: Context,
   roots: readonly { workspace: string; stateRoot: string }[],
-  enabledProviders?: () => Record<string, boolean>,
+  enabledModels?: () => Record<string, boolean>,
 ): Promise<TeamActivitySnapshot[]> {
   const snapshots: TeamActivitySnapshot[] = []
   for (const root of roots) {
@@ -438,7 +459,7 @@ export async function collectTeamsActivity(
       try {
         const state = await readTeam(root.stateRoot, entry.name)
         if (state === undefined) continue
-        snapshots.push(await assembleTeamSnapshot(ctx, root.stateRoot, root.workspace, state, { enabledProviders }))
+        snapshots.push(await assembleTeamSnapshot(ctx, root.stateRoot, root.workspace, state, { enabledModels }))
       } catch {
         ctx.logger.warn(`agent-team-web: skipped unreadable team state "${entry.name}" in workspace "${root.workspace}"`)
       }
@@ -458,7 +479,7 @@ export async function collectTeamsActivity(
 export async function collectArchivedTeamsActivity(
   ctx: Context,
   roots: readonly { workspace: string; stateRoot: string }[],
-  enabledProviders?: () => Record<string, boolean>,
+  enabledModels?: () => Record<string, boolean>,
 ): Promise<TeamActivitySnapshot[]> {
   const snapshots: TeamActivitySnapshot[] = []
   for (const root of roots) {
@@ -471,7 +492,7 @@ export async function collectArchivedTeamsActivity(
           join(root.stateRoot, 'archive'),
           root.workspace,
           state,
-          { includeRemoved: true, historic: true, enabledProviders },
+          { includeRemoved: true, historic: true, enabledModels },
         ))
       } catch {
         ctx.logger.warn(`agent-team-web: skipped unreadable archived team "${teamId}" in workspace "${root.workspace}"`)

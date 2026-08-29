@@ -12,13 +12,12 @@ import { type TeamIntelligence } from './intelligence.ts';
 import type { BestPracticeEntry } from './best-practices.ts';
 import type { EstimateLevel, MemberStatus, TaskRetro, TaskSignals, TeamState } from './types.ts';
 /**
- * 全局 provider 列表(t10:t9 根因修复——provider 是全局事实,不再塞进
- * 第一个团队快照):DSH 已注册全部 provider + 设置页授权状态。授权是全局
- * (profile 级),deepseek-official 恒启用;其余看 settings 命名空间
- * enabledProviders(经 apply 期捕获 scope 的闭包读取,settings 缺席时全为
- * 未授权)。/state 顶层与每个团队快照共用此 helper。
+ * 全局 provider 列表(t13:模型粒度授权——每 provider 合并其模型列表
+ * (advisory),授权状态看 enabledModels 复合 key `${provider}/${model}`;
+ * provider 级 enabled = 存在任一已授权模型)。deepseek-official 恒启用。
+ * /state 顶层与每个团队快照共用此 helper(异步:listModels 逐 provider)。
  */
-export declare function collectProviders(ctx: Context, enabledProviders?: () => Record<string, boolean>): TeamProviderView[];
+export declare function collectProviders(ctx: Context, enabledModels?: () => Record<string, boolean>): Promise<TeamProviderView[]>;
 /** Visual task state for the activity panel. */
 export type VisualTaskState = 'blocked' | 'open' | 'running' | 'completed';
 /** One member row of the activity snapshot. */
@@ -120,11 +119,13 @@ export interface TeamActivitySnapshot {
      * 每个快照携带全量列表(全局, profile 级),deepseek-official 恒启用。 */
     readonly providers?: readonly TeamProviderView[];
 }
-/** Provider 授权中心的一行(面板 switch 列表)。 */
+/** Provider 授权中心的一行(设置页/快照):models 为 advisory 列表。 */
 export interface TeamProviderView {
     readonly id: string;
     readonly name: string;
     readonly enabled: boolean;
+    /** 该 provider 的模型列表(advisory,ctx.llm.listModels 容空)。 */
+    readonly models?: readonly string[];
 }
 /** 自成长校准统计的快照视图(面板展示用,复用 retro.ts 纯函数)。 */
 export interface TeamCalibrationView {
@@ -143,10 +144,9 @@ export interface TeamSnapshotOptions {
     readonly includeRemoved?: boolean;
     /** Archived teams have no meaningful live activity after their sessions stop. */
     readonly historic?: boolean;
-    /** Provider 授权中心(单通道):settings 命名空间 enabledProviders 快照读取
-     * 函数(apply 期捕获 scope 的闭包);undefined → 全部非 deepseek provider
-     * 未授权。 */
-    readonly enabledProviders?: () => Record<string, boolean>;
+    /** AgentTeam 设置中心(t13):settings 命名空间 enabledModels 快照读取
+     * 函数(apply 期捕获 scope 的闭包);undefined → 非 deepseek 全未授权。 */
+    readonly enabledModels?: () => Record<string, boolean>;
 }
 /**
  * Assemble one team snapshot from its durable files plus live activity.
@@ -166,7 +166,7 @@ export declare function assembleTeamSnapshot(ctx: Context, stateRoot: string, wo
 export declare function collectTeamsActivity(ctx: Context, roots: readonly {
     workspace: string;
     stateRoot: string;
-}[], enabledProviders?: () => Record<string, boolean>): Promise<TeamActivitySnapshot[]>;
+}[], enabledModels?: () => Record<string, boolean>): Promise<TeamActivitySnapshot[]>;
 /**
  * Collect every archived team under the given workspace state roots (the
  * `archive/` subdirectory of each state root). Used by the historic panel
@@ -178,7 +178,7 @@ export declare function collectTeamsActivity(ctx: Context, roots: readonly {
 export declare function collectArchivedTeamsActivity(ctx: Context, roots: readonly {
     workspace: string;
     stateRoot: string;
-}[], enabledProviders?: () => Record<string, boolean>): Promise<TeamActivitySnapshot[]>;
+}[], enabledModels?: () => Record<string, boolean>): Promise<TeamActivitySnapshot[]>;
 /**
  * R-17/H-1: project one full snapshot for the HTTP `/state` route.
  *

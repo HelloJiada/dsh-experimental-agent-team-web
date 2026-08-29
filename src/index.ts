@@ -26,10 +26,11 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
+import { DEFAULT_ROLE_LLM } from './members.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
 import { handleProviderGrant } from './provider-grant-route.ts'
-import { wireSettingsGranted, type ProviderGrantAccess } from './provider-grants.ts'
+import { wireAgentTeamSettings, type AgentTeamSettingsAccess } from './provider-grants.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -205,24 +206,25 @@ export function apply(ctx: Context, config: Config): void {
     text: usageSectionText(toolNames),
   })
 
-  // Provider 授权中心（设计变更：面板 → DSH 设置页）：在 settings 服务上注册
-  // `agent-team-web-providers` 命名空间，设置页自动渲染 provider 开关表单。
-  // t6 接线（照 harness 先例）：在 inject 作用域内捕获 register() 返回的
-  // SettingsScope，经闭包写入 grantsAccess（读判定/快照/写面三通道）；工具
-  // execute 与 HTTP 路由、快照采集经 grantsAccess 读写授权；settings 作用域
-  // 释放时全部清空。headless 无 settings 服务 → 不注册，providerGrantedFor
-  // 保持 undefined → spawn 校验退化为仅 deepseek-official 恒授权（默认语义）。
-  const grantsAccess: ProviderGrantAccess = {}
+  // AgentTeam 设置中心（t13:命名空间 agent-team-web,模型粒度授权 + 角色档位
+  // 覆盖）。t6 接线延续：在 inject 作用域内捕获 register() 返回的
+  // SettingsScope,经闭包写入 settingsAccess(判定/快照/写面);工具 execute
+  // 与 HTTP 路由、快照采集经 settingsAccess 读写;settings 作用域释放时
+  // 全部清空。headless 无 settings 服务 → 不注册,modelGrantedFor 保持
+  // undefined → spawn 校验退化为仅 deepseek-official 名下恒授权(默认语义)。
+  const settingsAccess: AgentTeamSettingsAccess = {}
   ctx.inject(['settings'], (settingsCtx) => {
-    wireSettingsGranted(settingsCtx, grantsAccess)
+    wireAgentTeamSettings(settingsCtx, settingsAccess)
   })
 
   registerAgentTeamsTools(ctx, {
     ...resolved,
-    // t6 接线:授权判定经 grantsAccess(apply 期捕获 settings scope 的闭包)
-    // 延迟读取——注入回调在 apply 之后才执行,此处只需稳定引用。
-    providerGrantedFor: (provider) => grantsAccess.providerGrantedFor?.(provider)
+    // t13 接线:模型授权 + 角色档位覆盖经 settingsAccess(apply 期捕获
+    // settings scope 的闭包)延迟读取——注入回调在 apply 之后才执行,
+    // 此处只需稳定引用。
+    modelGrantedFor: (provider, model) => settingsAccess.modelGrantedFor?.(provider, model)
       ?? (provider === 'deepseek-official'),
+    roleDefaultsFor: (roleKey) => settingsAccess.roleDefaultsFor?.(roleKey),
   })
 
   // Deterministic activation surfaces: the closed-namespace `/agent-teams`
@@ -285,16 +287,33 @@ export function apply(ctx: Context, config: Config): void {
       }))
       // ?archived=1 serves teams moved to archive/ (post-delete review).
       // providers 快照透出读 settings 命名空间 resolved value(单通道真源),
-      // 经 grantsAccess.enabledProviders 闭包(apply 期捕获 scope)。
+      // 经 settingsAccess.enabledModels 闭包(apply 期捕获 scope)。
       const snapshots = url.searchParams.get('archived') === '1'
-        ? await collectArchivedTeamsActivity(ctx, roots, grantsAccess.enabledProviders)
-        : await collectTeamsActivity(ctx, roots, grantsAccess.enabledProviders)
+        ? await collectArchivedTeamsActivity(ctx, roots, settingsAccess.enabledModels)
+        : await collectTeamsActivity(ctx, roots, settingsAccess.enabledModels)
       // t10(t9 根因):provider 是全局事实,顶层直接算(不再依赖 teams[0]——
-      // 无团队时设置页卡片恒空)。与每个团队快照的 providers 同源同值。
-      const providers = collectProviders(ctx, grantsAccess.enabledProviders)
+      // 无团队时设置页卡片恒空)。t13:含每 provider 模型列表(advisory)。
+      const providers = await collectProviders(ctx, settingsAccess.enabledModels)
+      // t13:角色档位合并视图(settings 覆盖 → profile.roleLlmDefaults →
+      // DEFAULT_ROLE_LLM 三源链;overridden 标记供 RolePresetCard「默认」按钮)。
+      const roleOverrides = settingsAccess.roleDefaults?.() ?? {}
+      const roleKeys = [...new Set([
+        ...Object.keys(DEFAULT_ROLE_LLM),
+        ...Object.keys(resolved.roleLlmDefaults ?? {}),
+        ...Object.keys(roleOverrides),
+      ])]
+      const roleDefaults = roleKeys.map(roleKey => {
+        const merged = roleOverrides[roleKey] ?? resolved.roleLlmDefaults?.[roleKey] ?? DEFAULT_ROLE_LLM[roleKey]
+        return {
+          role: roleKey,
+          ...merged ?? {},
+          overridden: roleOverrides[roleKey] !== undefined,
+        }
+      })
       const body = JSON.stringify({
         teams: snapshots.map(snapshot => redactSnapshotForHttp(snapshot, authorized)),
         providers,
+        roleDefaults,
       })
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',
@@ -320,19 +339,18 @@ export function apply(ctx: Context, config: Config): void {
     }),
   }), 'agent-teams: close route')
 
-  // Provider authorization route (第二写面,决策 2 保留):设置页通过 settings
-  // 服务持久化为主通道;此 HTTP 路由保留为 R-17 token 围栏的第二写面。
-  // 单通道结论(t6+队长拍板)后不再写 provider-grants.json —— 经 grantsAccess.
-  // setProviderGrant 写 settings 命名空间(settings 唯一真源,无文件双源漂移);
+  // AgentTeam 设置中心第二写面(决策 2 保留):设置页通过 settings RPC 持久化
+  // 为主通道;此 HTTP 路由保留为 R-17 token 围栏的第二写面。t13 模型粒度:
+  // 经 settingsAccess.setModelGrant 写 settings 命名空间(settings 唯一真源);
   // settings 缺席时路由返回 503。
   ctx.effect(() => webServer.register({
     kind: 'exact',
-    path: '/plugins/agent-team-web/provider-grant',
-    handler: (req, res) => handleProviderGrant(grantsAccess, req, res, {
+    path: '/plugins/agent-team-web/model-grant',
+    handler: (req, res) => handleProviderGrant(settingsAccess, req, res, {
       token: webToken,
       trustedHosts,
     }),
-  }), 'agent-teams: provider-grant route')
+  }), 'agent-teams: model-grant route')
 
   // Whale mascot artwork: serve the packaged V2 role/action images to the
   // activity panel. An explicit allowlist guards the route (no path

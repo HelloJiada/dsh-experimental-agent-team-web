@@ -165,8 +165,8 @@ describe('client bundle protocol', () => {
       ['shell.overlay', 'agent-teams-activity'],
       ['conversation.chat.commandview', 'agent-teams'],
       ['conversation.chat.node', 'agent-teams'],
-      // t8:Provider 授权设置页卡片(settings.section slot)。
-      ['settings.section', 'agent-team-web-providers'],
+      // t13:AgentTeam 设置中心(settings.section slot,id=agent-team-web)。
+      ['settings.section', 'agent-team-web'],
     ])
     expect(registeredSlots[0]?.component).toEqual(expect.any(Function))
   })
