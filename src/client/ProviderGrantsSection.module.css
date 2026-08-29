@@ -1,4 +1,6 @@
-/* AgentTeam 设置中心(t13):两张卡(模型调度授权 + 角色预设)。 */
+/* AgentTeam 设置中心(t13/t14):两卡片。t14 第一张卡按设计定稿
+ * docs/provider-grant-card-design-spec.md(方案 A:品牌蓝 switch + deepseek
+ * 「默认」徽 + 提升面白描边)。 */
 
 .section {
   display: flex;
@@ -6,13 +8,17 @@
   gap: 14px;
 }
 
+/* 卡片:t14 提升面 + 描边(深色=白描边 rgba(255,255,255,.12),浅色自动)。
+ * 修正 t14 必修①:bg-module 不存在 → bg-layer-3 + border-l2。 */
 .card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--dsw-alias-bg-module) 88%, transparent);
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-3);
 }
 
 .head {
@@ -31,40 +37,106 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* provider 行:左名右开关(space-between),行高 36px。
+ * 不再给 data-enabled 加底色(t14 必修②:state-success 不存在;开关本身
+ * 已表达状态,行保持中性)。 */
 .row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   min-width: 0;
-  padding: 6px 8px;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 0 10px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--dsw-alias-bg-module) 88%, transparent);
 }
 
-.row[data-enabled='true'] {
-  background: color-mix(in srgb, var(--dsw-alias-state-success) 8%, var(--dsw-alias-bg-module));
-}
-
+/* 角色预设覆盖态描边(t14 必修③:state-info 不存在 → state-business-primary)。 */
 .row[data-overridden='true'] {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-info) 45%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
 }
 
-/* 角色预设选择器与「默认」按钮 */
+.name {
+  flex: 1;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* deepseek-official 锁定态:「默认」pill 徽(t14,无 switch)。 */
+.pill {
+  flex: none;
+  box-sizing: border-box;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+/* 迷你 switch(t14:32×18 圆角滑块,ON=品牌蓝 state-business-primary)。
+ * 修正 t14 必修②:旧 state-success 不存在。 */
+.switch {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-border-l2);
+  cursor: pointer;
+  transition: background 120ms ease-in-out;
+}
+
+.switch[data-on='true'] {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.switchThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-layer-1);
+  transition: transform 120ms ease-in-out;
+}
+
+.switch[data-on='true'] .switchThumb {
+  transform: translateX(14px);
+}
+
+/* 角色预设选择器与「默认」按钮(t13 保留)。 */
 .select {
   flex: 1;
   min-width: 0;
   max-width: 180px;
   box-sizing: border-box;
   padding: 2px 4px;
-  border: 1px solid var(--dsw-alias-line-strong);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
-  background: var(--dsw-alias-bg-module);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font-size: 11px;
   line-height: 16px;
@@ -77,7 +149,7 @@
 .defaultBtn {
   flex: none;
   padding: 2px 8px;
-  border: 1px solid var(--dsw-alias-line-strong);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -91,83 +163,11 @@
   cursor: default;
 }
 
-.name {
-  flex: none;
-  overflow: hidden;
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.id {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
-  line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.locked {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
-  line-height: 16px;
-}
-
-/* t10:空列表占位(loading/无 provider 时恒渲染卡片标题 + 占位)。 */
+/* 空态/加载占位。 */
 .empty {
   margin: 0;
   padding: 6px 8px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
   line-height: 16px;
-}
-
-.hint {
-  margin: 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-/* 迷你开关(与宿主 switch 视觉一致的圆角滑块)。 */
-.switch {
-  position: relative;
-  flex: none;
-  width: 30px;
-  height: 17px;
-  box-sizing: border-box;
-  padding: 0;
-  border: 1px solid var(--dsw-alias-line-strong);
-  border-radius: 999px;
-  background: var(--dsw-alias-line-strong);
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
-}
-
-.switch[data-on='true'] {
-  border-color: var(--dsw-alias-state-success);
-  background: var(--dsw-alias-state-success);
-}
-
-.switchThumb {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--dsw-alias-label-on-fill);
-  transition: left 120ms ease;
-}
-
-.switch[data-on='true'] .switchThumb {
-  left: 14px;
 }

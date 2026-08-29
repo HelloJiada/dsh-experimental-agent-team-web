@@ -74,7 +74,7 @@ export const zh = {
   'settings.agentTeam.inherit': '继承',
   'settings.agentTeam.default': '默认',
   'settings.agentTeam.loading': '加载中…',
-  'settings.agentTeam.empty': '暂无可用数据',
+  'settings.agentTeam.empty': '设置中心暂无可授权 provider。',
   'task.runningAria': '运行中',
   'task.review.pending': '待政委复核',
   'task.review.passed': '政委已复核（{reviewer}）',
@@ -347,7 +347,7 @@ export const en = {
   'settings.agentTeam.inherit': 'Inherit',
   'settings.agentTeam.default': 'Default',
   'settings.agentTeam.loading': 'Loading…',
-  'settings.agentTeam.empty': 'No data available',
+  'settings.agentTeam.empty': 'No providers available in the center yet.',
 } satisfies Record<AgentTeamsLocaleKey, string>
 
 /** Translation function consumed by pure view helpers. */

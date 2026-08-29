@@ -11,7 +11,7 @@
  * settingsScope 命名空间 resolved value;写面 = scope.set(宿主持久化,
  * spawn 校验随之下次 add_member 生效)。
  *
- * 纯逻辑(modelGrantRows/toggleModelMap/roleDefaultsMap 等)导出供 node 直测,
+ * 纯逻辑(providerGrantRows/toggleProviderModels/roleDefaultsMap 等)导出供 node 直测,
  * 与 activity-panel-helpers.test 同构。
  * @module dsh-agent-team-web/client/provider-grants-section
  */
@@ -53,10 +53,10 @@ export interface RolePresetView {
   readonly overridden: boolean
 }
 
-/** 模型授权行。 */
-export interface ModelGrantRow {
-  readonly provider: string
-  readonly model: string
+/** Provider 粒度行(t14:第一张卡片,无模型子列表)。 */
+export interface ProviderGrantRow {
+  readonly id: string
+  readonly name: string
   readonly enabled: boolean
   readonly locked: boolean
 }
@@ -95,32 +95,42 @@ export function modelKeyOf(provider: string, model: string): string {
   return `${provider}/${model}`
 }
 
-/** 纯函数:provider×模型 → 模型授权行(deepseek-official 恒锁定恒启用)。 */
-export function modelGrantRows(
+/**
+ * 纯函数(t14):provider 粒度行——只列 provider,无模型子列表。
+ * 行 enabled = 该 provider 下所有模型均已授权(开关态语义:全开/全关);
+ * deepseek-official 恒锁定恒启用(「默认」徽,无 switch)。 */
+export function providerGrantRows(
   providers: readonly ProviderWithModels[],
   enabledModels: Readonly<Record<string, boolean>> | undefined,
-): readonly ModelGrantRow[] {
-  const rows: ModelGrantRow[] = []
-  for (const provider of providers) {
-    for (const model of provider.models ?? []) {
-      rows.push({
-        provider: provider.id,
-        model,
-        enabled: provider.id === 'deepseek-official' || enabledModels?.[modelKeyOf(provider.id, model)] === true,
-        locked: provider.id === 'deepseek-official',
-      })
-    }
-  }
-  return rows
+): readonly ProviderGrantRow[] {
+  return providers.map(provider => ({
+    id: provider.id,
+    name: provider.name,
+    enabled: provider.id === 'deepseek-official'
+      || ((provider.models?.length ?? 0) > 0
+        && (provider.models ?? []).every(model => enabledModels?.[modelKeyOf(provider.id, model)] === true)),
+    locked: provider.id === 'deepseek-official',
+  }))
 }
 
-/** 纯函数:toggle 后的 enabledModels map(保留其他项)。 */
-export function toggleModelMap(
+/**
+ * 纯函数(t14):provider 行 switch 联动该 provider 全部模型——
+ * 开启 = 全部模型授权(写各自 `${provider}/${model}` key);关闭 = 全部撤销
+ * (删除该 provider 全部模型 key)。设计决策:provider 粒度展示,授权数据仍
+ * 模型粒度(enabledModels 复合 key)不变。 */
+export function toggleProviderModels(
   current: Readonly<Record<string, boolean>> | undefined,
-  key: string,
+  provider: string,
+  models: readonly string[] | undefined,
   nextEnabled: boolean,
 ): Record<string, boolean> {
-  return { ...(current ?? {}), [key]: nextEnabled }
+  const next = { ...(current ?? {}) }
+  for (const model of models ?? []) {
+    const key = modelKeyOf(provider, model)
+    if (nextEnabled) next[key] = true
+    else delete next[key]
+  }
+  return next
 }
 
 /** 纯函数:角色预设行(合并视图 + 按选中 provider 过滤模型选项)。 */
@@ -174,17 +184,20 @@ export async function fetchSettingsCenter(): Promise<{
   return settingsCenterFromStateBody(await response.json())
 }
 
-/** 卡片一:模型调度授权。 */
-function ModelGrantCard({ rows, scope, snapshot, t }: {
-  readonly rows: readonly ModelGrantRow[]
+/** 卡片一:模型调度授权(t14:provider 粒度行 + switch;deepseek 锁定「默认」)。
+ * provider 行 switch = 该 provider 全部模型统一授权(读写 enabledModels
+ * 中该 provider 的所有 `${provider}/${model}` key)。 */
+function ModelGrantCard({ rows, providers, scope, snapshot, t }: {
+  readonly rows: readonly ProviderGrantRow[]
+  readonly providers: readonly ProviderWithModels[]
   readonly scope: SettingsScope<ProviderGrantsSectionValue> | undefined
   readonly snapshot: SettingsScopeSnapshot<ProviderGrantsSectionValue>
   readonly t: AgentTeamsTranslate
 }): ReactNode {
-  const toggle = async (row: ModelGrantRow): Promise<void> => {
+  const toggle = async (row: ProviderGrantRow): Promise<void> => {
     if (scope === undefined || row.locked) return
-    const key = modelKeyOf(row.provider, row.model)
-    await scope.set('enabledModels', toggleModelMap(snapshot.value?.enabledModels, key, !row.enabled))
+    const models = providers.find(p => p.id === row.id)?.models
+    await scope.set('enabledModels', toggleProviderModels(snapshot.value?.enabledModels, row.id, models, !row.enabled))
   }
   if (rows.length === 0) return null
   return (
@@ -194,18 +207,16 @@ function ModelGrantCard({ rows, scope, snapshot, t }: {
       </header>
       <ul className={styles.list}>
         {rows.map(row => (
-          <li key={modelKeyOf(row.provider, row.model)} className={styles.row} data-enabled={row.enabled}>
-            <span className={styles.name} title={modelKeyOf(row.provider, row.model)}>
-              {row.provider}/{row.model}
-            </span>
+          <li key={row.id} className={styles.row} data-enabled={row.enabled}>
+            <span className={styles.name} title={row.id}>{row.name}</span>
             {row.locked
-              ? <span className={styles.locked}>{t('settings.agentTeam.locked')}</span>
+              ? <span className={styles.pill}>{t('settings.agentTeam.locked')}</span>
               : (
                 <button
                   type="button"
                   role="switch"
                   aria-checked={row.enabled}
-                  aria-label={`${row.provider}/${row.model} ${t('settings.agentTeam.toggleAria')}`}
+                  aria-label={`${row.name} ${t('settings.agentTeam.toggleAria')}`}
                   className={styles.switch}
                   data-on={row.enabled}
                   onClick={() => { void toggle(row) }}
@@ -316,15 +327,15 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
     (callback) => scope?.subscribe(callback) ?? (() => undefined),
     () => scope?.getSnapshot() ?? EMPTY_SNAPSHOT,
   )
-  const modelRows = modelGrantRows(center.providers, snapshot.value?.enabledModels)
+  const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
   const roleRows = rolePresetRows(center.roleDefaults, center.providers)
   return (
     <div className={styles.section} data-provider-grants data-loading={loading}>
-      {modelRows.length === 0 && roleRows.length === 0
+      {providerRows.length === 0 && roleRows.length === 0
         ? <p className={styles.empty}>{t(loading ? 'settings.agentTeam.loading' : 'settings.agentTeam.empty')}</p>
         : (
           <>
-            <ModelGrantCard rows={modelRows} scope={scope} snapshot={snapshot} t={t} />
+            <ModelGrantCard rows={providerRows} providers={center.providers} scope={scope} snapshot={snapshot} t={t} />
             <RolePresetCard rows={roleRows} providers={center.providers} scope={scope} snapshot={snapshot} t={t} />
           </>
         )}

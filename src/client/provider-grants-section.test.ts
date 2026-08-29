@@ -1,54 +1,61 @@
 /**
- * AgentTeam 设置中心 section 纯逻辑测试(t13)。
+ * AgentTeam 设置中心 section 纯逻辑测试(t13/t14)。
  *
  * 与 activity-panel-helpers.test 同构(node 环境无 jsdom,直测导出纯函数):
- * modelGrantRows(复合 key/锁定语义)、toggleModelMap、rolePresetRows(模型
- * 选项过滤)、roleDefaultsMap(「默认」=删覆盖)、settingsCenterFromStateBody。
+ * providerGrantRows(t14:provider 粒度行,deepseek 锁定「默认」,enabled=全部
+ * 模型已授权)、toggleProviderModels(provider 行 switch 联动全部模型 key)、
+ * rolePresetRows、roleDefaultsMap、settingsCenterFromStateBody。
  * @module dsh-agent-team-web/client/provider-grants-section.test
  */
 
 import { describe, expect, it } from 'vitest'
 import {
-  modelGrantRows,
   modelKeyOf,
+  providerGrantRows,
   roleDefaultsMap,
   rolePresetRows,
   settingsCenterFromStateBody,
-  toggleModelMap,
+  toggleProviderModels,
 } from './ProviderGrantsSection.tsx'
 
 const PROVIDERS = [
   { id: 'deepseek-official', name: 'DeepSeek Official', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
   { id: 'kimi-coding', name: 'Kimi Coding', models: ['kimi-k2.7-code'] },
+  { id: 'xiaomi', name: 'Xiaomi', models: ['xiaomi-m1'] },
+  { id: 'cc-switch', name: 'CC Switch', models: ['cc-model-1'] },
 ]
 
-describe('modelGrantRows — 模型授权行(复合 key + 锁定语义)', () => {
-  it('deepseek-official 名下模型恒锁定恒启用;其余按 enabledModels 复合 key', () => {
-    const rows = modelGrantRows(PROVIDERS, { 'kimi-coding/kimi-k2.7-code': true })
+describe('providerGrantRows — provider 粒度行(t14)', () => {
+  it('4 provider 各一行(无模型子列表);deepseek-official 恒锁定恒启用', () => {
+    const rows = providerGrantRows(PROVIDERS, {})
     expect(rows).toEqual([
-      { provider: 'deepseek-official', model: 'deepseek-v4-flash', enabled: true, locked: true },
-      { provider: 'deepseek-official', model: 'deepseek-v4-pro', enabled: true, locked: true },
-      { provider: 'kimi-coding', model: 'kimi-k2.7-code', enabled: true, locked: false },
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, locked: true },
+      { id: 'kimi-coding', name: 'Kimi Coding', enabled: false, locked: false },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: false, locked: false },
+      { id: 'cc-switch', name: 'CC Switch', enabled: false, locked: false },
     ])
   })
 
-  it('跨 provider 同名模型不撞车:另一 provider 的同名 key 不影响本 provider', () => {
-    const rows = modelGrantRows(
-      [
-        { id: 'a', name: 'A', models: ['m1'] },
-        { id: 'b', name: 'B', models: ['m1'] },
-      ],
-      { 'a/m1': true },
-    )
-    expect(rows).toEqual([
-      { provider: 'a', model: 'm1', enabled: true, locked: false },
-      { provider: 'b', model: 'm1', enabled: false, locked: false },
-    ])
+  it('行 enabled = 该 provider 全部模型已授权(全开才 ON)', () => {
+    const rows = providerGrantRows(PROVIDERS, {
+      'kimi-coding/kimi-k2.7-code': true,
+      'xiaomi/xiaomi-m1': false,
+    })
+    const kimi = rows.find(r => r.id === 'kimi-coding')
+    const xiaomi = rows.find(r => r.id === 'xiaomi')
+    expect(kimi?.enabled).toBe(true)
+    expect(xiaomi?.enabled).toBe(false)
   })
 
-  it('无 models / 空列表 → 空行', () => {
-    expect(modelGrantRows([{ id: 'x', name: 'X' }], {})).toEqual([])
-    expect(modelGrantRows([], {})).toEqual([])
+  it('部分授权(个别模型)不算全开 → 行 OFF', () => {
+    const rows = providerGrantRows([
+      { id: 'a', name: 'A', models: ['m1', 'm2'] },
+    ], { 'a/m1': true })
+    expect(rows[0]?.enabled).toBe(false)
+  })
+
+  it('空列表 → 空行', () => {
+    expect(providerGrantRows([], {})).toEqual([])
   })
 
   it('modelKeyOf 复合格式', () => {
@@ -56,14 +63,29 @@ describe('modelGrantRows — 模型授权行(复合 key + 锁定语义)', () => 
   })
 })
 
-describe('toggleModelMap — 开关 toggle 后的 enabledModels', () => {
-  it('保留其他项,只翻转目标 key', () => {
-    expect(toggleModelMap({ 'a/m1': true }, 'b/m1', true)).toEqual({ 'a/m1': true, 'b/m1': true })
-    expect(toggleModelMap({ 'a/m1': true }, 'a/m1', false)).toEqual({ 'a/m1': false })
+describe('toggleProviderModels — provider 行 switch 联动全部模型(t14)', () => {
+  it('开启 = 该 provider 全部模型授权(各写复合 key),保留其他 provider', () => {
+    const next = toggleProviderModels({ 'cc-switch/cc-model-1': true }, 'kimi-coding', ['kimi-k2.7-code'], true)
+    expect(next).toEqual({
+      'cc-switch/cc-model-1': true,
+      'kimi-coding/kimi-k2.7-code': true,
+    })
   })
 
-  it('map 缺失 → 只含目标 key', () => {
-    expect(toggleModelMap(undefined, 'a/m1', true)).toEqual({ 'a/m1': true })
+  it('关闭 = 删除该 provider 全部模型 key,保留其他', () => {
+    const next = toggleProviderModels(
+      { 'kimi-coding/kimi-k2.7-code': true, 'xiaomi/xiaomi-m1': true },
+      'kimi-coding',
+      ['kimi-k2.7-code'],
+      false,
+    )
+    expect(next).toEqual({ 'xiaomi/xiaomi-m1': true })
+  })
+
+  it('map 缺失 / 无模型 → 安全处理', () => {
+    expect(toggleProviderModels(undefined, 'kimi-coding', ['kimi-k2.7-code'], true))
+      .toEqual({ 'kimi-coding/kimi-k2.7-code': true })
+    expect(toggleProviderModels({}, 'kimi-coding', undefined, true)).toEqual({})
   })
 })
 

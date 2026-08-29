@@ -11,7 +11,7 @@
  * settingsScope 命名空间 resolved value;写面 = scope.set(宿主持久化,
  * spawn 校验随之下次 add_member 生效)。
  *
- * 纯逻辑(modelGrantRows/toggleModelMap/roleDefaultsMap 等)导出供 node 直测,
+ * 纯逻辑(providerGrantRows/toggleProviderModels/roleDefaultsMap 等)导出供 node 直测,
  * 与 activity-panel-helpers.test 同构。
  * @module dsh-agent-team-web/client/provider-grants-section
  */
@@ -47,10 +47,10 @@ export interface RolePresetView {
     readonly reasoningEffort?: string;
     readonly overridden: boolean;
 }
-/** 模型授权行。 */
-export interface ModelGrantRow {
-    readonly provider: string;
-    readonly model: string;
+/** Provider 粒度行(t14:第一张卡片,无模型子列表)。 */
+export interface ProviderGrantRow {
+    readonly id: string;
+    readonly name: string;
     readonly enabled: boolean;
     readonly locked: boolean;
 }
@@ -70,10 +70,17 @@ export type ProviderGrantsSectionProps = Partial<InjectFace<ProviderGrantsSectio
 export declare const EFFORT_OPTIONS: readonly ["high", "max", "low", "off"];
 /** 纯函数:复合 key(`${provider}/${model}`)。 */
 export declare function modelKeyOf(provider: string, model: string): string;
-/** 纯函数:provider×模型 → 模型授权行(deepseek-official 恒锁定恒启用)。 */
-export declare function modelGrantRows(providers: readonly ProviderWithModels[], enabledModels: Readonly<Record<string, boolean>> | undefined): readonly ModelGrantRow[];
-/** 纯函数:toggle 后的 enabledModels map(保留其他项)。 */
-export declare function toggleModelMap(current: Readonly<Record<string, boolean>> | undefined, key: string, nextEnabled: boolean): Record<string, boolean>;
+/**
+ * 纯函数(t14):provider 粒度行——只列 provider,无模型子列表。
+ * 行 enabled = 该 provider 下所有模型均已授权(开关态语义:全开/全关);
+ * deepseek-official 恒锁定恒启用(「默认」徽,无 switch)。 */
+export declare function providerGrantRows(providers: readonly ProviderWithModels[], enabledModels: Readonly<Record<string, boolean>> | undefined): readonly ProviderGrantRow[];
+/**
+ * 纯函数(t14):provider 行 switch 联动该 provider 全部模型——
+ * 开启 = 全部模型授权(写各自 `${provider}/${model}` key);关闭 = 全部撤销
+ * (删除该 provider 全部模型 key)。设计决策:provider 粒度展示,授权数据仍
+ * 模型粒度(enabledModels 复合 key)不变。 */
+export declare function toggleProviderModels(current: Readonly<Record<string, boolean>> | undefined, provider: string, models: readonly string[] | undefined, nextEnabled: boolean): Record<string, boolean>;
 /** 纯函数:角色预设行(合并视图 + 按选中 provider 过滤模型选项)。 */
 export declare function rolePresetRows(views: readonly RolePresetView[], providers: readonly ProviderWithModels[]): readonly RolePresetRow[];
 /** 纯函数:角色档位覆盖写后的 roleDefaults map(value=undefined → 删覆盖)。 */
