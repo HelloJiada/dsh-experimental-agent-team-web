@@ -11,6 +11,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // The frame-level overlay is declared by ui-layout. This import is type-only;
 // ctx.slots.inject below owns the runtime wait for the declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// Type-only: pulls the settings shell's SlotMap merge (the 'settings.section'
+// entry) and the ctx.settingsScope augmentation (settings-namespace scope).
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ActivityPanel } from './ActivityPanel.tsx'
 import { AgentTeamsCard, type AgentTeamsCardInjected } from './AgentTeamsCard.tsx'
 import { agentTeamsCardDefinition } from './agent-teams-card-definition.ts'
@@ -18,6 +21,12 @@ import {
   AGENT_TEAMS_LOCALE_NAMESPACE, en, zh, type AgentTeamsLocaleKey,
 } from './locales.ts'
 import { openAgentTeamMember } from './session-navigation.ts'
+import {
+  ProviderGrantsSection,
+  PROVIDER_GRANTS_NAMESPACE,
+  type ProviderGrantsSectionInjected,
+  type ProviderGrantsSectionValue,
+} from './ProviderGrantsSection.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -84,4 +93,21 @@ export function apply(ctx: ClientContext): void {
       openMember,
     }),
   }, AgentTeamsCard))
+
+  // Provider 授权设置页卡片(t8):后端命名空间已注册,补 client 侧
+  // settings.section slot 让设置页 shell 渲染开关卡片。scope 在 slot
+  // 声明落地后绑定(ui-settings 已激活),经 scope.set 写命名空间。
+  const sectionT = ctx.locale.bind(AGENT_TEAMS_LOCALE_NAMESPACE) as (key: AgentTeamsLocaleKey) => string
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'agent-team-web-providers',
+    order: 100,
+    label: () => sectionT('settings.providers.title'),
+    inject: (): ProviderGrantsSectionInjected => ({
+      scope: ctx.settingsScope.bind<ProviderGrantsSectionValue>({
+        namespace: PROVIDER_GRANTS_NAMESPACE,
+      }),
+      t: sectionT,
+    }),
+  }, ProviderGrantsSection))
 }

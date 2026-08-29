@@ -63,6 +63,10 @@ export const zh = {
   'dependency.hint.parallel': '无前后依赖 · 点击查看详情',
   'dependency.hint.chain': '悬停高亮依赖链 · 点击固定',
   'dependency.hint.pinned': '{taskId} 已固定 · Esc 取消',
+  'settings.providers.title': 'Provider 授权',
+  'settings.providers.locked': '默认',
+  'settings.providers.toggleAria': '授权开关',
+  'settings.providers.hint': '未授权的 Provider 在成员创建时自动回退 deepseek-official',
   'task.runningAria': '运行中',
   'task.review.pending': '待政委复核',
   'task.review.passed': '政委已复核（{reviewer}）',
@@ -324,6 +328,10 @@ export const en = {
   'archive.retro.noRetro': 'Missing retro',
   'archive.filterCount': 'Showing {shown} / {total} archived teams',
   'archive.filterEmpty': 'No archived teams match the filters',
+  'settings.providers.title': 'Provider access',
+  'settings.providers.locked': 'Default',
+  'settings.providers.toggleAria': 'authorization switch',
+  'settings.providers.hint': 'Unauthorized providers fall back to deepseek-official when members are created',
 } satisfies Record<AgentTeamsLocaleKey, string>
 
 /** Translation function consumed by pure view helpers. */

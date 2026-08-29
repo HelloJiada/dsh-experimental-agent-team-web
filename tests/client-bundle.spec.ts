@@ -123,8 +123,19 @@ describe('client bundle protocol', () => {
     let injectedSlotName: string | undefined
     (bundle.apply as unknown as (ctx: Record<string, unknown>) => void)({
       effect: (): void => undefined,
-      locale: { register: (): void => undefined },
+      locale: {
+        register: (): void => undefined,
+        bind: (): (key: string) => string => (key: string) => key,
+      },
       conversationEvents: { register: (): void => undefined },
+      settingsScope: {
+        bind: (): unknown => ({
+          getSnapshot: () => ({ status: 'loading', value: undefined }),
+          subscribe: () => () => undefined,
+          set: async () => undefined,
+          unset: async () => undefined,
+        }),
+      },
       slots: {
         inject(slotName: string, register: () => void): void {
           injectedSlotName = slotName
@@ -154,6 +165,8 @@ describe('client bundle protocol', () => {
       ['shell.overlay', 'agent-teams-activity'],
       ['conversation.chat.commandview', 'agent-teams'],
       ['conversation.chat.node', 'agent-teams'],
+      // t8:Provider 授权设置页卡片(settings.section slot)。
+      ['settings.section', 'agent-team-web-providers'],
     ])
     expect(registeredSlots[0]?.component).toEqual(expect.any(Function))
   })

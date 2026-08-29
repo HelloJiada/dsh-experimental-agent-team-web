@@ -1,0 +1,115 @@
+/* Provider 授权设置页卡片(t8):provider 行 + 迷你开关。 */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-module) 88%, transparent);
+}
+
+.row[data-enabled='true'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-success) 8%, var(--dsw-alias-bg-module));
+}
+
+.name {
+  flex: none;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.id {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locked {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* 迷你开关(与宿主 switch 视觉一致的圆角滑块)。 */
+.switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 17px;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-line-strong);
+  border-radius: 999px;
+  background: var(--dsw-alias-line-strong);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.switch[data-on='true'] {
+  border-color: var(--dsw-alias-state-success);
+  background: var(--dsw-alias-state-success);
+}
+
+.switchThumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-on-fill);
+  transition: left 120ms ease;
+}
+
+.switch[data-on='true'] .switchThumb {
+  left: 14px;
+}

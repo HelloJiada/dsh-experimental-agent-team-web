@@ -61,6 +61,10 @@ export declare const zh: {
     'dependency.hint.parallel': string;
     'dependency.hint.chain': string;
     'dependency.hint.pinned': string;
+    'settings.providers.title': string;
+    'settings.providers.locked': string;
+    'settings.providers.toggleAria': string;
+    'settings.providers.hint': string;
     'task.runningAria': string;
     'task.review.pending': string;
     'task.review.passed': string;
@@ -320,6 +324,10 @@ export declare const en: {
     'archive.retro.noRetro': string;
     'archive.filterCount': string;
     'archive.filterEmpty': string;
+    'settings.providers.title': string;
+    'settings.providers.locked': string;
+    'settings.providers.toggleAria': string;
+    'settings.providers.hint': string;
 };
 /** Translation function consumed by pure view helpers. */
 export type AgentTeamsTranslate = (key: AgentTeamsLocaleKey, params?: Record<string, unknown>) => string;
