@@ -58,11 +58,6 @@
   border-radius: 8px;
 }
 
-/* 角色预设覆盖态描边(t14 必修③:state-info 不存在 → state-business-primary)。 */
-.row[data-overridden='true'] {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
-}
-
 /* t15:显示名 + mono provider-id 双段母容器(替代 .name 的 flex:1)。
  * 仅第一张卡 provider 行;第二张卡 RolePresetCard 不动。 */
 .nameWrap {
