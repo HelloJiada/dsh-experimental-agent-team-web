@@ -329,6 +329,52 @@ describe('agent_teams_add_member — 添加成员', () => {
     )).rejects.toThrow(/已达上限/)
   })
 
+  it('provider 授权:显式指定未授权 provider 回退 deepseek-official(软约束不阻断)', async () => {
+    // 独立 harness:显式传 provider='kimi-coding'(未授权)→ 回退 deepseek-official。
+    // 回退需能解析(测试 ctx.llm 接受任意 provider/model)。
+    const tools = new Map<string, CapturedTool>()
+    const grantCtx = {
+      tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
+      agents: { get: () => undefined },
+      logger: { warn: () => undefined, debug: () => undefined },
+      on: () => undefined,
+      effect: () => () => undefined,
+      llm: { resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
+        provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
+      }) },
+      subagents: {
+        registerContinuableSetup: () => undefined,
+        followup: async () => undefined,
+        getProvider: () => ({
+          prepareContinuable: {},
+          capabilities: { persona: true, toolFilter: true },
+        }),
+        list: () => ['spawn'],
+        startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
+      },
+    } as unknown as Context
+    registerAgentTeamsTools(grantCtx, { ...config })
+    const grantTool = (name: string): CapturedTool => {
+      const def = tools.get(name)
+      if (def === undefined) throw new Error(`tool "${name}" not registered`)
+      return def
+    }
+    // 显式指定 kimi-coding(未授权)→ 应回退 deepseek-official,成员创建成功。
+    const result = await grantTool('agent_teams_add_member').execute(
+      { role: 'engineer', provider: 'kimi-coding', model: 'kimi-k2.7-code' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { member_name: string; provider: string; model: string }
+    expect(result.member_name).toBe('技术员')
+    expect(result.provider).toBe('deepseek-official') // 未授权 → 回退
+    // 模型档位回退默认:不携带原路由的 kimi-k2.7-code,落回角色默认档位。
+    expect(result.model).toBe('deepseek-v4-flash')
+    // 落盘成员记录也应为 deepseek-official(与 spawn 描述符一致,冷恢复不炸)。
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    const persistedEngineer = persisted?.members.find(m => m.name === '技术员')
+    expect(persistedEngineer?.provider).toBe('deepseek-official')
+    expect(persistedEngineer?.model).toBe('deepseek-v4-flash')
+  })
+
   it('R-26:spawn(网络)在锁外——add_member 进行中,同队 status 不被阻塞', async () => {
     // 让 startContinuable 挂起 300ms,模拟慢网络 spawn。
     let releaseSpawn!: () => void

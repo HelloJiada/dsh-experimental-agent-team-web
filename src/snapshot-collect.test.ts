@@ -3,7 +3,8 @@
  *
  * 覆盖盲区:采集端(读团队目录 → assembleTeamSnapshot)此前 0% 覆盖。本文件
  * 验证:正常采集、ENOENT/坏团队跳过(与面板容错一致)、归档采集(含 removed
- * 成员保留 + historic 标记)、无归档时返回空。
+ * 成员保留 + historic 标记)、无归档时返回空;以及 Provider 授权中心的
+ * providers 快照透出(deepseek-official 恒 enabled,其余看 grants)。
  * @module dsh-agent-team-web/snapshot-collect.test
  */
 
@@ -13,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { collectArchivedTeamsActivity, collectTeamsActivity } from './snapshot.ts'
-import { archiveTeamDir } from './state.ts'
+import { archiveTeamDir, setProviderGrant } from './state.ts'
 import type { TeamMember, TeamState } from './types.ts'
 
 function member(name: string, overrides: Partial<TeamMember> = {}): TeamMember {
@@ -139,5 +140,55 @@ describe('collectArchivedTeamsActivity — 归档团队采集', () => {
     const snapshots = await collectArchivedTeamsActivity(context(warns), [{ workspace, stateRoot }])
     expect(snapshots.map(s => s.teamId)).toEqual(['team-good'])
     expect(warns.some(w => w.includes('team-broken'))).toBe(true)
+  })
+})
+
+describe('collectTeamsActivity — providers 快照透出(授权中心数据源)', () => {
+  /** ctx 桩携带 llm.listProviders,模拟 DSH 已注册 provider 路由。 */
+  function llmContext(providers: readonly { id: string; name: string }[]): Context {
+    return {
+      agents: { get: () => undefined },
+      logger: { warn: () => undefined, debug: () => undefined },
+      llm: { listProviders: () => providers },
+    } as unknown as Context
+  }
+
+  it('透出全部注册 provider;deepseek-official 恒 enabled,其余看 grants 落盘', async () => {
+    await writeTeamOnDisk(stateRoot, team('team-prov'))
+    await setProviderGrant(stateRoot, 'xiaomi', true)
+
+    const snapshots = await collectTeamsActivity(llmContext([
+      { id: 'deepseek-official', name: 'DeepSeek Official' },
+      { id: 'kimi-coding', name: 'Kimi Coding' },
+      { id: 'xiaomi', name: 'Xiaomi' },
+    ]), [{ workspace, stateRoot }])
+    const snapshot = snapshots.find(s => s.teamId === 'team-prov')
+    expect(snapshot?.providers).toEqual([
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true },
+      { id: 'kimi-coding', name: 'Kimi Coding', enabled: false },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: true },
+    ])
+  })
+
+  it('grants 撤销后快照 enabled 立即翻转(无需重启)', async () => {
+    await writeTeamOnDisk(stateRoot, team('team-prov2'))
+    await setProviderGrant(stateRoot, 'xiaomi', true)
+    await setProviderGrant(stateRoot, 'xiaomi', false)
+
+    const snapshots = await collectTeamsActivity(llmContext([
+      { id: 'deepseek-official', name: 'DeepSeek Official' },
+      { id: 'xiaomi', name: 'Xiaomi' },
+    ]), [{ workspace, stateRoot }])
+    const snapshot = snapshots.find(s => s.teamId === 'team-prov2')
+    expect(snapshot?.providers).toEqual([
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: false },
+    ])
+  })
+
+  it('ctx 无 llm(头部/非 web 环境)→ providers 空数组,快照不崩', async () => {
+    await writeTeamOnDisk(stateRoot, team('team-plain'))
+    const snapshots = await collectTeamsActivity(context(), [{ workspace, stateRoot }])
+    expect(snapshots.find(s => s.teamId === 'team-plain')?.providers).toEqual([])
   })
 })
