@@ -104,6 +104,15 @@ export interface TeamActivitySnapshot {
     readonly bestPractices?: readonly BestPracticeEntry[];
     /** 自成长:本团队已完成任务的 (角色×等级) 校准统计。 */
     readonly calibration?: TeamCalibrationView;
+    /** LLM provider 授权中心:DSH 已注册的 provider + 面板 switch 授权状态。
+     * 每个快照携带全量列表(全局, profile 级),deepseek-official 恒启用。 */
+    readonly providers?: readonly TeamProviderView[];
+}
+/** Provider 授权中心的一行(面板 switch 列表)。 */
+export interface TeamProviderView {
+    readonly id: string;
+    readonly name: string;
+    readonly enabled: boolean;
 }
 /** 自成长校准统计的快照视图(面板展示用,复用 retro.ts 纯函数)。 */
 export interface TeamCalibrationView {
