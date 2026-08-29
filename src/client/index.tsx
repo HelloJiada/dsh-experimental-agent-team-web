@@ -35,8 +35,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Required services: conversation nodes, slots, sessions navigation, and locale. */
-export const inject = ['conversationEvents', 'slots', 'sessions', 'locale']
+/** Required services: conversation nodes, slots, sessions navigation, locale,
+ * and the settings-namespace scope (Provider 授权设置页卡片读写命名空间)。
+ * `settingsScope` 必须显式声明——cordis 服务代理守卫在未 inject 时访问会抛
+ * "cannot get property 'settingsScope' without inject",渲染期崩溃被错误边界
+ * 吞掉导致 content 区空白(t11 根因)。 */
+export const inject = ['conversationEvents', 'slots', 'sessions', 'locale', 'settingsScope']
 
 /** The replayed user message is the canonical transcript entry. */
 function HiddenAgentTeamsCommand(): null {
@@ -95,18 +99,20 @@ export function apply(ctx: ClientContext): void {
   }, AgentTeamsCard))
 
   // Provider 授权设置页卡片(t8):后端命名空间已注册,补 client 侧
-  // settings.section slot 让设置页 shell 渲染开关卡片。scope 在 slot
-  // 声明落地后绑定(ui-settings 已激活),经 scope.set 写命名空间。
+  // settings.section slot 让设置页 shell 渲染开关卡片。scope 在 apply 期
+  // bind 一次(照 ui-settings-models 先例,注入面引用稳定对象;不在注入面
+  // 每次调用时 bind,避免渲染期建 controller + 注册 effect)。
   const sectionT = ctx.locale.bind(AGENT_TEAMS_LOCALE_NAMESPACE) as (key: AgentTeamsLocaleKey) => string
+  const providerGrantsScope = ctx.settingsScope.bind<ProviderGrantsSectionValue>({
+    namespace: PROVIDER_GRANTS_NAMESPACE,
+  })
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'agent-team-web-providers',
     order: 100,
     label: () => sectionT('settings.providers.title'),
     inject: (): ProviderGrantsSectionInjected => ({
-      scope: ctx.settingsScope.bind<ProviderGrantsSectionValue>({
-        namespace: PROVIDER_GRANTS_NAMESPACE,
-      }),
+      scope: providerGrantsScope,
       t: sectionT,
     }),
   }, ProviderGrantsSection))

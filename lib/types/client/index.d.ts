@@ -8,7 +8,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         agentTeamWeb: AgentTeamsLocaleKey;
     }
 }
-/** Required services: conversation nodes, slots, sessions navigation, and locale. */
+/** Required services: conversation nodes, slots, sessions navigation, locale,
+ * and the settings-namespace scope (Provider 授权设置页卡片读写命名空间)。
+ * `settingsScope` 必须显式声明——cordis 服务代理守卫在未 inject 时访问会抛
+ * "cannot get property 'settingsScope' without inject",渲染期崩溃被错误边界
+ * 吞掉导致 content 区空白(t11 根因)。 */
 export declare const inject: string[];
 /** rc.2 宿主显式类型面:覆写 cordis Context 的 sessions 为 ISessions。 */
 type ClientContext = Omit<Context, 'sessions'> & {
