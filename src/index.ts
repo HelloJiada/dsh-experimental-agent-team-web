@@ -28,6 +28,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
+import { handleProviderGrant } from './provider-grant-route.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -291,6 +292,20 @@ export function apply(ctx: Context, config: Config): void {
       trustedHosts,
     }),
   }), 'agent-teams: close route')
+
+  // Provider authorization route: the panel's switch POSTs here to grant or
+  // revoke a provider for AgentTeam members. R-17/H-1: the boot token is the
+  // write credential (same fence as /close); the grant is global (profile
+  // level) and persists to provider-grants.json under the first workspace.
+  // Handler extracted to provider-grant-route.ts for direct auth tests.
+  ctx.effect(() => webServer.register({
+    kind: 'exact',
+    path: '/plugins/agent-team-web/provider-grant',
+    handler: (req, res) => handleProviderGrant(resolved.stateDir, workspaceRegistry, req, res, {
+      token: webToken,
+      trustedHosts,
+    }),
+  }), 'agent-teams: provider-grant route')
 
   // Whale mascot artwork: serve the packaged V2 role/action images to the
   // activity panel. An explicit allowlist guards the route (no path
