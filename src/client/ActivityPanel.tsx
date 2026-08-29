@@ -312,6 +312,104 @@ function ProgressOverview({ team, t }: { readonly team: ActivityTeam; readonly t
   )
 }
 
+/** Provider 授权中心行数据:一行一个 DSH 注册 provider,deepseek-official 恒锁定(不可关)。 */
+export function providerGrantRows(providers: readonly { id: string; name: string; enabled: boolean }[] | undefined):
+  readonly { id: string; name: string; enabled: boolean; locked: boolean }[] {
+  if (providers === undefined) return []
+  return providers.map(provider => ({
+    id: provider.id,
+    name: provider.name,
+    enabled: provider.enabled,
+    locked: provider.id === 'deepseek-official',
+  }))
+}
+
+/** Provider switch 拨动请求契约:endpoint + 方法 + 载荷(enabled 取反)。R-17 token 头由调用方注入。 */
+export function providerToggleRequest(provider: { id: string; enabled: boolean }): {
+  method: 'POST'
+  path: string
+  body: { provider: string; enabled: boolean }
+} {
+  return {
+    method: 'POST',
+    path: '/plugins/agent-team-web/provider-grant',
+    body: { provider: provider.id, enabled: !provider.enabled },
+  }
+}
+
+/** Provider 授权中心:列出 DSH 已注册的 LLM provider,每个带 switch。
+ * deepseek-official 恒启用(不可关);其余 provider 默认关闭,拨开即授权
+ * (POST /plugins/agent-team-web/provider-grant, R-17 token 保护)。 */
+function ProviderGrantPanel({ providers, t, compact = false }: {
+  readonly providers?: readonly { id: string; name: string; enabled: boolean }[]
+  readonly t: AgentTeamsTranslate
+  readonly compact?: boolean
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const rows = providerGrantRows(providers)
+  if (rows.length === 0) return null
+  const toggle = async (provider: { id: string; enabled: boolean }): Promise<void> => {
+    setBusy(provider.id)
+    setError(null)
+    try {
+      const token = agentTeamsWebToken()
+      const request = providerToggleRequest(provider)
+      const response = await fetch(request.path, {
+        method: request.method,
+        headers: {
+          'content-type': 'application/json',
+          ...token === undefined ? {} : { [TOKEN_HEADER]: token },
+        },
+        body: JSON.stringify(request.body),
+      })
+      if (!response.ok) {
+        console.warn(`agent-team-web: provider-grant failed (${response.status})`)
+        setError(t('provider.grantError'))
+        return
+      }
+      // 成功无需本地状态:轮询快照 ~1s 内刷新 providers 列表。
+    } catch (err) {
+      console.warn('agent-team-web: provider-grant request failed', err)
+      setError(t('provider.grantError'))
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <section className={css.providerSection} aria-label={t('provider.aria')} data-provider-grant>
+      <header className={css.sectionHead}>
+        <span className={css.sectionTitle}>{t('provider.title')}</span>
+        {error !== null && <span className={css.providerError}>{error}</span>}
+      </header>
+      <div className={css.providerList}>
+        {rows.map(provider => (
+          <label key={provider.id} className={css.providerRow} data-enabled={provider.enabled}>
+            <span className={css.providerName} title={provider.id}>{provider.name}</span>
+            <span className={css.providerId}>{provider.id}</span>
+            {provider.locked
+              ? <span className={css.providerLocked}>{t('provider.locked')}</span>
+              : (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={provider.enabled}
+                  className={css.providerSwitch}
+                  data-on={provider.enabled}
+                  disabled={busy === provider.id}
+                  onClick={() => { void toggle(provider) }}
+                >
+                  <span className={css.providerSwitchThumb} />
+                </button>
+              )}
+          </label>
+        ))}
+      </div>
+      {!compact && <p className={css.providerHint}>{t('provider.hint')}</p>}
+    </section>
+  )
+}
+
 function DependencyMap({ tasks, t, compact = false }: {
   readonly tasks: readonly ActivityTask[]
   readonly t: AgentTeamsTranslate
@@ -723,6 +821,8 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
       </section>
 
       <DependencyMap tasks={team.tasks} t={t} compact={compact} />
+
+      <ProviderGrantPanel providers={team.providers} t={t} compact={compact} />
     </section>
   )
 }

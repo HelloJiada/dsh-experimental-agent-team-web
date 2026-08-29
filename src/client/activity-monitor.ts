@@ -137,6 +137,12 @@ export interface ActivityTeam {
       readonly overrunRatio?: number
     }[]
   }
+  /** LLM provider 授权中心:DSH 已注册的 provider + 面板 switch 授权状态。 */
+  readonly providers?: readonly {
+    readonly id: string
+    readonly name: string
+    readonly enabled: boolean
+  }[]
 }
 
 /** A successfully-created conversation card that currently needs updates. */
