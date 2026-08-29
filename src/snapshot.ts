@@ -16,11 +16,23 @@ import { analyzeTeamSnapshot, type TeamIntelligence } from './intelligence.ts'
 import { currentTaskElapsedApprox, currentTaskElapsedMs, retroPendingCalibration, summarizeTeamRetro } from './retro.ts'
 import { readBestPractices } from './best-practices.ts'
 import {
-  CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readMailbox, readUnreadMailbox, readTeam,
+  CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readMailbox, readProviderGrants, readUnreadMailbox, readTeam,
   taskAwaitingInput, taskBlockedByReview, taskDepthsById, taskVisualState,
 } from './state.ts'
 import type { BestPracticeEntry } from './best-practices.ts'
 import type { EstimateLevel, MemberStatus, TeamMember, TaskRetro, TaskSignals, TeamState, TeamTask } from './types.ts'
+
+/** DSH 已注册的 LLM provider 列表({id,name}),ctx.llm 缺失时安全返回空。 */
+interface LlmProviderInfo { id: string; name: string }
+function listProvidersSafe(ctx: Context): LlmProviderInfo[] {
+  try {
+    const llm = (ctx as unknown as { llm?: { listProviders(): LlmProviderInfo[] } }).llm
+    if (llm?.listProviders === undefined) return []
+    return llm.listProviders()
+  } catch {
+    return []
+  }
+}
 
 /** Visual task state for the activity panel. */
 export type VisualTaskState = 'blocked' | 'open' | 'running' | 'completed'
@@ -119,6 +131,16 @@ export interface TeamActivitySnapshot {
   readonly bestPractices?: readonly BestPracticeEntry[]
   /** 自成长:本团队已完成任务的 (角色×等级) 校准统计。 */
   readonly calibration?: TeamCalibrationView
+  /** LLM provider 授权中心:DSH 已注册的 provider + 面板 switch 授权状态。
+   * 每个快照携带全量列表(全局, profile 级),deepseek-official 恒启用。 */
+  readonly providers?: readonly TeamProviderView[]
+}
+
+/** Provider 授权中心的一行(面板 switch 列表)。 */
+export interface TeamProviderView {
+  readonly id: string
+  readonly name: string
+  readonly enabled: boolean
 }
 
 /** 自成长校准统计的快照视图(面板展示用,复用 retro.ts 纯函数)。 */
@@ -277,6 +299,15 @@ export async function assembleTeamSnapshot(
   const toolCalls = await deriveTaskToolCalls(ctx, stateRoot, state.id, state.members, tasks)
   const bestPractices = await readBestPractices(stateRoot)
   const calibration = summarizeTeamRetro(tasks, state.members)
+  // Provider 授权中心:DSH 已注册的全部 provider + 面板 switch 授权状态。
+  // 授权是全局(profile 级),deepseek-official 恒启用;其余看 provider-grants。
+  const grants = await readProviderGrants(stateRoot)
+  const registeredProviders = listProvidersSafe(ctx)
+  const providers: TeamProviderView[] = registeredProviders.map(provider => ({
+    id: provider.id,
+    name: provider.name,
+    enabled: provider.id === 'deepseek-official' || grants.has(provider.id),
+  }))
   const base: TeamActivitySnapshot = {
     workspace,
     teamId: state.id,
@@ -345,6 +376,7 @@ export async function assembleTeamSnapshot(
         ...entry.overrunRatio !== undefined ? { overrunRatio: entry.overrunRatio } : {},
       })),
     },
+    providers,
   }
   // 融合分析层:用含 removed 成员的完整视角计算,附加到面板快照。
   const analysisMembers = state.members.map(mapMember)
