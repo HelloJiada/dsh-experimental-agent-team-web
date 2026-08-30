@@ -194,10 +194,24 @@ export async function resolveMemberLlmSelection(
   // 配置覆盖会话路由(会话 ds-flash 时成员可继承 gpt-5.6-sol)。不影响队长
   // 自己(队长=会话,走 currentProvider/currentModel 的原始来源)。
   const captainDefaults = request.captainDefaults
-  const inheritProvider = captainDefaults?.provider?.trim() ?? currentProvider
-  const inheritModel = captainDefaults?.model?.trim() ?? currentModel
-  const provider = explicitProvider ?? request.roleDefaults?.provider ?? inheritProvider
-  const model = explicitModel ?? request.roleDefaults?.model ?? defaultModel ?? inheritModel
+  const captainProvider = captainDefaults?.provider?.trim()
+  const captainModel = captainDefaults?.model?.trim()
+  const inheritProvider = captainProvider ?? currentProvider
+  const inheritModel = captainModel ?? currentModel
+  // t12 修复(政委/质检观察):provider 与 model 必须同源配对,杜绝
+  // `cc-switch + deepseek-v4-*` 错配。原链 `model = roleDefaults.model ??
+  // captainModel ?? ...` 在「角色档位只有 deepseek model 无 provider(内置
+  // DEFAULT_ROLE_LLM)」+「captainDefaults 有 cc-switch provider」时,会让
+  // model 取 deepseek、provider 取 cc-switch。修正:model 只有在 provider
+  // 也来自同一层时才从该层取——roleDefaults 带 provider 才用其 model;
+  // 否则走 captainDefaults 的同源对(captainProvider→captainModel)。
+  const roleProvider = request.roleDefaults?.provider?.trim()
+  const roleModel = request.roleDefaults?.model?.trim()
+  const provider = explicitProvider ?? roleProvider ?? inheritProvider
+  const model = explicitModel
+    ?? (roleProvider !== undefined ? roleModel : undefined)
+    ?? (captainProvider !== undefined ? captainModel : undefined)
+    ?? defaultModel ?? currentModel
   if (provider === undefined || model === undefined) {
     throw new Error('cannot resolve the member LLM route from the current captain session')
   }

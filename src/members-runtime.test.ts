@@ -253,6 +253,31 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     expect(withExplicit.provider).toBe('explicit-p')
   })
 
+  it('captainDefaults:角色档位仅 model 无 provider(内置档位)时与 captain provider 同源配对,不产生错配(t12 修复)', async () => {
+    const cap = captain('/ws', {
+      session: {
+        header: { cwd: '/ws', id: 'session-captain' },
+        id: 'session-captain',
+        requestHeader: () => ({ config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } }),
+      },
+      options: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    } as unknown as Agent)
+    const ctx = baseCtx({
+      llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
+    })
+    // DEFAULT_ROLE_LLM 内置档位只有 deepseek model 无 provider;
+    // captainDefaults 是 cc-switch → 同源配对:model 取 captainDefaults 的 gpt,
+    // 绝不产生 `cc-switch + deepseek-v4-*` 错配。
+    const selection = await resolveMemberLlmSelection(ctx, cap, {
+      roleDefaults: { model: 'deepseek-v4-pro', reasoningEffort: 'high' }, // 无 provider(内置档位)
+      captainDefaults: { provider: 'cc-switch', model: 'gpt-5.6-sol[1M]' },
+    })
+    expect(selection.provider).toBe('cc-switch')
+    expect(selection.model).toBe('gpt-5.6-sol[1M]')
+    // effort:captainDefaults 未配 effort → 不跨路由继承会话 effort。
+    expect(selection.reasoningEffort).toBeUndefined()
+  })
+
   it('roleDefaults:角色档位只给 effort、model 缺失时仍从队长继承', async () => {
     const cap = captain('/ws', {
       session: {
