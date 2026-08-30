@@ -172,6 +172,12 @@ export interface RoleAutoAssignEntry {
 }
 
 export const ROLE_AUTO_ASSIGN_TABLE: Readonly<Record<string, RoleAutoAssignEntry>> = {
+  // t12 扩展:队长档位——授权 cc-switch 时队长(指挥者)自动用 gpt-5.6-sol,
+  // 未授权回退 deepseek-v4-pro(职责核心用好模型)。
+  captain: {
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+  },
   researcher: {
     provider: 'cc-switch', model: 'gpt-5.6-sol[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },

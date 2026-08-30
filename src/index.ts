@@ -26,6 +26,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
+import { registerCaptainRoute } from './captain-route.ts'
 import { DEFAULT_ROLE_LLM } from './members.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
@@ -269,6 +270,11 @@ export function apply(ctx: Context, config: Config): void {
       ?? (provider === 'deepseek-official'),
     roleDefaultsFor: (roleKey) => settingsAccess.roleDefaultsFor?.(roleKey),
   })
+
+  // t12 扩展:队长路由覆盖——AgentTeam 激活时,队长(指挥者)的 LLM 请求按
+  // settings.roleDefaults['captain'] 路由(职责核心用好模型,如 gpt)。仅
+  // 队长 agent + 配置存在时生效,其他会话/普通对话不受影响。
+  registerCaptainRoute(ctx, () => settingsAccess.roleDefaultsFor?.('captain'))
 
   // Deterministic activation surfaces: the closed-namespace `/agent-teams`
   // host command (surfaces in the Web GUI slash menu via the Harness

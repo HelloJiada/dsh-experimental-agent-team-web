@@ -25,6 +25,7 @@ import {
   isCommissarRole,
   wakeCommissarReview,
 } from './commissar-gate.ts'
+import { markCaptainAgent, unmarkCaptainAgent } from './captain-route.ts'
 import {
   countActiveExecRoleMembers,
   DEFAULT_MAX_EXEC_PER_ROLE,
@@ -497,6 +498,8 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             name: commissar.name,
             role: commissar.role,
           })
+          // t12 扩展:标记该 agent 为队长——agent/request 路由覆盖仅对它生效。
+          markCaptainAgent(captain.id)
           return { team_id: state.id, team_name: state.name, state_dir: join(stateRoot, state.id) }
         })
       })
@@ -2010,6 +2013,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         // mailboxes stay on disk for later review and dependency rebuilds.
         await archiveTeamDir(stateRoot, fresh.id)
       })
+      // t12 扩展:队长标记释放(团队删除后不再路由覆盖;如后续重建团队
+      // create 会重新标记)。
+      unmarkCaptainAgent(captain.id)
       return { deleted: true, team_name: team.name }
     },
   }))
