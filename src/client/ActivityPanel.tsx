@@ -1320,6 +1320,10 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
                 className={css.iconButton}
                 data-control="collapse"
                 onClick={() => {
+                  // t14:折叠(dock 收起)时同步释放全局宽度让步——与 closeTeam
+                  // 同模式,不依赖 useLayoutEffect 时序(用户实测:折叠后会话
+                  // 宽度未恢复,因 effect 在折叠瞬间可能未重跑/被跳过)。
+                  applyDockLayout(false)
                   setOpen(false)
                   setOpenOwner(undefined)
                 }}
