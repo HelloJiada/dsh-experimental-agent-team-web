@@ -87,13 +87,15 @@ export interface RoleLlmDefaultValue {
     readonly reasoningEffort?: string;
     readonly auto?: boolean;
 }
-/** 自动重分配档位表(t23,用户确认 v2):cc-switch 授权时目标模型 + effort +
- * deepseek 回退档位(deepseek-official 恒授权)。sol=最强推理(pro 级 5 角色),
+/** 自动重分配档位表(t23,用户确认 v2;t26 修正:cc-switch GPT-5.6 不支持
+ * reasoning effort,cc-switch 目标不配 effort——仅模型,effort 由模型默认;
+ * deepseek 回退档位保留 effort(deepseek 支持)。sol=最强推理(pro 级 5 角色),
  * terra=稳健执行(技术/质检),luna=轻量省成本(文书/文宣,支持视觉)。 */
 export interface RoleAutoAssignEntry {
     readonly provider: string;
     readonly model: string;
-    readonly reasoningEffort: string;
+    /** 目标模型的 effort;cc-switch(GPT-5.6)不支持 reasoning → undefined 不写。 */
+    readonly reasoningEffort?: string;
     readonly fallback: {
         readonly provider: string;
         readonly model: string;
@@ -102,11 +104,12 @@ export interface RoleAutoAssignEntry {
 }
 export declare const ROLE_AUTO_ASSIGN_TABLE: Readonly<Record<string, RoleAutoAssignEntry>>;
 /**
- * 纯函数(t23):授权变化后自动重分配角色档位(写 settings 覆盖层,不动默认/内置表)。
- * 逐角色(table 的 key):
+ * 纯函数(t23;t26 修正):授权变化后自动重分配角色档位(写 settings 覆盖层,
+ * 不动默认/内置表)。逐角色(table 的 key):
  * a. 手动覆盖(roleDefaults[role] 存在且无 auto 标记)→ 保留不动(尊重显式选择);
  * b. 否则(继承态或带 auto 标记的自动分配结果)→ 目标模型已授权 → 写
- *    {provider:'cc-switch', model:目标, reasoningEffort, auto:true};
+ *    {provider:'cc-switch', model:目标, auto:true}(cc-switch GPT-5.6 不支持
+ *    reasoning effort,不落 effort 字段;deepseek 回退条目保留 effort);
  *    目标未授权 → 写 deepseek 原档位回退(deepseek-official 恒授权),同样 auto:true。
  * 返回新 map 仅含变更(无关角色/已有覆盖原样保留)。
  */

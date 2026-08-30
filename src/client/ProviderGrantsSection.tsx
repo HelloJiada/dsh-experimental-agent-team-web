@@ -141,61 +141,64 @@ export interface RoleLlmDefaultValue {
   readonly auto?: boolean
 }
 
-/** 自动重分配档位表(t23,用户确认 v2):cc-switch 授权时目标模型 + effort +
- * deepseek 回退档位(deepseek-official 恒授权)。sol=最强推理(pro 级 5 角色),
+/** 自动重分配档位表(t23,用户确认 v2;t26 修正:cc-switch GPT-5.6 不支持
+ * reasoning effort,cc-switch 目标不配 effort——仅模型,effort 由模型默认;
+ * deepseek 回退档位保留 effort(deepseek 支持)。sol=最强推理(pro 级 5 角色),
  * terra=稳健执行(技术/质检),luna=轻量省成本(文书/文宣,支持视觉)。 */
 export interface RoleAutoAssignEntry {
   readonly provider: string
   readonly model: string
-  readonly reasoningEffort: string
+  /** 目标模型的 effort;cc-switch(GPT-5.6)不支持 reasoning → undefined 不写。 */
+  readonly reasoningEffort?: string
   readonly fallback: { readonly provider: string; readonly model: string; readonly reasoningEffort: string }
 }
 
 export const ROLE_AUTO_ASSIGN_TABLE: Readonly<Record<string, RoleAutoAssignEntry>> = {
   researcher: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
   },
   data: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
   },
   reviewer: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
   },
   commissar: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
   },
   security: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'max',
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
   },
   engineer: {
-    provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-terra[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
   },
   qa: {
-    provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-terra[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
   },
   docs: {
-    provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low',
+    provider: 'cc-switch', model: 'gpt-5.6-luna[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
   },
   designer: {
-    provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low',
+    provider: 'cc-switch', model: 'gpt-5.6-luna[1M]',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
   },
 }
 
 /**
- * 纯函数(t23):授权变化后自动重分配角色档位(写 settings 覆盖层,不动默认/内置表)。
- * 逐角色(table 的 key):
+ * 纯函数(t23;t26 修正):授权变化后自动重分配角色档位(写 settings 覆盖层,
+ * 不动默认/内置表)。逐角色(table 的 key):
  * a. 手动覆盖(roleDefaults[role] 存在且无 auto 标记)→ 保留不动(尊重显式选择);
  * b. 否则(继承态或带 auto 标记的自动分配结果)→ 目标模型已授权 → 写
- *    {provider:'cc-switch', model:目标, reasoningEffort, auto:true};
+ *    {provider:'cc-switch', model:目标, auto:true}(cc-switch GPT-5.6 不支持
+ *    reasoning effort,不落 effort 字段;deepseek 回退条目保留 effort);
  *    目标未授权 → 写 deepseek 原档位回退(deepseek-official 恒授权),同样 auto:true。
  * 返回新 map 仅含变更(无关角色/已有覆盖原样保留)。
  */
@@ -213,7 +216,7 @@ export function autoAssignRoleDefaults(
       next[role] = {
         provider: entry.provider,
         model: entry.model,
-        reasoningEffort: entry.reasoningEffort,
+        ...entry.reasoningEffort === undefined ? {} : { reasoningEffort: entry.reasoningEffort },
         auto: true,
       }
     } else {
@@ -450,12 +453,14 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                   return
                 }
                 // 选中模型所属组 → 写 {provider: 组 provider, model}(旧 provider
-                // 不保留);次因②:保留当前 reasoningEffort(切模型不丢思考等级)。
+                // 不保留);t26:目标组为 cc-switch(GPT-5.6 不支持 reasoning effort)
+                // 时**不保留旧 effort**——写 {provider, model} 无 effort 字段;
+                // 其他组保留当前 reasoningEffort(切模型不丢思考等级)。
                 const group = groups.find(g => g.models.includes(model))
                 void write(row.role, {
                   provider: group?.providerId,
                   model,
-                  reasoningEffort: row.reasoningEffort,
+                  ...group?.providerId === 'cc-switch' ? {} : { reasoningEffort: row.reasoningEffort },
                 })
               }}
             >
@@ -484,6 +489,9 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                 aria-label={`${row.role} ${t('settings.agentTeam.effortAria')}`}
                 // t21:删「继承」选项;极端空值(无生效 effort)fallback 到
                 // EFFORT_OPTIONS[0],避免 select 无匹配显示空白。
+                // t26:当前模型为 cc-switch(GPT-5.6 不支持 reasoning effort)→
+                // 禁用 effort 下拉(选 effort 无意义;覆盖写面也不再落 effort)。
+                disabled={row.provider === 'cc-switch'}
                 value={EFFORT_OPTIONS.includes(row.reasoningEffort as (typeof EFFORT_OPTIONS)[number])
                   ? row.reasoningEffort
                   : EFFORT_OPTIONS[0]}
