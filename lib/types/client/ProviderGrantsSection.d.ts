@@ -109,9 +109,12 @@ export declare function resetRoleDefaults(): Record<string, {
     model?: string;
     reasoningEffort?: string;
 }>;
-/** 纯函数(t17):模型下拉按 provider 分组——返回全部含模型的 provider 组
- * (advisory models),供 <optgroup> 渲染;选中任一项即写该组 provider。 */
-export declare function rolePresetModelGroups(providers: readonly ProviderWithModels[]): readonly {
+/** 纯函数(t17/t22):模型下拉按 provider 分组——可调度判定与第一张卡
+ * providerGrantRows.enabled 语义一致:deepseek-official 恒可调度(全量模型);
+ * 其他 provider = models 非空 && 全部模型已授权(enabledModels 每个
+ * `${provider}/${model}` key 均为 true)。enabledModels 缺省(undefined)时
+ * 不过滤(兼容旧行为/快照缺省);过滤后空组剔除。 */
+export declare function rolePresetModelGroups(providers: readonly ProviderWithModels[], enabledModels?: Readonly<Record<string, boolean>>): readonly {
     providerId: string;
     models: readonly string[];
 }[];

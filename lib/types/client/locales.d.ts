@@ -69,6 +69,7 @@ export declare const zh: {
     'settings.agentTeam.modelAria': string;
     'settings.agentTeam.effortAria': string;
     'settings.agentTeam.inherit': string;
+    'settings.agentTeam.unauthorized': string;
     'settings.agentTeam.reset': string;
     'settings.agentTeam.loading': string;
     'settings.agentTeam.empty': string;
@@ -339,6 +340,7 @@ export declare const en: {
     'settings.agentTeam.modelAria': string;
     'settings.agentTeam.effortAria': string;
     'settings.agentTeam.inherit': string;
+    'settings.agentTeam.unauthorized': string;
     'settings.agentTeam.reset': string;
     'settings.agentTeam.loading': string;
     'settings.agentTeam.empty': string;

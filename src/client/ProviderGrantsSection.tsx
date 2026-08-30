@@ -174,14 +174,26 @@ export function resetRoleDefaults(): Record<string, { provider?: string; model?:
   return {}
 }
 
-/** 纯函数(t17):模型下拉按 provider 分组——返回全部含模型的 provider 组
- * (advisory models),供 <optgroup> 渲染;选中任一项即写该组 provider。 */
+/** 纯函数(t17/t22):模型下拉按 provider 分组——可调度判定与第一张卡
+ * providerGrantRows.enabled 语义一致:deepseek-official 恒可调度(全量模型);
+ * 其他 provider = models 非空 && 全部模型已授权(enabledModels 每个
+ * `${provider}/${model}` key 均为 true)。enabledModels 缺省(undefined)时
+ * 不过滤(兼容旧行为/快照缺省);过滤后空组剔除。 */
 export function rolePresetModelGroups(
   providers: readonly ProviderWithModels[],
+  enabledModels?: Readonly<Record<string, boolean>>,
 ): readonly { providerId: string; models: readonly string[] }[] {
-  return providers
-    .map(provider => ({ providerId: provider.id, models: provider.models ?? [] }))
-    .filter(group => group.models.length > 0)
+  const groups: { providerId: string; models: readonly string[] }[] = []
+  for (const provider of providers) {
+    const models = provider.models ?? []
+    if (models.length === 0) continue
+    const allGranted = enabledModels === undefined
+      || (provider.id === 'deepseek-official')
+      || models.every(model => enabledModels[modelKeyOf(provider.id, model)] === true)
+    if (!allGranted) continue
+    groups.push({ providerId: provider.id, models })
+  }
+  return groups
 }
 
 /** 纯函数(t20):从 /state 响应体取设置中心数据——providers(含 models)+
@@ -327,20 +339,26 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                 })
               }}
             >
-                <option value="">{t('settings.agentTeam.inherit')}</option>
-                {groups.map(group => (
-                  <optgroup key={group.providerId} label={group.providerId}>
-                    {group.models.map(model => (
-                      <option
-                        key={`${group.providerId}/${model}`}
-                        value={model}
-                      >
-                        {model}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+              <option value="">{t('settings.agentTeam.inherit')}</option>
+              {groups.map(group => (
+                <optgroup key={group.providerId} label={group.providerId}>
+                  {group.models.map(model => (
+                    <option
+                      key={`${group.providerId}/${model}`}
+                      value={model}
+                    >
+                      {model}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              {/* t22 边界:当前选中模型所在组被授权过滤(先选后关)→ 补占位 option,
+                  保证 select 不空白、用户可感知需先授权;onChange 行为不变。 */}
+              {row.model !== undefined && row.model !== ''
+                && !groups.some(group => group.models.includes(row.model as string)) && (
+                  <option value={row.model}>{`${row.model}（${t('settings.agentTeam.unauthorized')}）`}</option>
+                )}
+            </select>
               <select
                 className={styles.select}
                 aria-label={`${row.role} ${t('settings.agentTeam.effortAria')}`}
@@ -397,7 +415,9 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
   const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
   // t20 主因修复:实时合并——显示值 = 实时覆盖(scope snapshot) ?? base(/state)。
   const roleRows = mergeRoleDefaults(center.roleDefaultsBase, snapshot.value?.roleDefaults)
-  const modelGroups = rolePresetModelGroups(center.providers)
+  // t22:授权联动——groups 传实时授权 snapshot(开关切换后 scope.set →
+  // snapshot 更新 → uSES 重渲染 → 角色预设下拉即时增删 provider 组)。
+  const modelGroups = rolePresetModelGroups(center.providers, snapshot.value?.enabledModels)
   return (
     <div className={styles.section} data-provider-grants data-loading={loading}>
       {providerRows.length === 0 && roleRows.length === 0

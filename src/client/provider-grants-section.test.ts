@@ -115,8 +115,8 @@ describe('mergeRoleDefaults — 实时合并(t20 主因修复)', () => {
   })
 })
 
-describe('rolePresetModelGroups — 模型下拉按 provider 分组(t17)', () => {
-  it('分组 = 全部含模型的 provider;无模型 provider 过滤', () => {
+describe('rolePresetModelGroups — 模型下拉按 provider 分组 + 授权过滤(t17/t22)', () => {
+  it('enabledModels 缺省时不过滤(兼容旧行为);无模型 provider 过滤', () => {
     expect(rolePresetModelGroups(PROVIDERS)).toEqual([
       { providerId: 'deepseek-official', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
       { providerId: 'kimi-coding', models: ['kimi-k2.7-code'] },
@@ -124,6 +124,28 @@ describe('rolePresetModelGroups — 模型下拉按 provider 分组(t17)', () =>
       { providerId: 'cc-switch', models: ['cc-model-1'] },
     ])
     expect(rolePresetModelGroups([{ id: 'x', name: 'X' }])).toEqual([])
+  })
+
+  it('t22:deepseek-official 恒可调度(不看授权);其他 provider 需全部模型已授权', () => {
+    const enabled = { 'kimi-coding/kimi-k2.7-code': true }
+    const groups = rolePresetModelGroups(PROVIDERS, enabled)
+    expect(groups).toEqual([
+      { providerId: 'deepseek-official', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
+      { providerId: 'kimi-coding', models: ['kimi-k2.7-code'] },
+    ])
+  })
+
+  it('t22:未授权/部分授权组剔除;空组剔除', () => {
+    // 部分授权(kimi 两模型只授权一个)→ 组剔除。
+    const partial = rolePresetModelGroups([
+      { id: 'kimi-coding', name: 'Kimi', models: ['m1', 'm2'] },
+    ], { 'kimi-coding/m1': true })
+    expect(partial).toEqual([])
+    // 全部授权 → 组全量。
+    const all = rolePresetModelGroups([
+      { id: 'kimi-coding', name: 'Kimi', models: ['m1', 'm2'] },
+    ], { 'kimi-coding/m1': true, 'kimi-coding/m2': true })
+    expect(all).toEqual([{ providerId: 'kimi-coding', models: ['m1', 'm2'] }])
   })
 })
 
