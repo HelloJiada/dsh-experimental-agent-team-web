@@ -910,7 +910,7 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     let observed: HTMLElement | null = null
     const measure = (): void => {
       frame = null
-      const conversation = document.querySelector<HTMLElement>("[data-phase]")
+      const conversation = document.querySelector<HTMLElement>("div[data-phase]")
       if (conversation !== observed) {
         if (observed !== null) observer?.unobserve(observed)
         observed = conversation

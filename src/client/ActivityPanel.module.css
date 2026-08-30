@@ -8,8 +8,10 @@
 
 /* The panel lives in shell.overlay. Only its wide docked mode marks the page,
    allowing the center conversation to concede the exact measured width while
-   the shell's sidebar and details tracks keep their own geometry. */
-:global(html[data-agent-team-web-panel-open]) :global([data-phase='active']) {
+   the shell's sidebar and details tracks keep their own geometry. t2:覆盖
+   hero/settling/active 三态(会话根节点 data-phase 会经历三态,仅 active 时
+   面板已 docked 但 hero/settling 阶段不让宽度——见 t1 排查)。 */
+:global(html[data-agent-team-web-panel-open]) :global(div[data-phase]) {
   box-sizing: border-box;
   padding-right: var(--agent-team-web-panel-shift);
 }
@@ -1618,7 +1620,7 @@
 }
 
 @media (max-width: 960px) {
-  :global(html[data-agent-team-web-panel-open]) :global([data-phase='active']) {
+  :global(html[data-agent-team-web-panel-open]) :global(div[data-phase]) {
     padding-right: 0;
   }
 
