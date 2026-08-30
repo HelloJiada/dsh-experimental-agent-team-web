@@ -480,15 +480,12 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
         </button>
       </header>
       <ul className={styles.list}>
-        {rows.map(row => {
-          const isCaptain = row.role === 'captain'
-          return (
+        {rows.map(row => (
           <li key={row.role} className={styles.row} data-overridden={row.overridden}>
             <span className={styles.nameWrap}>
               <span className={styles.name} title={row.role}>{roleTitle(row.role, t)}</span>
               <span className={styles.rowSub}>{row.role}</span>
             </span>
-            {!isCaptain && (<>
             <select
               className={styles.select}
               aria-label={`${row.role} ${t('settings.agentTeam.modelAria')}`}
@@ -558,7 +555,6 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
               >
                 {EFFORT_OPTIONS.map(effort => <option key={effort} value={effort}>{effort}</option>)}
               </select>
-            </>)}
 
               {/* t9:查看职责按钮——纯眼睛图标,对齐 DSH Agent 预设交互。 */}
               <button
@@ -572,7 +568,7 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
               </button>
             </li>
           )
-        })}
+        )}
       </ul>
       {/* t9:职责说明弹窗(对齐 DSH Agent 预设的只读 viewer)。 */}
       {viewing !== undefined && (
@@ -710,10 +706,11 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
   const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
   // t20 主因修复:实时合并——显示值 = 实时覆盖(scope snapshot) ?? base(/state)。
   const roleRows = mergeRoleDefaults(center.roleDefaultsBase, snapshot.value?.roleDefaults)
-  // t11:队长行——顶部合成(host 无 captain 档位数据,任务 B 才引入;
-  // 此处先只展示名称+查看按钮,模型/思考深度下拉任务 B 接入)。
+  // t11/t12:队长行——顶部合成;t12 接入实时覆盖(settings.roleDefaults.captain
+  // 经 snapshot 订阅,写面 scope.set 即时回显),模型/思考深度下拉可用。
+  const captainOverride = snapshot.value?.roleDefaults?.captain
   const presetRows: readonly RolePresetRow[] = [
-    { role: 'captain', overridden: false },
+    { role: 'captain', ...captainOverride ?? {}, overridden: captainOverride !== undefined },
     ...roleRows,
   ]
   // t22:授权联动——groups 传实时授权 snapshot(开关切换后 scope.set →

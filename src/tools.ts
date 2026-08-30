@@ -129,6 +129,16 @@ export interface ToolsConfig {
   stallThresholdMs: number
 }
 
+/**
+ * 队长预设(t12):settings.roleDefaults['captain']——队长行的模型/思考深度
+ * 配置,作为成员的默认继承源(未显式/未配角色档位时,成员继承它而非会话
+ * 路由)。每次读取(幂等,settings scope 闭包);undefined = 未配置(沿用
+ * 现有会话继承)。
+ */
+function captainDefaultsFor(config: ToolsConfig): { provider?: string; model?: string; reasoningEffort?: string } | undefined {
+  return config.roleDefaultsFor?.('captain')
+}
+
 /** The caller agent, or a loud failure for non-agent callers. */
 function requireCaptain(exec: ToolRunContext): Agent {
   if (!exec.agent) {
@@ -434,6 +444,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           const commissarSelection = await resolveMemberLlmSelection(ctx, captain, {
             defaultModel: config.memberModel,
             ...DEFAULT_ROLE_LLM.commissar === undefined ? {} : { roleDefaults: DEFAULT_ROLE_LLM.commissar },
+            ...captainDefaultsFor(config) === undefined ? {} : { captainDefaults: captainDefaultsFor(config) },
           }, exec.signal)
           const commissar: TeamMember = {
             id: '',
@@ -579,6 +590,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         defaultModel: config.memberModel,
         reasoningEffort: args.reasoning_effort,
         ...roleDefaults === undefined ? {} : { roleDefaults },
+        // t12:队长预设(settings.roleDefaults['captain'])作为成员默认继承源——
+        // 未显式/未配角色档位时,成员继承 captain 配置而非会话路由。
+        ...captainDefaultsFor(config) === undefined ? {} : { captainDefaults: captainDefaultsFor(config) },
       }, exec.signal)
       // AgentTeam 设置中心(t13):显式指定或角色档位指定的非默认 provider 的
       // 模型,需在设置页授权后才可用(deepseek-official 名下恒授权)。判定走
@@ -607,6 +621,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
               defaultModel: config.memberModel,
               reasoningEffort: args.reasoning_effort,
               ...roleDefaults === undefined ? {} : { roleDefaults },
+              ...captainDefaultsFor(config) === undefined ? {} : { captainDefaults: captainDefaultsFor(config) },
             }, exec.signal)
           } catch (fallbackError: unknown) {
             ctx.logger.warn(`agent-team-web: fallback to deepseek-official failed (${String(fallbackError)}); keeping original selection`)

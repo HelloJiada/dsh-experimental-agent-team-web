@@ -187,6 +187,72 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     expect(selection.reasoningEffort).toBe('low')
   })
 
+  it('captainDefaults:会话 ds-flash 但 captain 预设 gpt-5.6-sol → 成员继承 captain 配置(t12)', async () => {
+    const cap = captain('/ws', {
+      session: {
+        header: { cwd: '/ws', id: 'session-captain' },
+        id: 'session-captain',
+        requestHeader: () => ({ config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } }),
+      },
+      options: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    } as unknown as Agent)
+    const ctx = baseCtx({
+      llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
+    })
+    // 未显式、未配角色档位 → 继承 captain 预设(而非会话 ds-flash)。
+    const selection = await resolveMemberLlmSelection(ctx, cap, {
+      captainDefaults: { provider: 'cc-switch', model: 'gpt-5.6-sol[1M]' },
+    })
+    expect(selection.provider).toBe('cc-switch')
+    expect(selection.model).toBe('gpt-5.6-sol[1M]')
+    // effort:captain 预设未给 effort → 目标路由非会话路由 → 不继承会话 effort。
+    expect(selection.reasoningEffort).toBeUndefined()
+  })
+
+  it('captainDefaults:未配置 captain 预设 → 回落会话路由(行为不变)', async () => {
+    const cap = captain('/ws', {
+      session: {
+        header: { cwd: '/ws', id: 'session-captain' },
+        id: 'session-captain',
+        requestHeader: () => ({ config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } }),
+      },
+      options: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    } as unknown as Agent)
+    const ctx = baseCtx({
+      llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
+    })
+    const selection = await resolveMemberLlmSelection(ctx, cap, {})
+    expect(selection.provider).toBe('deepseek-official')
+    expect(selection.model).toBe('deepseek-v4-flash')
+    expect(selection.reasoningEffort).toBe('high') // 同会话路由继承 effort
+  })
+
+  it('captainDefaults:显式/角色档位仍优先于 captain 预设', async () => {
+    const cap = captain('/ws', {
+      session: {
+        header: { cwd: '/ws', id: 'session-captain' },
+        id: 'session-captain',
+        requestHeader: () => ({ config: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' } }),
+      },
+      options: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    } as unknown as Agent)
+    const ctx = baseCtx({
+      llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
+    })
+    // 角色档位优先于 captain 预设。
+    const withRole = await resolveMemberLlmSelection(ctx, cap, {
+      roleDefaults: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+      captainDefaults: { provider: 'cc-switch', model: 'gpt-5.6-sol[1M]' },
+    })
+    expect(withRole.model).toBe('deepseek-v4-pro')
+    // 显式永远优先。
+    const withExplicit = await resolveMemberLlmSelection(ctx, cap, {
+      provider: 'explicit-p', model: 'explicit-m',
+      captainDefaults: { provider: 'cc-switch', model: 'gpt-5.6-sol[1M]' },
+    })
+    expect(withExplicit.provider).toBe('explicit-p')
+  })
+
   it('roleDefaults:角色档位只给 effort、model 缺失时仍从队长继承', async () => {
     const cap = captain('/ws', {
       session: {

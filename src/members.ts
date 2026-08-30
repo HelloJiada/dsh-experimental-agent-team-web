@@ -85,6 +85,12 @@ export interface MemberLlmSelectionRequest {
    * canonical role, consulted when no explicit route is given. Absent fields
    * inside it fall through to the captain-inherit path below. */
   roleDefaults?: Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>
+  /** Captain preset (t12): settings.roleDefaults['captain'] — the configured
+   * default the captain wants members to inherit when neither an explicit
+   * route nor a role default exists. It overrides the live captain-session
+   * route (so a ds-flash session can have members inherit gpt-5.6-sol), but
+   * never affects the captain's own session model. */
+  captainDefaults?: Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>
 }
 
 /** Process-local bridge between spawn admission and synchronous child setup. */
@@ -183,8 +189,15 @@ export async function resolveMemberLlmSelection(
   const current = captain.session.requestHeader()?.config
   const currentProvider = current?.provider ?? captain.options.provider
   const currentModel = current?.model ?? captain.options.model
-  const provider = explicitProvider ?? request.roleDefaults?.provider ?? currentProvider
-  const model = explicitModel ?? request.roleDefaults?.model ?? defaultModel ?? currentModel
+  // t12:captain 预设(settings.roleDefaults['captain'])作为成员默认继承源——
+  // 在「继承队长会话路由」之前插入:未显式指定、未配角色档位时,用 captain
+  // 配置覆盖会话路由(会话 ds-flash 时成员可继承 gpt-5.6-sol)。不影响队长
+  // 自己(队长=会话,走 currentProvider/currentModel 的原始来源)。
+  const captainDefaults = request.captainDefaults
+  const inheritProvider = captainDefaults?.provider?.trim() ?? currentProvider
+  const inheritModel = captainDefaults?.model?.trim() ?? currentModel
+  const provider = explicitProvider ?? request.roleDefaults?.provider ?? inheritProvider
+  const model = explicitModel ?? request.roleDefaults?.model ?? defaultModel ?? inheritModel
   if (provider === undefined || model === undefined) {
     throw new Error('cannot resolve the member LLM route from the current captain session')
   }
@@ -195,16 +208,27 @@ export async function resolveMemberLlmSelection(
   // target-default behavior even when the route did not change. Role defaults
   // (auto-assign) sit between: their effort applies on their own route, and
   // the captain-inherit path stays intact when no role default exists.
+  // t12:captain preset effort 在「成员继承 captain 配置路由」时生效(同 captain
+  // 路由继承 captainDefaults.reasoningEffort;未配置则沿用会话 effort 逻辑)。
   const roleEffort = request.roleDefaults?.reasoningEffort?.trim()
+  const captainEffort = captainDefaults?.reasoningEffort?.trim()
+  const captainInherited = captainDefaults?.provider?.trim() !== undefined
+    || captainDefaults?.model?.trim() !== undefined
   const sameRoute = provider === currentProvider && model === currentModel
+  const sameCaptainRoute = captainInherited
+    && provider === inheritProvider && model === inheritModel
   const reasoningEffort = explicitEffort === undefined
     ? roleEffort !== undefined && roleEffort !== ''
       ? roleEffort === 'default'
         ? undefined
         : ReasoningEffortId(roleEffort)
-      : sameRoute
-        ? current?.reasoningEffort
-        : undefined
+      : captainEffort !== undefined && captainEffort !== '' && sameCaptainRoute
+        ? captainEffort === 'default'
+          ? undefined
+          : ReasoningEffortId(captainEffort)
+        : sameRoute
+          ? current?.reasoningEffort
+          : undefined
     : explicitEffort === 'default'
       ? undefined
       : ReasoningEffortId(explicitEffort)
