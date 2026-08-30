@@ -18,11 +18,12 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
+import { IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { agentTeamsWebToken } from './activity-monitor.ts'
 import type { AgentTeamsTranslate } from './locales.ts'
-import { roleTitle } from './roles.ts'
+import { roleTitle, ROLE_DUTY } from './roles.ts'
 import { TOKEN_HEADER } from '../web-auth-constants.ts'
 import styles from './ProviderGrantsSection.module.css'
 
@@ -433,6 +434,8 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
   readonly snapshot: SettingsScopeSnapshot<ProviderGrantsSectionValue>
   readonly t: AgentTeamsTranslate
 }): ReactNode {
+  // t9:当前查看职责的角色(undefined = 弹窗关闭)。
+  const [viewing, setViewing] = useState<RolePresetRow | undefined>(undefined)
   const write = async (role: string, value: { provider?: string; model?: string; reasoningEffort?: string } | undefined): Promise<void> => {
     if (scope === undefined) return
     await scope.set('roleDefaults', roleDefaultsMap(snapshot.value?.roleDefaults, role, value))
@@ -442,6 +445,8 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
     await scope.set('roleDefaults', resetRoleDefaults())
   }
   if (rows.length === 0) return null
+  const viewedRole = viewing?.role
+  const viewedDuty = viewedRole === undefined ? undefined : ROLE_DUTY[viewedRole]
   return (
     <section className={styles.card} aria-label={t('settings.agentTeam.rolePreset')}>
       <header className={styles.head}>
@@ -531,10 +536,66 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
               >
                 {EFFORT_OPTIONS.map(effort => <option key={effort} value={effort}>{effort}</option>)}
               </select>
+              {/* t9:查看职责按钮——纯眼睛图标,对齐 DSH Agent 预设交互。 */}
+              <button
+                type="button"
+                className={styles.viewBtn}
+                aria-label={`${t('settings.agentTeam.viewAria')}: ${row.role}`}
+                title={`${t('settings.agentTeam.viewAria')}: ${row.role}`}
+                onClick={() => { setViewing(row) }}
+              >
+                <IconBrowseOutline16 />
+              </button>
             </li>
           )
         )}
       </ul>
+      {/* t9:职责说明弹窗(对齐 DSH Agent 预设的只读 viewer)。 */}
+      {viewing !== undefined && (
+        <div className={styles.modalMask} role="presentation" onClick={() => { setViewing(undefined) }}>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${t('settings.agentTeam.viewAria')}: ${viewedRole}`}
+            onClick={(event) => { event.stopPropagation() }}
+          >
+            <header className={styles.modalHead}>
+              <span className={styles.modalTitle}>{roleTitle(viewing.role, t)}</span>
+              <span className={styles.rowSub}>{viewing.role}</span>
+              <button
+                type="button"
+                className={styles.modalClose}
+                aria-label={t('settings.agentTeam.close')}
+                onClick={() => { setViewing(undefined) }}
+              >
+                ✕
+              </button>
+            </header>
+            {viewedDuty === undefined
+              ? <p className={styles.modalEmpty}>{t('settings.agentTeam.viewEmpty')}</p>
+              : (
+                <>
+                  <p className={styles.roleSlogan}>{viewedDuty.slogan}</p>
+                  <p className={styles.modalSectionTitle}>{t('settings.agentTeam.viewSteps')}</p>
+                  {viewedDuty.steps.map((step, index) => (
+                    <div key={step.title} className={styles.dutyRow}>
+                      <span className={styles.dutyStep}>{`${index + 1}. ${step.title}`}</span>
+                      <span className={styles.dutyDesc}>{step.desc}</span>
+                    </div>
+                  ))}
+                  <p className={styles.modalSectionTitle}>{t('settings.agentTeam.viewDeliverable')}</p>
+                  <p className={styles.dutyDesc} style={{ padding: '0 10px' }}>{viewedDuty.deliverable}</p>
+                </>
+              )}
+            <p className={styles.modalSectionTitle} style={{ marginTop: 14, borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: 10 }}>
+              {t('settings.agentTeam.viewCurrent')}
+            </p>
+            <div className={styles.modalKv}><span className={styles.modalK}>{t('settings.agentTeam.modelAria')}</span><span className={styles.modalV}>{viewing.provider ?? ''}{viewing.provider !== undefined && viewing.model !== undefined ? ' / ' : ''}{viewing.model ?? ''}</span></div>
+            <div className={styles.modalKv}><span className={styles.modalK}>{t('settings.agentTeam.effortAria')}</span><span className={styles.modalV}>{viewing.reasoningEffort ?? t('settings.agentTeam.modelDefault')}</span></div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

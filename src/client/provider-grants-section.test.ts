@@ -8,7 +8,15 @@
  * @module dsh-agent-team-web/client/provider-grants-section.test
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// ProviderGrantsSection 引入的 dsh-client-ui-primitives 带 .module.css(node
+// 环境无法解析外部化包的 CSS);图标仅作展示,桩为最小 stub 组件。
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  IconBrowseOutline16: () => null,
+}))
+
+import { ROLE_DUTY } from './roles.ts'
 import {
   autoAssignDiffers,
   autoAssignHasTarget,
@@ -287,5 +295,30 @@ describe('supportsReasoningEffort — 能力表查表(t8 通用适配)', () => {
 
   it('undefined → false(无 provider 无 effort)', () => {
     expect(supportsReasoningEffort(undefined)).toBe(false)
+  })
+})
+
+describe('ROLE_DUTY — 角色职责说明表(t9 查看弹窗数据源)', () => {
+  const ALL_ROLES = [
+    'researcher', 'engineer', 'qa', 'designer', 'data',
+    'docs', 'security', 'reviewer', 'commissar',
+  ]
+
+  it('9 个预设角色均有职责条目(slogan/steps/deliverable 非空)', () => {
+    for (const role of ALL_ROLES) {
+      const duty = ROLE_DUTY[role]
+      expect(duty, `role ${role} missing ROLE_DUTY`).toBeDefined()
+      expect(duty?.slogan.length).toBeGreaterThan(0)
+      expect(duty?.steps.length).toBeGreaterThan(0)
+      for (const step of duty?.steps ?? []) {
+        expect(step.title.length).toBeGreaterThan(0)
+        expect(step.desc.length).toBeGreaterThan(0)
+      }
+      expect(duty?.deliverable.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('未知角色 → undefined(弹窗显示空态,不崩溃)', () => {
+    expect(ROLE_DUTY['unknown-role']).toBeUndefined()
   })
 })

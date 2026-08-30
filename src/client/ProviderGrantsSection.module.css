@@ -201,3 +201,133 @@
   font-size: 11px;
   line-height: 16px;
 }
+
+/* t9:查看职责按钮——纯眼睛图标,对齐 DSH Agent 预设交互(无文字)。 */
+.viewBtn {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+.viewBtn:hover {
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+}
+.viewBtn:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+/* t9:职责说明弹窗。 */
+.modalMask {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 24px;
+}
+.modal {
+  width: 460px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.modalHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.modalTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.modalClose {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.modalClose:hover {
+  color: var(--dsw-alias-label-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+.roleSlogan {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.modalSectionTitle {
+  margin: 12px 0 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+.dutyRow {
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.dutyRow + .dutyRow {
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+}
+.dutyStep {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+}
+.dutyDesc {
+  color: var(--dsw-alias-label-primary);
+}
+.modalKv {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.modalK {
+  flex: none;
+  width: 72px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.modalV {
+  flex: 1;
+  color: var(--dsw-alias-label-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+.modalEmpty {
+  padding: 6px 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}

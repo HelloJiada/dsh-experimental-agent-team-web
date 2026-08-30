@@ -71,6 +71,13 @@ export declare const zh: {
     'settings.agentTeam.inherit': string;
     'settings.agentTeam.unauthorized': string;
     'settings.agentTeam.reset': string;
+    'settings.agentTeam.viewAria': string;
+    'settings.agentTeam.viewSteps': string;
+    'settings.agentTeam.viewDeliverable': string;
+    'settings.agentTeam.viewCurrent': string;
+    'settings.agentTeam.viewEmpty': string;
+    'settings.agentTeam.modelDefault': string;
+    'settings.agentTeam.close': string;
     'settings.agentTeam.loading': string;
     'settings.agentTeam.empty': string;
     'task.runningAria': string;
@@ -342,6 +349,13 @@ export declare const en: {
     'settings.agentTeam.inherit': string;
     'settings.agentTeam.unauthorized': string;
     'settings.agentTeam.reset': string;
+    'settings.agentTeam.viewAria': string;
+    'settings.agentTeam.viewSteps': string;
+    'settings.agentTeam.viewDeliverable': string;
+    'settings.agentTeam.viewCurrent': string;
+    'settings.agentTeam.viewEmpty': string;
+    'settings.agentTeam.modelDefault': string;
+    'settings.agentTeam.close': string;
     'settings.agentTeam.loading': string;
     'settings.agentTeam.empty': string;
 };
