@@ -9,7 +9,8 @@
  *
  * 边界:①不改会话日志/header 记录(waterfall 是请求前改写,先例 core/agent
  * model-selection.ts);②「恢复默认」清空 captain 覆盖后,队长回落会话模型;
- * ③captain 选 cc-switch(GPT-5.6)时 effort 置空(t8 适配:不支持 reasoning)。
+ * ③「恢复默认」清空 captain 覆盖后,队长回落会话模型。
+ * ④captain 选 cc-switch(GPT-5.6)时 effort 照常写入(t13:支持 adaptive thinking)。
  * @module dsh-agent-team-web/captain-route
  */
 import type { Context } from '@deepseek-ai/cordis';

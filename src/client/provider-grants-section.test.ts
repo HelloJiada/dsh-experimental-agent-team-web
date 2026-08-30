@@ -172,23 +172,23 @@ describe('autoAssignRoleDefaults — 授权变化自动重分配(t23/t26)', () =
   // effort → 不配 effort;deepseek 回退保留 effort。
   const table = {
     engineer: {
-      provider: 'cc-switch', model: 'gpt-5.6-terra[1M]',
+      provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high',
       fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
     },
     designer: {
-      provider: 'cc-switch', model: 'gpt-5.6-luna[1M]',
+      provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low',
       fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
     },
   }
 
-  it('继承态角色被分配:目标授权 → 写 cc-switch + auto:true(无 effort 字段)', () => {
+  it('继承态角色被分配:目标授权 → 写 cc-switch + auto:true(含 effort,t13)', () => {
     const next = autoAssignRoleDefaults(undefined, {
       'cc-switch/gpt-5.6-terra[1M]': true,
       'cc-switch/gpt-5.6-luna[1M]': true,
     }, table)
     expect(next).toEqual({
-      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', auto: true },
-      designer: { provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', auto: true },
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high', auto: true },
+      designer: { provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low', auto: true },
     })
   })
 
@@ -210,19 +210,19 @@ describe('autoAssignRoleDefaults — 授权变化自动重分配(t23/t26)', () =
     expect(next.designer).toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low', auto: true })
   })
 
-  it('无关角色/已有覆盖原样保留;再开授权 auto 角色回到目标(无 effort)', () => {
+  it('无关角色/已有覆盖原样保留;再开授权 auto 角色回到目标(含 effort,t13)', () => {
     const current = {
       docs: { provider: 'kimi-coding', model: 'kimi-k2.7-code' }, // 无关角色(不在表)
       engineer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high', auto: true },
     }
     const next = autoAssignRoleDefaults(current, { 'cc-switch/gpt-5.6-terra[1M]': true }, table)
     expect(next.docs).toEqual({ provider: 'kimi-coding', model: 'kimi-k2.7-code' })
-    expect(next.engineer).toEqual({ provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', auto: true })
+    expect(next.engineer).toEqual({ provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high', auto: true })
   })
 
   it('t25:幂等——已分配且授权匹配 → 重算结果不变(初始化不重复写)', () => {
     const current = {
-      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', auto: true },
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high', auto: true },
       designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low', auto: true },
     }
     const enabled = { 'cc-switch/gpt-5.6-terra[1M]': true } // designer 目标未授权
@@ -281,8 +281,8 @@ describe('settingsCenterFromStateBody — /state 顶层数据解析(t20 base/覆
 })
 
 describe('supportsReasoningEffort — 能力表查表(t8 通用适配)', () => {
-  it('已知不支持列表(cc-switch)→ false', () => {
-    expect(supportsReasoningEffort('cc-switch')).toBe(false)
+  it('cc-switch 支持思考深度(t13 误判纠正:anthropic-messages adaptive thinking)→ true', () => {
+    expect(supportsReasoningEffort('cc-switch')).toBe(true)
   })
 
   it('deepseek-official(默认支持)→ true', () => {

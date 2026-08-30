@@ -9,7 +9,8 @@
  *
  * 边界:①不改会话日志/header 记录(waterfall 是请求前改写,先例 core/agent
  * model-selection.ts);②「恢复默认」清空 captain 覆盖后,队长回落会话模型;
- * ③captain 选 cc-switch(GPT-5.6)时 effort 置空(t8 适配:不支持 reasoning)。
+ * ③「恢复默认」清空 captain 覆盖后,队长回落会话模型。
+ * ④captain 选 cc-switch(GPT-5.6)时 effort 照常写入(t13:支持 adaptive thinking)。
  * @module dsh-agent-team-web/captain-route
  */
 
@@ -60,13 +61,14 @@ export function registerCaptainRoute(ctx: Context, captainConfig: CaptainConfigR
         const selected = captainConfig()
         if (selected === undefined) return resolved
         if (selected.provider === undefined || selected.model === undefined) return resolved
-        // t8:cc-switch(GPT-5.6)不支持 reasoning effort → 不写 effort。
+        // t13:cc-switch(GPT-5.6)经 anthropic-messages 适配器支持 adaptive
+        // thinking,effort 不再置空(恢复写入)。
         const { reasoningEffort: _inherited, ...withoutInherited } = resolved
         return {
           ...withoutInherited,
           provider: selected.provider,
           model: selected.model,
-          ...selected.reasoningEffort !== undefined && selected.provider !== 'cc-switch'
+          ...selected.reasoningEffort !== undefined
             ? { reasoningEffort: ReasoningEffortId(selected.reasoningEffort) }
             : {},
         }

@@ -70,7 +70,10 @@ export declare const EFFORT_OPTIONS: readonly ["high", "max", "low", "off"];
  * 这些 provider 的模型没有可选的思考深度——自动重分配/模型切换/effort
  * 下拉统一查表,不硬编码单一 provider。后续新增不支持 effort 的模型,
  * 只需在此追加 provider id(或更细粒度时扩展为 Record)。
- * deepseek-official / kimi-coding / xiaomi 等未列出 = 默认支持(未知按支持处理)。
+ * 当前为空:cc-switch(GPT-5.6)经 anthropic-messages 适配器支持 adaptive
+ * thinking 思考深度(low/medium/high/max)——t13 纠正 t26/t8 的误判(当时因
+ * settings.yaml 缺 reasoningEfforts 映射导致适配器误报不支持)。未列出的
+ * provider 默认支持(未知按支持处理)。
  */
 export declare const NO_REASONING_EFFORT_PROVIDERS: readonly string[];
 /**
