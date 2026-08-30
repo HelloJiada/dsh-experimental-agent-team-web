@@ -115,6 +115,12 @@ export declare function autoAssignRoleDefaults(current: Readonly<Record<string, 
  * ?? base(/state 的 profile ?? DEFAULT,不含覆盖);overridden 由实时覆盖
  * 判定(驱动「恢复默认」disabled 态与选中回显)。 */
 export declare function mergeRoleDefaults(base: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, overrides: Readonly<Record<string, RoleLlmDefaultValue>> | undefined): readonly RolePresetView[];
+/** 纯函数(t25):是否存在任一档位表目标模型已授权(初始化分配的前提——
+ * 有目标可分配才写,避免无谓覆盖/写入)。 */
+export declare function autoAssignHasTarget(enabledModels: Readonly<Record<string, boolean>> | undefined, table?: Readonly<Record<string, RoleAutoAssignEntry>>): boolean;
+/** 纯函数(t25):初始化重分配幂等判定——按表重算结果与当前覆盖是否不同
+ * (无变更则不写 scope,避免无谓写入/触发 uSES 重渲染循环)。 */
+export declare function autoAssignDiffers(current: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, enabledModels: Readonly<Record<string, boolean>> | undefined, table?: Readonly<Record<string, RoleAutoAssignEntry>>): boolean;
 /** 纯函数:角色档位覆盖写后的 roleDefaults map(value=undefined → 删覆盖)。 */
 export declare function roleDefaultsMap(current: Readonly<Record<string, {
     provider?: string;

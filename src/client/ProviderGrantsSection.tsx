@@ -16,7 +16,7 @@
  * @module dsh-agent-team-web/client/provider-grants-section
  */
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
@@ -239,6 +239,38 @@ export function mergeRoleDefaults(
     ...(overrides?.[role] ?? base?.[role]) ?? {},
     overridden: overrides?.[role] !== undefined,
   }))
+}
+
+/** 纯函数(t25):是否存在任一档位表目标模型已授权(初始化分配的前提——
+ * 有目标可分配才写,避免无谓覆盖/写入)。 */
+export function autoAssignHasTarget(
+  enabledModels: Readonly<Record<string, boolean>> | undefined,
+  table: Readonly<Record<string, RoleAutoAssignEntry>> = ROLE_AUTO_ASSIGN_TABLE,
+): boolean {
+  if (enabledModels === undefined) return false
+  return Object.values(table).some(entry => enabledModels[modelKeyOf(entry.provider, entry.model)] === true)
+}
+
+/** 纯函数(t25):初始化重分配幂等判定——按表重算结果与当前覆盖是否不同
+ * (无变更则不写 scope,避免无谓写入/触发 uSES 重渲染循环)。 */
+export function autoAssignDiffers(
+  current: Readonly<Record<string, RoleLlmDefaultValue>> | undefined,
+  enabledModels: Readonly<Record<string, boolean>> | undefined,
+  table: Readonly<Record<string, RoleAutoAssignEntry>> = ROLE_AUTO_ASSIGN_TABLE,
+): boolean {
+  const next = autoAssignRoleDefaults(current, enabledModels, table)
+  const cur = current ?? {}
+  const keys = new Set([...Object.keys(cur), ...Object.keys(next)])
+  for (const key of keys) {
+    const a = cur[key]
+    const b = next[key]
+    if ((a === undefined) !== (b === undefined)) return true
+    if (a === undefined || b === undefined) continue
+    if (a.provider !== b.provider || a.model !== b.model
+      || a.reasoningEffort !== b.reasoningEffort
+      || (a.auto ?? false) !== (b.auto ?? false)) return true
+  }
+  return false
 }
 
 /** 纯函数:角色档位覆盖写后的 roleDefaults map(value=undefined → 删覆盖)。 */
@@ -500,6 +532,22 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
     (callback) => scope?.subscribe(callback) ?? (() => undefined),
     () => scope?.getSnapshot() ?? EMPTY_SNAPSHOT,
   )
+  // t25:页面初始化执行一次自动重分配(预开授权也生效——用户在 settings 文件
+  // 预开启 cc-switch 时无 toggle 事件,t23 的触发式重分配不会跑)。条件:
+  // center 加载完 + scope snapshot 就绪 + 存在已授权目标模型;幂等(无变更
+  // 不写);ref 一次性保险(写 roleDefaults 不改变授权,天然不循环)。
+  const initAssignRef = useRef(false)
+  useEffect(() => {
+    if (initAssignRef.current) return
+    if (loading) return
+    const value = snapshot.value
+    if (value === undefined) return
+    initAssignRef.current = true
+    if (scope === undefined) return
+    if (!autoAssignHasTarget(value.enabledModels)) return // 无目标可分配 → 不写
+    if (!autoAssignDiffers(value.roleDefaults, value.enabledModels)) return // 幂等
+    void scope.set('roleDefaults', autoAssignRoleDefaults(value.roleDefaults, value.enabledModels))
+  }, [loading, snapshot.value, scope])
   const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
   // t20 主因修复:实时合并——显示值 = 实时覆盖(scope snapshot) ?? base(/state)。
   const roleRows = mergeRoleDefaults(center.roleDefaultsBase, snapshot.value?.roleDefaults)

@@ -10,6 +10,8 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  autoAssignDiffers,
+  autoAssignHasTarget,
   autoAssignRoleDefaults,
   mergeRoleDefaults,
   modelKeyOf,
@@ -206,6 +208,34 @@ describe('autoAssignRoleDefaults — 授权变化自动重分配(t23)', () => {
     const next = autoAssignRoleDefaults(current, { 'cc-switch/gpt-5.6-terra[1M]': true }, table)
     expect(next.docs).toEqual({ provider: 'kimi-coding', model: 'kimi-k2.7-code' })
     expect(next.engineer).toEqual({ provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high', auto: true })
+  })
+
+  it('t25:幂等——已分配且授权匹配 → 重算结果不变(初始化不重复写)', () => {
+    const current = {
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high', auto: true },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low', auto: true },
+    }
+    const enabled = { 'cc-switch/gpt-5.6-terra[1M]': true } // designer 目标未授权
+    expect(autoAssignRoleDefaults(current, enabled, table)).toEqual(current)
+    expect(autoAssignDiffers(current, enabled, table)).toBe(false)
+  })
+
+  it('t25:autoAssignDiffers——有变更 true/无变更 false', () => {
+    const enabled = { 'cc-switch/gpt-5.6-terra[1M]': true, 'cc-switch/gpt-5.6-luna[1M]': true }
+    // 空覆盖 → 需要分配(differs true)。
+    expect(autoAssignDiffers(undefined, enabled, table)).toBe(true)
+    // 已按表分配 → 无变更(false)。
+    const assigned = autoAssignRoleDefaults(undefined, enabled, table)
+    expect(autoAssignDiffers(assigned, enabled, table)).toBe(false)
+    // 手动覆盖(engineer 非表档位)→ 仍有变更(designer 待分配)。
+    expect(autoAssignDiffers({ engineer: { model: 'custom' } }, enabled, table)).toBe(true)
+  })
+
+  it('t25:autoAssignHasTarget——任一表目标已授权为 true;无/undefined 为 false', () => {
+    expect(autoAssignHasTarget({ 'cc-switch/gpt-5.6-terra[1M]': true }, table)).toBe(true)
+    expect(autoAssignHasTarget({ 'cc-switch/other-model': true }, table)).toBe(false)
+    expect(autoAssignHasTarget({}, table)).toBe(false)
+    expect(autoAssignHasTarget(undefined, table)).toBe(false)
   })
 })
 
