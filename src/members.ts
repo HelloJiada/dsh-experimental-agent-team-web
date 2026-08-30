@@ -225,6 +225,12 @@ export async function resolveMemberLlmSelection(
   // t12:captain preset effort 在「成员继承 captain 配置路由」时生效(同 captain
   // 路由继承 captainDefaults.reasoningEffort;未配置则沿用会话 effort 逻辑)。
   const roleEffort = request.roleDefaults?.reasoningEffort?.trim()
+  // t12 修复:effort 与 model 同源——roleDefaults 的 effort 仅在「未发生
+  // captain 覆盖」时生效(此时 provider 要么来自 roleDefaults 要么继承队长,
+  // effort 不跨 provider 泄漏);一旦 provider 由 captainDefaults 提供,角色
+  // 档位的 effort(可能是 deepseek 内置档位的)不适用,避免跨 provider 泄漏。
+  const captainOverridesProvider = captainProvider !== undefined
+  const roleEffortApplies = !captainOverridesProvider
   const captainEffort = captainDefaults?.reasoningEffort?.trim()
   const captainInherited = captainDefaults?.provider?.trim() !== undefined
     || captainDefaults?.model?.trim() !== undefined
@@ -232,7 +238,7 @@ export async function resolveMemberLlmSelection(
   const sameCaptainRoute = captainInherited
     && provider === inheritProvider && model === inheritModel
   const reasoningEffort = explicitEffort === undefined
-    ? roleEffort !== undefined && roleEffort !== ''
+    ? roleEffort !== undefined && roleEffort !== '' && roleEffortApplies
       ? roleEffort === 'default'
         ? undefined
         : ReasoningEffortId(roleEffort)
