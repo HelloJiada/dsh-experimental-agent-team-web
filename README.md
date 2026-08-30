@@ -22,6 +22,16 @@ It provides:
 - an in-conversation **team card** that folds the `agent_teams_create` tool call into a chat node and re-opens the floater via a window event;
 - whale artwork for members, captain, and action states (`assets/agent-team-web/`).
 
+## Settings center
+
+DSH Settings hosts an **AgentTeam** section (`settings.section` slot, with a dedicated nav board glyph) of two cards managing model grants and role presets:
+
+- **Model access grants**: per-provider toggles over model authorization (`enabledModels`, composite key `${provider}/${model}`); `deepseek-official` is always granted with a locked "Default" pill. Grants link with role presets — models of unauthorized providers do not appear in the role-preset dropdown.
+- **Role presets**: one row per role (display name + mono id), model dropdown grouped by provider (`optgroup`), reasoning-effort dropdown editable; top-right "Reset to defaults" clears all overrides. A row-level **view button** (eye glyph, matching the DSH Agent-preset interaction) opens a role-duty dialog — slogan + working order + deliverable + key rules (full Chinese copy, source `client/roles.ts` ROLE_DUTY).
+- **Three-source chain**: a role's preset = settings override → profile `roleLlmDefaults` → built-in `DEFAULT_ROLE_LLM`, falling back down the chain when unset; "Reset to defaults" clears overrides to the chain tail.
+- **Grant-linked auto-assignment**: on grant changes (or page init) roles are re-assigned model + effort per `ROLE_AUTO_ASSIGN_TABLE`; manual overrides (distinguished by the `auto` flag) are preserved, unauthorized targets fall back to deepseek, and results carry `auto:true` so they can be recomputed later.
+- **Generic capability adaptation**: `NO_REASONING_EFFORT_PROVIDERS` table + `supportsReasoningEffort()` lookup — models that do not support reasoning effort (e.g. cc-switch GPT-5.6) get no effort written and a disabled effort dropdown; adding a new unsupported model is one provider-id entry.
+
 ## Self-growing framework
 
 The panel is not just a live monitor — it also gives the captain time/workload

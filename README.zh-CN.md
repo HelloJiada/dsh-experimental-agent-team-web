@@ -22,6 +22,16 @@
 - 会话内**团队卡片**,把 `agent_teams_create` 工具调用折叠成聊天节点,并通过 window 事件重新唤起浮动面板;
 - 成员/队长/动作状态的鲸鱼图集(`assets/agent-team-web/`)。
 
+## 设置中心
+
+DSH 设置页内置 **AgentTeam** section(`settings.section` 槽位,含导航专属棋盘图标),两张卡片管理模型调度与角色档位:
+
+- **模型调度授权**:按 provider 粒度开关模型授权(`enabledModels`,复合键 `${provider}/${model}`);deepseek-official 恒授权锁定「默认」徽。授权与角色预设联动——未授权 provider 的模型不出现在角色预设下拉。
+- **角色预设**:每角色一行(中文名 + mono id),模型下拉按 provider 分组(optgroup),推理等级下拉可换;右上角「恢复默认」一键清空全部覆盖。行右侧**查看按钮**(眼睛图标,对齐 DSH Agent 预设交互)弹出角色职责说明——slogan + 工作方式 + 交付物 + 核心准则(中文全量版,数据源 `client/roles.ts` ROLE_DUTY)。
+- **三源链**:角色档位 = settings 覆盖 → profile `roleLlmDefaults` → 内置默认表 `DEFAULT_ROLE_LLM`,上层未设置自动回落下层;「恢复默认」= 清空覆盖回落链尾。
+- **授权联动自动重分配**:授权变化(或页面初始化)自动按档位表重分配角色模型+思考深度(`ROLE_AUTO_ASSIGN_TABLE`),手动覆盖(`auto` 标记区分)不被覆盖,目标未授权回退 deepseek;结果带 `auto:true` 标记可被后续重算。
+- **通用能力适配**:`NO_REASONING_EFFORT_PROVIDERS` 能力表 + `supportsReasoningEffort()` 统一查表——不支持 reasoning effort 的模型(如 cc-switch GPT-5.6)不写 effort、禁用推理等级下拉;新增不支持模型只需在能力表追加 provider id。
+
 ## 自成长框架
 
 面板不仅是实时监视器,还让队长获得时间/工作量可见性,并让框架从每个任务中学习:
