@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  autoAssignRoleDefaults,
   mergeRoleDefaults,
   modelKeyOf,
   providerGrantRows,
@@ -152,6 +153,59 @@ describe('rolePresetModelGroups — 模型下拉按 provider 分组 + 授权过�
 describe('resetRoleDefaults — 「恢复默认」全清(t17)', () => {
   it('返回空 map(scope.set 后所有角色回落三源链)', () => {
     expect(resetRoleDefaults()).toEqual({})
+  })
+})
+
+describe('autoAssignRoleDefaults — 授权变化自动重分配(t23)', () => {
+  // 小档位表(两角色)便于断言。
+  const table = {
+    engineer: {
+      provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high',
+      fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+    },
+    designer: {
+      provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low',
+      fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+    },
+  }
+
+  it('继承态角色被分配:目标授权 → 写 cc-switch + auto:true', () => {
+    const next = autoAssignRoleDefaults(undefined, {
+      'cc-switch/gpt-5.6-terra[1M]': true,
+      'cc-switch/gpt-5.6-luna[1M]': true,
+    }, table)
+    expect(next).toEqual({
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high', auto: true },
+      designer: { provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low', auto: true },
+    })
+  })
+
+  it('目标未授权 → 回退 deepseek 档位(仍 auto:true)', () => {
+    const next = autoAssignRoleDefaults(undefined, {}, table)
+    expect(next).toEqual({
+      engineer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high', auto: true },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low', auto: true },
+    })
+  })
+
+  it('手动覆盖(无 auto)→ 保留不动;auto 标记角色可重算(关授权回退 deepseek)', () => {
+    const current = {
+      engineer: { provider: 'kimi-coding', model: 'kimi-k2.7-code', reasoningEffort: 'high' }, // 手动
+      designer: { provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low', auto: true }, // auto
+    }
+    const next = autoAssignRoleDefaults(current, {}, table)
+    expect(next.engineer).toEqual({ provider: 'kimi-coding', model: 'kimi-k2.7-code', reasoningEffort: 'high' })
+    expect(next.designer).toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low', auto: true })
+  })
+
+  it('无关角色/已有覆盖原样保留;再开授权 auto 角色回到目标', () => {
+    const current = {
+      docs: { provider: 'kimi-coding', model: 'kimi-k2.7-code' }, // 无关角色(不在表)
+      engineer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high', auto: true },
+    }
+    const next = autoAssignRoleDefaults(current, { 'cc-switch/gpt-5.6-terra[1M]': true }, table)
+    expect(next.docs).toEqual({ provider: 'kimi-coding', model: 'kimi-k2.7-code' })
+    expect(next.engineer).toEqual({ provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high', auto: true })
   })
 })
 

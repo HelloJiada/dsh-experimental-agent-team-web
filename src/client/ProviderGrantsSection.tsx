@@ -132,11 +132,95 @@ export function toggleProviderModels(
 }
 
 /** 角色档位值(client 本地形状,与 host AgentTeamSettingsSchema 对齐;
- * 不导入 host provider-grants.ts 以保 client bundle 纯净)。 */
+ * 不导入 host provider-grants.ts 以保 client bundle 纯净)。
+ * auto 标记(t23):系统自动分配标识,使下次授权变化可重算(区别于手动覆盖)。 */
 export interface RoleLlmDefaultValue {
   readonly provider?: string
   readonly model?: string
   readonly reasoningEffort?: string
+  readonly auto?: boolean
+}
+
+/** 自动重分配档位表(t23,用户确认 v2):cc-switch 授权时目标模型 + effort +
+ * deepseek 回退档位(deepseek-official 恒授权)。sol=最强推理(pro 级 5 角色),
+ * terra=稳健执行(技术/质检),luna=轻量省成本(文书/文宣,支持视觉)。 */
+export interface RoleAutoAssignEntry {
+  readonly provider: string
+  readonly model: string
+  readonly reasoningEffort: string
+  readonly fallback: { readonly provider: string; readonly model: string; readonly reasoningEffort: string }
+}
+
+export const ROLE_AUTO_ASSIGN_TABLE: Readonly<Record<string, RoleAutoAssignEntry>> = {
+  researcher: {
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+  },
+  data: {
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+  },
+  reviewer: {
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+  },
+  commissar: {
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+  },
+  security: {
+    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'max',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+  },
+  engineer: {
+    provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+  },
+  qa: {
+    provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+  },
+  docs: {
+    provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+  },
+  designer: {
+    provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low',
+    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+  },
+}
+
+/**
+ * 纯函数(t23):授权变化后自动重分配角色档位(写 settings 覆盖层,不动默认/内置表)。
+ * 逐角色(table 的 key):
+ * a. 手动覆盖(roleDefaults[role] 存在且无 auto 标记)→ 保留不动(尊重显式选择);
+ * b. 否则(继承态或带 auto 标记的自动分配结果)→ 目标模型已授权 → 写
+ *    {provider:'cc-switch', model:目标, reasoningEffort, auto:true};
+ *    目标未授权 → 写 deepseek 原档位回退(deepseek-official 恒授权),同样 auto:true。
+ * 返回新 map 仅含变更(无关角色/已有覆盖原样保留)。
+ */
+export function autoAssignRoleDefaults(
+  current: Readonly<Record<string, RoleLlmDefaultValue>> | undefined,
+  enabledModels: Readonly<Record<string, boolean>> | undefined,
+  table: Readonly<Record<string, RoleAutoAssignEntry>> = ROLE_AUTO_ASSIGN_TABLE,
+): Record<string, RoleLlmDefaultValue> {
+  const next = { ...(current ?? {}) }
+  for (const [role, entry] of Object.entries(table)) {
+    const existing = next[role]
+    if (existing !== undefined && existing.auto !== true) continue // 手动覆盖保留
+    const targetAuthorized = enabledModels?.[modelKeyOf(entry.provider, entry.model)] === true
+    if (targetAuthorized) {
+      next[role] = {
+        provider: entry.provider,
+        model: entry.model,
+        reasoningEffort: entry.reasoningEffort,
+        auto: true,
+      }
+    } else {
+      next[role] = { ...entry.fallback, auto: true }
+    }
+  }
+  return next
 }
 
 /** 纯函数(t20):实时合并角色档位——显示值 = 实时覆盖(scope snapshot)
@@ -243,7 +327,11 @@ function ModelGrantCard({ rows, providers, scope, snapshot, t }: {
   const toggle = async (row: ProviderGrantRow): Promise<void> => {
     if (scope === undefined || row.locked) return
     const models = providers.find(p => p.id === row.id)?.models
-    await scope.set('enabledModels', toggleProviderModels(snapshot.value?.enabledModels, row.id, models, !row.enabled))
+    // t23:授权变化 → 同一次 scope 操作链内自动重分配角色档位(写 settings
+    // 覆盖层:新授权模型用起来 / 关授权回退 deepseek;手动覆盖不动)。
+    const nextEnabled = toggleProviderModels(snapshot.value?.enabledModels, row.id, models, !row.enabled)
+    await scope.set('enabledModels', nextEnabled)
+    await scope.set('roleDefaults', autoAssignRoleDefaults(snapshot.value?.roleDefaults, nextEnabled))
   }
   if (rows.length === 0) return null
   return (

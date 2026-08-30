@@ -79,12 +79,38 @@ export declare function providerGrantRows(providers: readonly ProviderWithModels
  * 模型粒度(enabledModels 复合 key)不变。 */
 export declare function toggleProviderModels(current: Readonly<Record<string, boolean>> | undefined, provider: string, models: readonly string[] | undefined, nextEnabled: boolean): Record<string, boolean>;
 /** 角色档位值(client 本地形状,与 host AgentTeamSettingsSchema 对齐;
- * 不导入 host provider-grants.ts 以保 client bundle 纯净)。 */
+ * 不导入 host provider-grants.ts 以保 client bundle 纯净)。
+ * auto 标记(t23):系统自动分配标识,使下次授权变化可重算(区别于手动覆盖)。 */
 export interface RoleLlmDefaultValue {
     readonly provider?: string;
     readonly model?: string;
     readonly reasoningEffort?: string;
+    readonly auto?: boolean;
 }
+/** 自动重分配档位表(t23,用户确认 v2):cc-switch 授权时目标模型 + effort +
+ * deepseek 回退档位(deepseek-official 恒授权)。sol=最强推理(pro 级 5 角色),
+ * terra=稳健执行(技术/质检),luna=轻量省成本(文书/文宣,支持视觉)。 */
+export interface RoleAutoAssignEntry {
+    readonly provider: string;
+    readonly model: string;
+    readonly reasoningEffort: string;
+    readonly fallback: {
+        readonly provider: string;
+        readonly model: string;
+        readonly reasoningEffort: string;
+    };
+}
+export declare const ROLE_AUTO_ASSIGN_TABLE: Readonly<Record<string, RoleAutoAssignEntry>>;
+/**
+ * 纯函数(t23):授权变化后自动重分配角色档位(写 settings 覆盖层,不动默认/内置表)。
+ * 逐角色(table 的 key):
+ * a. 手动覆盖(roleDefaults[role] 存在且无 auto 标记)→ 保留不动(尊重显式选择);
+ * b. 否则(继承态或带 auto 标记的自动分配结果)→ 目标模型已授权 → 写
+ *    {provider:'cc-switch', model:目标, reasoningEffort, auto:true};
+ *    目标未授权 → 写 deepseek 原档位回退(deepseek-official 恒授权),同样 auto:true。
+ * 返回新 map 仅含变更(无关角色/已有覆盖原样保留)。
+ */
+export declare function autoAssignRoleDefaults(current: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, enabledModels: Readonly<Record<string, boolean>> | undefined, table?: Readonly<Record<string, RoleAutoAssignEntry>>): Record<string, RoleLlmDefaultValue>;
 /** 纯函数(t20):实时合并角色档位——显示值 = 实时覆盖(scope snapshot)
  * ?? base(/state 的 profile ?? DEFAULT,不含覆盖);overridden 由实时覆盖
  * 判定(驱动「恢复默认」disabled 态与选中回显)。 */
