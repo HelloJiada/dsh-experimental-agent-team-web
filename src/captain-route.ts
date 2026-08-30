@@ -50,9 +50,25 @@ function shouldRouteFor(agentId: string, captainConfig: CaptainConfigReader): bo
  */
 export function registerCaptainRoute(ctx: Context, captainConfig: CaptainConfigReader): () => void {
   const disposeCreated = ctx.on('agent/created', (payload: { agent: Agent }) => {
-    const agent = payload.agent
+    installForAgent(payload.agent)
+  })
+  // t17:对 apply 时**已存在**的 agent(含当前队长会话)立即注册——当前会话在
+  // DSH 启动时已创建,不会触发 agent/created,若不枚举注册则队长自己的
+  // agent/request 监听永远缺失,队长请求不会走 gpt(实测 flash 98/gpt 19)。
+  // 与 agent/created 监听互补:list() 覆盖存量,agent/created 覆盖增量。
+  for (const agent of ctx.agents?.list?.() ?? []) {
+    installForAgent(agent)
+  }
+  return () => {
+    disposeCreated?.()
+    captainAgentIds.clear()
+  }
+
+  /** 对单个 agent 注册 agent/request 路由覆盖(幂等:同 agent 只注册一次)。 */
+  function installForAgent(agent: Agent): void {
     const agentId = agent.id
-    // 在该 agent 的 scoped context 上注册 waterfall(仅收到自己的请求)。
+    if (installedAgents.has(agentId)) return
+    installedAgents.add(agentId)
     const disposeRequest = agent.ctx?.on(
       'agent/request',
       async (_payload: unknown, next: () => Promise<LlmCallConfig>): Promise<LlmCallConfig> => {
@@ -78,16 +94,10 @@ export function registerCaptainRoute(ctx: Context, captainConfig: CaptainConfigR
     const disposeDisposed = agent.ctx?.on('agent/disposed', () => {
       disposeRequest?.()
       unmarkCaptainAgent(agentId)
+      installedAgents.delete(agentId)
     })
-    // scoped ctx 卸载时兜底清理。
-    return () => {
-      disposeRequest?.()
-      disposeDisposed?.()
-      unmarkCaptainAgent(agentId)
-    }
-  })
-  return () => {
-    disposeCreated?.()
-    captainAgentIds.clear()
   }
 }
+
+/** t17:已注册过 agent/request 监听的 agent id(防 list()+agent/created 重复注册)。 */
+const installedAgents = new Set<string>()
