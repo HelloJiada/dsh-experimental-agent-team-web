@@ -350,3 +350,38 @@
   flex: none;
   color: var(--dsw-alias-state-business-primary);
 }
+
+/* t10:自成长卡——克制展示,计数 + 最近条目小字。 */
+.growthStat {
+  margin: 0 0 8px;
+  padding: 0 10px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.growthList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.growthItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 40%, transparent);
+}
+.growthPractice {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.growthMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}

@@ -263,18 +263,20 @@ describe('roleDefaultsMap — 角色档位覆盖写(「默认」= 删覆盖)', (
 })
 
 describe('settingsCenterFromStateBody — /state 顶层数据解析(t20 base/覆盖拆分)', () => {
-  it('providers + roleDefaultsBase + roleDefaultsOverrides 直取', () => {
+  it('providers + roleDefaultsBase + roleDefaultsOverrides + selfGrowth 直取', () => {
     const body = {
       providers: PROVIDERS,
       roleDefaultsBase: { engineer: { model: 'deepseek-v4-flash' } },
       roleDefaultsOverrides: { engineer: { model: 'custom-m1' } },
+      selfGrowth: { total: 3, calibrated: 1, recent: [{ id: 'bp-1', sourceTeamId: 't', sourceTaskSubject: 's', role: 'r', practice: 'p', verdict: 'pending' }] },
     }
     expect(settingsCenterFromStateBody(body)).toEqual(body)
   })
 
-  it('结构不符 → 空数组/空 map', () => {
-    expect(settingsCenterFromStateBody(undefined)).toEqual({ providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {} })
-    expect(settingsCenterFromStateBody({ teams: [] })).toEqual({ providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {} })
+  it('结构不符 → 空数组/空 map/空 selfGrowth', () => {
+    const empty = { providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {}, selfGrowth: { total: 0, calibrated: 0, recent: [] } }
+    expect(settingsCenterFromStateBody(undefined)).toEqual(empty)
+    expect(settingsCenterFromStateBody({ teams: [] })).toEqual(empty)
   })
 })
 

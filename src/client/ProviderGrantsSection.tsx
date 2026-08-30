@@ -337,23 +337,41 @@ export function rolePresetModelGroups(
   return groups
 }
 
+/** /state 顶层自成长数据(t10:设置页第三张卡数据源)。 */
+export interface SelfGrowthView {
+  readonly total: number
+  readonly calibrated: number
+  readonly recent: readonly {
+    readonly id: string
+    readonly sourceTeamId: string
+    readonly sourceTaskSubject: string
+    readonly role: string
+    readonly practice: string
+    readonly verdict: string
+  }[]
+}
+
 /** 纯函数(t20):从 /state 响应体取设置中心数据——providers(含 models)+
  * roleDefaultsBase(不含覆盖的 base:profile ?? DEFAULT)+ roleDefaultsOverrides
- * (settings.roleDefaults 原文,初始值;实时覆盖由 scope snapshot 提供)。 */
+ * (settings.roleDefaults 原文,初始值;实时覆盖由 scope snapshot 提供)
+ * + selfGrowth(自成长数据,t10)。 */
 export function settingsCenterFromStateBody(body: unknown): {
   providers: readonly ProviderWithModels[]
   roleDefaultsBase: Record<string, RoleLlmDefaultValue>
   roleDefaultsOverrides: Record<string, RoleLlmDefaultValue>
+  selfGrowth: SelfGrowthView
 } {
   const data = body as {
     providers?: readonly ProviderWithModels[]
     roleDefaultsBase?: Record<string, RoleLlmDefaultValue>
     roleDefaultsOverrides?: Record<string, RoleLlmDefaultValue>
+    selfGrowth?: SelfGrowthView
   } | undefined
   return {
     providers: Array.isArray(data?.providers) ? data.providers : [],
     roleDefaultsBase: data?.roleDefaultsBase ?? {},
     roleDefaultsOverrides: data?.roleDefaultsOverrides ?? {},
+    selfGrowth: data?.selfGrowth ?? { total: 0, calibrated: 0, recent: [] },
   }
 }
 
@@ -362,12 +380,13 @@ export async function fetchSettingsCenter(): Promise<{
   providers: readonly ProviderWithModels[]
   roleDefaultsBase: Record<string, RoleLlmDefaultValue>
   roleDefaultsOverrides: Record<string, RoleLlmDefaultValue>
+  selfGrowth: SelfGrowthView
 }> {
   const token = agentTeamsWebToken()
   const response = await fetch('/plugins/agent-team-web/state', {
     headers: token === undefined ? {} : { [TOKEN_HEADER]: token },
   })
-  if (!response.ok) return { providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {} }
+  if (!response.ok) return { providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {}, selfGrowth: { total: 0, calibrated: 0, recent: [] } }
   return settingsCenterFromStateBody(await response.json())
 }
 
@@ -607,6 +626,41 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
   )
 }
 
+/** 卡片三:自成长(t10)——经验库计数 + 最近条目,克制展示(不搞图表/趋势)。 */
+function GrowthCard({ growth, t }: {
+  readonly growth: SelfGrowthView
+  readonly t: AgentTeamsTranslate
+}): ReactNode {
+  return (
+    <section className={styles.card} aria-label={t('settings.agentTeam.growth')}>
+      <header className={styles.head}>
+        <span className={styles.title}>{t('settings.agentTeam.growth')}</span>
+      </header>
+      {growth.total === 0
+        ? <p className={styles.empty}>{t('settings.agentTeam.growthEmpty')}</p>
+        : (
+          <>
+            <p className={styles.growthStat}>
+              {t('settings.agentTeam.growthCount', { total: growth.total, calibrated: growth.calibrated })}
+            </p>
+            <ul className={styles.growthList}>
+              {growth.recent.map(entry => (
+                <li key={entry.id} className={styles.growthItem}>
+                  <span className={styles.growthPractice}>{entry.practice}</span>
+                  <span className={styles.growthMeta}>
+                    {`${t('settings.agentTeam.growthFrom')} ${entry.sourceTeamId} · ${entry.role}`}
+                    {entry.verdict === 'useful' && ` · ${t('settings.agentTeam.growthVerdict.useful')}`}
+                    {entry.verdict === 'revised' && ` · ${t('settings.agentTeam.growthVerdict.revised')}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+    </section>
+  )
+}
+
 /**
  * AgentTeam 设置中心 section:两张卡(模型调度授权 + 角色预设)。
  * t20 数据流:模型/角色 base = /state 顶层(一次性);授权/覆盖实时状态 =
@@ -618,12 +672,13 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
   const [center, setCenter] = useState<{
     providers: readonly ProviderWithModels[]
     roleDefaultsBase: Record<string, RoleLlmDefaultValue>
-  }>({ providers: [], roleDefaultsBase: {} })
+    selfGrowth: SelfGrowthView
+  }>({ providers: [], roleDefaultsBase: {}, selfGrowth: { total: 0, calibrated: 0, recent: [] } })
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     let alive = true
     void fetchSettingsCenter()
-      .then((data) => { if (alive) { setCenter({ providers: data.providers, roleDefaultsBase: data.roleDefaultsBase }); setLoading(false) } })
+      .then((data) => { if (alive) { setCenter({ providers: data.providers, roleDefaultsBase: data.roleDefaultsBase, selfGrowth: data.selfGrowth }); setLoading(false) } })
       .catch(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [])
@@ -663,6 +718,8 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
             <RolePresetCard rows={roleRows} groups={modelGroups} scope={scope} snapshot={snapshot} t={t} />
           </>
         )}
+      {/* t10:自成长卡独立于前两卡(provider 为空也展示——经验库是全局积累)。 */}
+      <GrowthCard growth={center.selfGrowth} t={t} />
     </div>
   )
 }

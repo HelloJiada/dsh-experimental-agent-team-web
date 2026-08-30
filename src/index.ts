@@ -35,6 +35,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { collectArchivedTeamsActivity, collectProviders, collectTeamsActivity, redactSnapshotForHttp } from './snapshot.ts'
+import { readBestPractices } from './best-practices.ts'
 import { TOKEN_GLOBAL } from './web-auth-constants.ts'
 import { assertTrustedAuthority, createWebToken, webRequestAuthorized } from './web-auth.ts'
 
@@ -156,6 +157,48 @@ function usageSectionText(toolNames: string): string {
 7. Present the team's results to the user, then agent_teams_delete the team unless the user wants to keep working with it.
 
 Tools: ${toolNames}`
+}
+
+/**
+ * 自成长数据汇总(t10,设置页第三张卡)——跨 workspace 合并全局经验库:
+ * 返回总条数 + 校准计数(useful/revised 视为已校准,pending 待校准)+ 最近
+ * 若干条(按 updatedAt 降序,供展示摘要)。任何 workspace 无库/读失败都
+ * 静默容错,返回空数据(设置页显示空态而非报错)。
+ */
+async function collectSelfGrowth(roots: readonly { workspace: string; stateRoot: string }[]): Promise<{
+  total: number
+  calibrated: number
+  recent: readonly {
+    id: string
+    sourceTeamId: string
+    sourceTaskSubject: string
+    role: string
+    practice: string
+    verdict: string
+  }[]
+}> {
+  const entries: Awaited<ReturnType<typeof readBestPractices>> = []
+  for (const root of roots) {
+    try {
+      entries.push(...await readBestPractices(root.stateRoot))
+    } catch {
+      // 单个 workspace 无经验库/损坏:跳过,不阻断整体。
+    }
+  }
+  const sorted = [...entries].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+  const calibrated = entries.filter(e => e.verdict === 'useful' || e.verdict === 'revised').length
+  return {
+    total: entries.length,
+    calibrated,
+    recent: sorted.slice(0, 5).map(e => ({
+      id: e.id,
+      sourceTeamId: e.sourceTeamId,
+      sourceTaskSubject: e.sourceTaskSubject,
+      role: e.role,
+      practice: e.practice,
+      verdict: e.verdict,
+    })),
+  }
 }
 
 export function apply(ctx: Context, config: Config): void {
@@ -323,6 +366,9 @@ export function apply(ctx: Context, config: Config): void {
         roleDefaults,
         roleDefaultsBase,
         roleDefaultsOverrides: roleOverrides,
+        // t10:自成长数据(设置页第三张卡)——全局经验库计数 + 最近条目(含
+        // 校准状态)。跨 workspace 合并:每个 workspace 一份 best-practices.json。
+        selfGrowth: await collectSelfGrowth(roots),
       })
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',

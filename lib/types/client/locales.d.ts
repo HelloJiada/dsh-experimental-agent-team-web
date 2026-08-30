@@ -79,6 +79,12 @@ export declare const zh: {
     'settings.agentTeam.viewEmpty': string;
     'settings.agentTeam.modelDefault': string;
     'settings.agentTeam.close': string;
+    'settings.agentTeam.growth': string;
+    'settings.agentTeam.growthEmpty': string;
+    'settings.agentTeam.growthCount': string;
+    'settings.agentTeam.growthFrom': string;
+    'settings.agentTeam.growthVerdict.useful': string;
+    'settings.agentTeam.growthVerdict.revised': string;
     'settings.agentTeam.loading': string;
     'settings.agentTeam.empty': string;
     'task.runningAria': string;
@@ -358,6 +364,12 @@ export declare const en: {
     'settings.agentTeam.viewEmpty': string;
     'settings.agentTeam.modelDefault': string;
     'settings.agentTeam.close': string;
+    'settings.agentTeam.growth': string;
+    'settings.agentTeam.growthEmpty': string;
+    'settings.agentTeam.growthCount': string;
+    'settings.agentTeam.growthFrom': string;
+    'settings.agentTeam.growthVerdict.useful': string;
+    'settings.agentTeam.growthVerdict.revised': string;
     'settings.agentTeam.loading': string;
     'settings.agentTeam.empty': string;
 };

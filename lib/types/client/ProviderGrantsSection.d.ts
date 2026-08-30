@@ -166,19 +166,35 @@ export declare function rolePresetModelGroups(providers: readonly ProviderWithMo
     providerId: string;
     models: readonly string[];
 }[];
+/** /state 顶层自成长数据(t10:设置页第三张卡数据源)。 */
+export interface SelfGrowthView {
+    readonly total: number;
+    readonly calibrated: number;
+    readonly recent: readonly {
+        readonly id: string;
+        readonly sourceTeamId: string;
+        readonly sourceTaskSubject: string;
+        readonly role: string;
+        readonly practice: string;
+        readonly verdict: string;
+    }[];
+}
 /** 纯函数(t20):从 /state 响应体取设置中心数据——providers(含 models)+
  * roleDefaultsBase(不含覆盖的 base:profile ?? DEFAULT)+ roleDefaultsOverrides
- * (settings.roleDefaults 原文,初始值;实时覆盖由 scope snapshot 提供)。 */
+ * (settings.roleDefaults 原文,初始值;实时覆盖由 scope snapshot 提供)
+ * + selfGrowth(自成长数据,t10)。 */
 export declare function settingsCenterFromStateBody(body: unknown): {
     providers: readonly ProviderWithModels[];
     roleDefaultsBase: Record<string, RoleLlmDefaultValue>;
     roleDefaultsOverrides: Record<string, RoleLlmDefaultValue>;
+    selfGrowth: SelfGrowthView;
 };
 /** 从 /state 拉取设置中心数据(经授权 token)。 */
 export declare function fetchSettingsCenter(): Promise<{
     providers: readonly ProviderWithModels[];
     roleDefaultsBase: Record<string, RoleLlmDefaultValue>;
     roleDefaultsOverrides: Record<string, RoleLlmDefaultValue>;
+    selfGrowth: SelfGrowthView;
 }>;
 /**
  * AgentTeam 设置中心 section:两张卡(模型调度授权 + 角色预设)。
