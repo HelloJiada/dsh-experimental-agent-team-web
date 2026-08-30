@@ -21,6 +21,16 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client';
 import { type ActivityMember, type ActivityTask, type ActivityTeam } from './activity-monitor.ts';
 import type { AgentTeamsTranslate } from './locales.ts';
+/**
+ * 全局 dock 布局让步的单一写面(t27):宽 dock 模式下给会话列让出
+ * `--agent-team-web-panel-shift` 宽度(html 属性 + CSS 变量)。删除团队
+ * (dismissal → return null)时组件可能绕过 useLayoutEffect 清理,此 helper
+ * 供删除成功路径同步调用,确保面板消失的同时全局宽度让步立即释放。
+ * @param shouldYield - 是否让位(dock 展开态)。
+ * @param width - 让位宽度(dock 面板宽 + 间距),shouldYield=false 时忽略。
+ * @param doc - document 注入点(node 测试无全局 document;缺省用全局)。
+ */
+export declare function applyDockLayout(shouldYield: boolean, width?: number, doc?: Document): void;
 /** t24:删除后完全消失状态机的内部状态。 */
 export interface DismissalState {
     /** 本面板是否曾有过活动团队(用于识别「从有变无」的删除事件,区别于从未有团队)。 */

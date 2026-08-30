@@ -109,6 +109,26 @@ const PANEL_SHIFT_PROPERTY = '--agent-team-web-panel-shift'
 const PANEL_CONVERSATION_GAP = 14
 const MOVE_THRESHOLD = 4
 
+/**
+ * 全局 dock 布局让步的单一写面(t27):宽 dock 模式下给会话列让出
+ * `--agent-team-web-panel-shift` 宽度(html 属性 + CSS 变量)。删除团队
+ * (dismissal → return null)时组件可能绕过 useLayoutEffect 清理,此 helper
+ * 供删除成功路径同步调用,确保面板消失的同时全局宽度让步立即释放。
+ * @param shouldYield - 是否让位(dock 展开态)。
+ * @param width - 让位宽度(dock 面板宽 + 间距),shouldYield=false 时忽略。
+ * @param doc - document 注入点(node 测试无全局 document;缺省用全局)。
+ */
+export function applyDockLayout(shouldYield: boolean, width?: number, doc?: Document): void {
+  const root = (doc ?? document).documentElement
+  if (shouldYield && width !== undefined) {
+    root.setAttribute(PANEL_OPEN_ATTRIBUTE, '')
+    root.style.setProperty(PANEL_SHIFT_PROPERTY, `${width + PANEL_CONVERSATION_GAP + 18}px`)
+  } else {
+    root.removeAttribute(PANEL_OPEN_ATTRIBUTE)
+    root.style.removeProperty(PANEL_SHIFT_PROPERTY)
+  }
+}
+
 type PanelGesture = {
   readonly kind: 'move' | 'resize'
   readonly edge?: PanelResizeEdge
@@ -944,19 +964,9 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
   // and compact modes are intentionally true overlays. The width is written as
   // one shared variable so the panel and the concession cannot drift apart.
   useLayoutEffect(() => {
-    const root = document.documentElement
     const shouldYield = expanded && geometry.mode === 'docked' && !compact
-    if (shouldYield) {
-      root.setAttribute(PANEL_OPEN_ATTRIBUTE, '')
-      root.style.setProperty(PANEL_SHIFT_PROPERTY, `${geometry.width + PANEL_CONVERSATION_GAP + 18}px`)
-    } else {
-      root.removeAttribute(PANEL_OPEN_ATTRIBUTE)
-      root.style.removeProperty(PANEL_SHIFT_PROPERTY)
-    }
-    return () => {
-      root.removeAttribute(PANEL_OPEN_ATTRIBUTE)
-      root.style.removeProperty(PANEL_SHIFT_PROPERTY)
-    }
+    applyDockLayout(shouldYield, geometry.width)
+    return () => { applyDockLayout(false) }
   }, [compact, expanded, geometry.mode, geometry.width])
 
   useEffect(() => {
@@ -1103,6 +1113,9 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
         return
       }
       // t24:删除成功 → 立即完全消失(不等轮询 ~1s 的归档发现,减少残留闪烁)。
+      // t27:同步释放全局 dock 宽度让步——组件随即 return null,useLayoutEffect
+      // 清理可能不跑,必须在此主动清理,否则会话列宽度残留(用户症状)。
+      applyDockLayout(false)
       setDismissal({ hadLive: true, dismissed: true })
     } catch (error) {
       console.warn('agent-team-web: close request failed', error)

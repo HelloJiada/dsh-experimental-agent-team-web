@@ -24,6 +24,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
 }))
 
 import {
+  applyDockLayout,
   compactTaskLabel,
   dismissalTransition,
   formatTaskIds,
@@ -258,5 +259,50 @@ describe('dismissalTransition — 删除后完全消失状态机(t24)', () => {
     // 已 dismissed 后仍无团队 → 保持完全消失。
     expect(dismissalTransition({ hadLive: true, dismissed: true }, 0))
       .toEqual({ hadLive: true, dismissed: true })
+  })
+})
+
+describe('applyDockLayout — 全局 dock 宽度让步单一写面(t27)', () => {
+  const ATTR = 'data-agent-team-web-panel-open'
+  const PROP = '--agent-team-web-panel-shift'
+
+  // node 测试环境无全局 document → 注入 stub。
+  const stubDoc = (): Document => {
+    const attrs = new Set<string>()
+    const props = new Map<string, string>()
+    const style = {
+      setProperty: (k: string, v: string) => { props.set(k, v) },
+      removeProperty: (k: string) => { props.delete(k) },
+      getPropertyValue: (k: string) => props.get(k) ?? '',
+    }
+    return {
+      documentElement: {
+        setAttribute: (k: string) => { attrs.add(k) },
+        removeAttribute: (k: string) => { attrs.delete(k) },
+        hasAttribute: (k: string) => attrs.has(k),
+        style,
+      },
+    } as unknown as Document
+  }
+
+  it('shouldYield=true → 设置 html 属性 + 宽度变量', () => {
+    const doc = stubDoc()
+    applyDockLayout(true, 420, doc)
+    expect(doc.documentElement.hasAttribute(ATTR)).toBe(true)
+    expect(doc.documentElement.style.getPropertyValue(PROP)).toContain('px')
+  })
+
+  it('shouldYield=false → 移除属性与变量(删除团队后的清理)', () => {
+    const doc = stubDoc()
+    applyDockLayout(true, 420, doc)
+    applyDockLayout(false, undefined, doc)
+    expect(doc.documentElement.hasAttribute(ATTR)).toBe(false)
+    expect(doc.documentElement.style.getPropertyValue(PROP)).toBe('')
+  })
+
+  it('shouldYield=true 但 width 缺省 → 不清位(防御)', () => {
+    const doc = stubDoc()
+    applyDockLayout(true, undefined, doc)
+    expect(doc.documentElement.hasAttribute(ATTR)).toBe(false)
   })
 })
