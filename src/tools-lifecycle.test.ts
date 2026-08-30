@@ -904,6 +904,8 @@ describe('R-17: scheduler kick 真链路(解除 stub running 短路,验证自动
       expect(deliveredTexts.length).toBeGreaterThan(0)
       expect(deliveredTexts[0]).toContain('agent_teams_claim_task')
       expect(deliveredTexts[0]).toContain('t1')
+      // t7:派发消息含「已认领不重复 claim」引导(成员不再误传 assignee 反复报错)。
+      expect(deliveredTexts[0]).toContain('members cannot set assignee')
       // 成员状态落盘为 working(派单生效)。
       const persisted = await readTeam(stateRoot, 'team-tools')
       expect(persisted?.members.find(m => m.name === '技术员')?.status).toBe('working')

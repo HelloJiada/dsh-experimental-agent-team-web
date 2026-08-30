@@ -188,7 +188,7 @@ Task: ${ticket.taskId} — ${ticket.subject}${description}
 Attempt: ${ticket.attempt}
 Attempt id: ${ticket.attemptId}
 
-Call agent_teams_claim_task for ${ticket.taskId}; it will return this same attempt_id. Include attempt_id=${ticket.attemptId} in every agent_teams_update_task call. If it is rejected as stale, stop work because the task was reassigned. Work only this task in this turn, report the result to the captain, then become idle so the scheduler can select your next ready task.
+Call agent_teams_claim_task for ${ticket.taskId}; it will return this same attempt_id. Include attempt_id=${ticket.attemptId} in every agent_teams_update_task call. If it is rejected as stale, stop work because the task was reassigned. If it is rejected with "members cannot set assignee", you called claim on an already-owned task — do NOT retry claiming; the task is already yours with attempt_id=${ticket.attemptId}, skip straight to agent_teams_update_task (status in_progress first, then completed when done). Work only this task in this turn, report the result to the captain, then become idle so the scheduler can select your next ready task.
 
 State policy: ${stateDir}/${teamId}/ is off-limits to your file tools (enforced); read and mutate team state only through agent_teams_* tools.`
 }
@@ -197,7 +197,7 @@ function fallbackMailboxPrompt(messages: Awaited<ReturnType<typeof readUnreadMai
   return [
     'AgentTeams delivered messages that were persisted while live delivery was unavailable:',
     ...messages.map(message => `\nFrom ${message.from}:\n${message.content}`),
-    '\nHandle these messages in this turn. Task assignments still require agent_teams_claim_task and the current attempt_id.',
+    '\nHandle these messages in this turn. Task assignments: if the message names a task with an attempt_id, the task is already claimed for you — use agent_teams_update_task directly (in_progress → completed) and do NOT call claim again; only call claim for a truly pending task assigned to you.',
   ].join('\n')
 }
 

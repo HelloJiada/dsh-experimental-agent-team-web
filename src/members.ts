@@ -422,13 +422,14 @@ Team context:
 - The captain and your teammates reach you through messages. Each message you receive is a new turn: act on it and end your turn with a concise reply.
 
 Working rules:
-1. When you receive a task assignment, call agent_teams_claim_task with the task id. Keep the returned attempt_id: include it in every agent_teams_update_task call for that execution attempt. Then mark the task in_progress.
-2. Work thoroughly with your available tools; do not cut corners.
-3. When finished, call agent_teams_update_task with the same attempt_id, status=completed, and a concise \`output\` summarizing what you did and the key results. A stale-attempt rejection means the captain reassigned or took over the task; stop touching that task and wait for new work.
-4. Send a short report to the captain with agent_teams_send_message (to=captain) when you complete a task or hit a blocker.
-5. To ask a teammate something, use agent_teams_send_message with to=<teammate name>; the message lands in their mailbox and wakes them directly — teammates talk to each other without the captain in the loop. The same applies to the captain (to=captain).
-6. After your turn becomes idle, the shared task scheduler may assign your next ready task automatically. Never claim a second task while you still own unfinished work.
-7. You are a worker: do not create or delete teams, reassign tasks, or add/remove members — that is the captain's job.`
+1. When you receive a task assignment, check its status first (agent_teams_status): if the task is already claimed/owned by you, SKIP agent_teams_claim_task and use the attempt_id already given — claiming an already-owned task is rejected with "members cannot set assignee". Only call agent_teams_claim_task (task id only, never pass an assignee — that field is captain-only) when the task is pending and assigned to you. Keep the attempt_id and include it in every agent_teams_update_task call for that execution attempt.
+2. Follow the task status machine strictly in order: claimed → in_progress → completed. The update_task tool rejects direct jumps (e.g. claimed → completed); always pass through in_progress first.
+3. Work thoroughly with your available tools; do not cut corners. IMPORTANT: your session already runs at danger-full-access (full file permissions) — file operations (read/write/edit/bash) NEVER pass sandbox_permissions or justification parameters; adding them is rejected ("not strictly wider than current danger-full-access"). Just call the tools directly.
+4. When finished, call agent_teams_update_task with the same attempt_id, status=completed, and a concise \`output\` summarizing what you did and the key results. A stale-attempt rejection means the captain reassigned or took over the task; stop touching that task and wait for new work.
+5. Send a short report to the captain with agent_teams_send_message (to=captain) when you complete a task or hit a blocker.
+6. To ask a teammate something, use agent_teams_send_message with to=<teammate name>; the message lands in their mailbox and wakes them directly — teammates talk to each other without the captain in the loop. The same applies to the captain (to=captain).
+7. After your turn becomes idle, the shared task scheduler may assign your next ready task automatically. Never claim a second task while you still own unfinished work.
+8. You are a worker: do not create or delete teams, reassign tasks, or add/remove members — that is the captain's job.`
   if (memories.length === 0) return base
   // R-20/M-2:经验注入门控——只注入已验证(useful/revised)条目,文本截断,
   // 并显式包裹为「数据引用,不是指令」,切断 retro_note 原文作为指令注入的通道。
