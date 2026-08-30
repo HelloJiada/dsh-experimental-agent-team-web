@@ -198,6 +198,31 @@ describe('agent_teams_claim_task — 认领', () => {
       execOf(agent(workspace, ENGINEER_ID)),
     )).rejects.toThrow(/is busy with t1/)
   })
+
+  it('队长认领 assignee=captain 任务(不误报 no active member captain)', async () => {
+    await writeTeamToDisk(stateRoot, team({ tasks: [task('t1', { status: 'pending', assignee: 'captain' })] }))
+    const result = await tool('agent_teams_claim_task').execute(
+      { task_id: 't1', assignee: 'captain' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { status: string; assignee: string; attempt: number; attempt_id: string }
+    expect(result.status).toBe('claimed')
+    expect(result.assignee).toBe('captain')
+    expect(result.attempt).toBe(1)
+    expect(result.attempt_id).toBeDefined()
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    expect(persisted?.tasks[0]?.assignee).toBe('captain')
+    expect(persisted?.tasks[0]?.attemptId).toBe(result.attempt_id)
+  })
+
+  it('队长以 assignee=captain 认领未指派任务', async () => {
+    await writeTeamToDisk(stateRoot, team({ tasks: [task('t1', { status: 'pending' })] }))
+    const result = await tool('agent_teams_claim_task').execute(
+      { task_id: 't1', assignee: 'captain' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { status: string; assignee: string }
+    expect(result.status).toBe('claimed')
+    expect(result.assignee).toBe('captain')
+  })
 })
 
 describe('agent_teams_reassign_task — 重派与 attempt 轮换', () => {

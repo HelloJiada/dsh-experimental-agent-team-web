@@ -769,7 +769,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         items: { type: 'string' },
         description: 'Task ids this task depends on (must be completed before this task can be claimed).',
       },
-      assignee: { type: 'string', description: 'Optional member name this task is intended for.' },
+      assignee: { type: 'string', description: 'Optional member name this task is intended for; "captain" assigns it to the captain (who still claims it before working).' },
       risk: {
         type: 'string',
         enum: ['low', 'medium', 'high', 'critical'],
@@ -829,7 +829,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             throw new Error(`dependency "${dependency}" does not exist in team "${fresh.name}"`)
           }
         }
-        if (args.assignee !== undefined) requireMember(fresh, args.assignee)
+        if (args.assignee !== undefined && args.assignee !== CAPTAIN_KEY) requireMember(fresh, args.assignee)
         const milestone = args.milestone === true
         // Derived gate flag persisted here so snapshots and the completion
         // gate share one source of truth: high/critical risk or a milestone.
@@ -1005,7 +1005,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
     description: 'Claim one ready task for a member (or yourself). A member cannot own a second unfinished task. The returned attempt_id is required for that member\'s updates and becomes stale after retry/reassignment.',
     parameters: {
       task_id: { type: 'string', required: true, description: 'The task id to claim.' },
-      assignee: { type: 'string', description: 'Member to claim for (captain only; defaults to the task\'s assignee).' },
+      assignee: { type: 'string', description: 'Member to claim for (captain only; defaults to the task\'s assignee); "captain" claims it for the captain.' },
     },
     output: {
       schema: {
@@ -1037,9 +1037,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         }
         let assignee = task.assignee
         if (identity.kind === 'captain') {
-          if (args.assignee !== undefined) {
+          if (args.assignee !== undefined && args.assignee !== CAPTAIN_KEY) {
             requireMember(fresh, args.assignee)
             assignee = args.assignee
+          } else if (args.assignee === CAPTAIN_KEY) {
+            assignee = CAPTAIN_KEY
           }
         } else {
           // t16 优化:成员侧即使误传 assignee 也忽略(不拒绝)——claim 只允许

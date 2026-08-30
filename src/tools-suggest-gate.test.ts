@@ -180,6 +180,20 @@ describe('agent_teams_create_task — 建议字段(改进3 工具级)', () => {
     expect(persisted?.tasks[0]?.assignee).toBe('技术员')
   })
 
+  it('assignee=captain 创建队长任务(不误报 no active member)', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    const result = await tool('agent_teams_create_task').execute(
+      { subject: '队长亲自收尾', assignee: 'captain' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { task_id: string; status: string; assignee?: string; suggested_role?: string }
+    expect(result.assignee).toBe('captain')
+    expect(result.suggested_role).toBeUndefined() // 显式指派 → 无建议
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    const created = persisted?.tasks.find(t => t.id === result.task_id)
+    expect(created?.assignee).toBe('captain')
+    expect(created?.status).toBe('pending') // 仍待认领
+  })
+
   it('无关键词命中的任务不返回建议(不瞎猜)', async () => {
     await writeTeamToDisk(stateRoot, team())
     const result = await tool('agent_teams_create_task').execute(
