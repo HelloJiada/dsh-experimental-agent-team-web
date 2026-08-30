@@ -23,6 +23,7 @@ import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-clie
 import { agentTeamsWebToken } from './activity-monitor.ts'
 import type { AgentTeamsTranslate } from './locales.ts'
 import { roleTitle } from './roles.ts'
+import { AgentTeamIcon } from './AgentTeamIcon.tsx'
 import { TOKEN_HEADER } from '../web-auth-constants.ts'
 import styles from './ProviderGrantsSection.module.css'
 
@@ -393,6 +394,7 @@ function ModelGrantCard({ rows, providers, scope, snapshot, t }: {
   return (
     <section className={styles.card} aria-label={t('settings.agentTeam.modelGrant')}>
       <header className={styles.head}>
+        <AgentTeamIcon />
         <span className={styles.title}>{t('settings.agentTeam.modelGrant')}</span>
       </header>
       <ul className={styles.list}>
@@ -445,6 +447,7 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
   return (
     <section className={styles.card} aria-label={t('settings.agentTeam.rolePreset')}>
       <header className={styles.head}>
+        <AgentTeamIcon />
         <span className={styles.title}>{t('settings.agentTeam.rolePreset')}</span>
         <button
           type="button"
