@@ -35,10 +35,9 @@ export declare function nameTitle(name: string, t: AgentTeamsTranslate): string;
  * names (`技术员 一号`, legacy `技术员一号`). */
 export declare function isRoleName(name: string): boolean;
 /**
- * 角色职责说明表(t9 全量版)——与 host members.ts ROLE_BEHAVIOR_TEMPLATES
- * 逐点对齐的中文完整版,供设置页「查看」弹窗展示。每个角色包含:
- * 定位(slogan) + 工作顺序(steps, 完整步骤) + 交付物(deliverable) +
- * 核心准则(rules, 行为红线/关键约定)。
+ * 角色职责说明表(t9 全量·气势版)——与 host members.ts ROLE_BEHAVIOR_TEMPLATES
+ * 信息点对齐,但采用军事化/战略化中文措辞,用于设置页「查看」弹窗展示,
+ * 让用户一眼感知角色的专业度与分工的严谨。
  */
 export interface RoleDuty {
     readonly slogan: string;
