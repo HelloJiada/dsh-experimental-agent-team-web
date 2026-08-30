@@ -21,6 +21,20 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client';
 import { type ActivityMember, type ActivityTask, type ActivityTeam } from './activity-monitor.ts';
 import type { AgentTeamsTranslate } from './locales.ts';
+/** t24:删除后完全消失状态机的内部状态。 */
+export interface DismissalState {
+    /** 本面板是否曾有过活动团队(用于识别「从有变无」的删除事件,区别于从未有团队)。 */
+    readonly hadLive: boolean;
+    /** 是否处于「删除后完全消失」态(隐藏面板含徽标/空壳/归档区)。 */
+    readonly dismissed: boolean;
+}
+/**
+ * 纯函数(t24):删除后完全消失状态转移——活动团队数量变化驱动:
+ * - liveCount > 0(有活动团队,含新团队出现)→ hadLive=true、dismissed=false(复位);
+ * - liveCount === 0 且 hadLive(从有变无,语音删除或 X 关闭)→ dismissed=true(完全消失);
+ * - liveCount === 0 且从未有过(liveCount 0 首挂)→ 保持原状(交给 !hasTeams 门控)。
+ */
+export declare function dismissalTransition(prev: DismissalState, liveCount: number): DismissalState;
 export declare function taskStatusLabel(status: string, t: AgentTeamsTranslate): string;
 /** 成员模型小字标签(t7,用户最终格式):`ds-v4-flash · high`。
  * deepseek-official → 品牌缩写 `ds` + 完整型号去 provider 前缀段

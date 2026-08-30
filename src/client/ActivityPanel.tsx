@@ -165,6 +165,28 @@ const TASK_STATUS_LABEL: Record<string, AgentTeamsLocaleKey> = {
   cancelled: 'task.status.cancelled',
 }
 
+/** t24:删除后完全消失状态机的内部状态。 */
+export interface DismissalState {
+  /** 本面板是否曾有过活动团队(用于识别「从有变无」的删除事件,区别于从未有团队)。 */
+  readonly hadLive: boolean
+  /** 是否处于「删除后完全消失」态(隐藏面板含徽标/空壳/归档区)。 */
+  readonly dismissed: boolean
+}
+
+/**
+ * 纯函数(t24):删除后完全消失状态转移——活动团队数量变化驱动:
+ * - liveCount > 0(有活动团队,含新团队出现)→ hadLive=true、dismissed=false(复位);
+ * - liveCount === 0 且 hadLive(从有变无,语音删除或 X 关闭)→ dismissed=true(完全消失);
+ * - liveCount === 0 且从未有过(liveCount 0 首挂)→ 保持原状(交给 !hasTeams 门控)。
+ */
+export function dismissalTransition(
+  prev: DismissalState,
+  liveCount: number,
+): DismissalState {
+  if (liveCount > 0) return { hadLive: true, dismissed: false }
+  return prev.hadLive ? { hadLive: prev.hadLive, dismissed: true } : prev
+}
+
 export function taskStatusLabel(status: string, t: AgentTeamsTranslate): string {
   const key = TASK_STATUS_LABEL[status]
   return key === undefined ? status : t(key)
@@ -1033,6 +1055,14 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     // return () => { clearTimeout(timer) }
   }, [visibleCount, autoOpened, wasActive])
 
+  // t24:删除后完全消失状态机——活动团队从有变无(语音删除或 X 关闭)→ 面板
+  // 完全隐藏(含徽标/空壳/归档区);新团队出现(visibleTeams 重新 > 0)→ 复位
+  // 恢复正常显示。纯函数导出供 node 直测。
+  const [dismissal, setDismissal] = useState<DismissalState>({ hadLive: false, dismissed: false })
+  useEffect(() => {
+    setDismissal(prev => dismissalTransition(prev, visibleTeams.length))
+  }, [visibleTeams.length])
+
   const busy = useMemo(
     () => visibleTeams.some((team) => team.members.some((member) => member.activity === 'working')),
     [visibleTeams],
@@ -1072,8 +1102,8 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
         setCloseError(t('activity.closeError'))
         return
       }
-      // Success needs no local state change: the polling monitor discovers
-      // the archived team within ~1s and moves it into the archived section.
+      // t24:删除成功 → 立即完全消失(不等轮询 ~1s 的归档发现,减少残留闪烁)。
+      setDismissal({ hadLive: true, dismissed: true })
     } catch (error) {
       console.warn('agent-team-web: close request failed', error)
       setCloseError(t('activity.closeError'))
@@ -1219,6 +1249,9 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     transform: `translate3d(${geometry.x}px, ${geometry.y}px, 0)`,
   }
 
+  // t24:删除后完全消失(活动团队从有变无)→ 无条件 return null,无徽标/
+  // 空壳/归档区;新团队出现后 dismissal 复位,面板恢复正常。
+  if (dismissal.dismissed) return null
   if (!hasTeams && !expanded) return null
 
   return (

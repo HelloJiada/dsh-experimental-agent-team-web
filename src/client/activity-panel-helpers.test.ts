@@ -25,6 +25,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
 
 import {
   compactTaskLabel,
+  dismissalTransition,
   formatTaskIds,
   healthLevel,
   healthRiskCount,
@@ -235,5 +236,27 @@ describe('memberModelLabel — 成员模型小字(t7 最终格式 ds-v4-flash ·
     expect(memberModelLabel('deepseek-official', undefined, 'high')).toBeNull()
     expect(memberModelLabel('deepseek-official', '  ', 'high')).toBeNull()
     expect(memberModelLabel(undefined, undefined, undefined)).toBeNull()
+  })
+})
+
+describe('dismissalTransition — 删除后完全消失状态机(t24)', () => {
+  it('从未有过活动团队 + 无团队 → 保持原状(交给 !hasTeams 门控)', () => {
+    expect(dismissalTransition({ hadLive: false, dismissed: false }, 0))
+      .toEqual({ hadLive: false, dismissed: false })
+  })
+
+  it('有活动团队 → hadLive 置位、dismissed 复位(新团队出现面板恢复)', () => {
+    expect(dismissalTransition({ hadLive: false, dismissed: false }, 1))
+      .toEqual({ hadLive: true, dismissed: false })
+    expect(dismissalTransition({ hadLive: true, dismissed: true }, 1))
+      .toEqual({ hadLive: true, dismissed: false })
+  })
+
+  it('活动团队从有变无(删除)→ dismissed=true 完全消失(即使归档区非空)', () => {
+    expect(dismissalTransition({ hadLive: true, dismissed: false }, 0))
+      .toEqual({ hadLive: true, dismissed: true })
+    // 已 dismissed 后仍无团队 → 保持完全消失。
+    expect(dismissalTransition({ hadLive: true, dismissed: true }, 0))
+      .toEqual({ hadLive: true, dismissed: true })
   })
 })
