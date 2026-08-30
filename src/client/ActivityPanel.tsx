@@ -1070,7 +1070,15 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
   // 恢复正常显示。纯函数导出供 node 直测。
   const [dismissal, setDismissal] = useState<DismissalState>({ hadLive: false, dismissed: false })
   useEffect(() => {
-    setDismissal(prev => dismissalTransition(prev, visibleTeams.length))
+    setDismissal(prev => {
+      const next = dismissalTransition(prev, visibleTeams.length)
+      // t15:语音删除(agent_teams_delete)→ 轮询发现团队消失 → dismissed=true,
+      // 面板 return null 但 dock 宽度让步残留(useLayoutEffect 依赖未变不重跑;
+      // closeTeam/X 按钮路径 t27 已显式清理,此处补轮询路径)。dismissed 置位
+      // 时同步释放全局宽度让步,会话立即恢复全宽。
+      if (!prev.dismissed && next.dismissed) applyDockLayout(false)
+      return next
+    })
   }, [visibleTeams.length])
 
   const busy = useMemo(
