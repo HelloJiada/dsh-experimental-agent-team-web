@@ -344,7 +344,11 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
               <select
                 className={styles.select}
                 aria-label={`${row.role} ${t('settings.agentTeam.effortAria')}`}
-                value={row.reasoningEffort ?? ''}
+                // t21:删「继承」选项;极端空值(无生效 effort)fallback 到
+                // EFFORT_OPTIONS[0],避免 select 无匹配显示空白。
+                value={EFFORT_OPTIONS.includes(row.reasoningEffort as (typeof EFFORT_OPTIONS)[number])
+                  ? row.reasoningEffort
+                  : EFFORT_OPTIONS[0]}
                 onChange={(event) => {
                   const effort = event.target.value
                   // 次因①:只写三字段(provider/model/effort),不 spread 整个 row
@@ -356,7 +360,6 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                   })
                 }}
               >
-                <option value="">{t('settings.agentTeam.inherit')}</option>
                 {EFFORT_OPTIONS.map(effort => <option key={effort} value={effort}>{effort}</option>)}
               </select>
             </li>
