@@ -65,6 +65,19 @@ export interface ProviderGrantsSectionInjected {
 export type ProviderGrantsSectionProps = Partial<InjectFace<ProviderGrantsSectionInjected>>;
 /** 思考深度选项(与角色档位 effort 值域对齐)。 */
 export declare const EFFORT_OPTIONS: readonly ["high", "max", "low", "off"];
+/**
+ * 已知**不支持** reasoning effort 的 provider 列表(t8 通用适配)。
+ * 这些 provider 的模型没有可选的思考深度——自动重分配/模型切换/effort
+ * 下拉统一查表,不硬编码单一 provider。后续新增不支持 effort 的模型,
+ * 只需在此追加 provider id(或更细粒度时扩展为 Record)。
+ * deepseek-official / kimi-coding / xiaomi 等未列出 = 默认支持(未知按支持处理)。
+ */
+export declare const NO_REASONING_EFFORT_PROVIDERS: readonly string[];
+/**
+ * 纯函数(t8):该 provider 是否支持 reasoning effort(未知 provider 默认支持)。
+ * 替代 t26 的硬编码 `=== 'cc-switch'` 判断,支持未来任意新模型。
+ */
+export declare function supportsReasoningEffort(provider: string | undefined): boolean;
 /** 纯函数:复合 key(`${provider}/${model}`)。 */
 export declare function modelKeyOf(provider: string, model: string): string;
 /**

@@ -88,6 +88,23 @@ const EMPTY_SNAPSHOT: SettingsScopeSnapshot<ProviderGrantsSectionValue> = {
 /** 思考深度选项(与角色档位 effort 值域对齐)。 */
 export const EFFORT_OPTIONS = ['high', 'max', 'low', 'off'] as const
 
+/**
+ * 已知**不支持** reasoning effort 的 provider 列表(t8 通用适配)。
+ * 这些 provider 的模型没有可选的思考深度——自动重分配/模型切换/effort
+ * 下拉统一查表,不硬编码单一 provider。后续新增不支持 effort 的模型,
+ * 只需在此追加 provider id(或更细粒度时扩展为 Record)。
+ * deepseek-official / kimi-coding / xiaomi 等未列出 = 默认支持(未知按支持处理)。
+ */
+export const NO_REASONING_EFFORT_PROVIDERS: readonly string[] = ['cc-switch']
+
+/**
+ * 纯函数(t8):该 provider 是否支持 reasoning effort(未知 provider 默认支持)。
+ * 替代 t26 的硬编码 `=== 'cc-switch'` 判断,支持未来任意新模型。
+ */
+export function supportsReasoningEffort(provider: string | undefined): boolean {
+  return provider !== undefined && !NO_REASONING_EFFORT_PROVIDERS.includes(provider)
+}
+
 /** 纯函数:复合 key(`${provider}/${model}`)。 */
 export function modelKeyOf(provider: string, model: string): string {
   return `${provider}/${model}`
@@ -213,10 +230,14 @@ export function autoAssignRoleDefaults(
     if (existing !== undefined && existing.auto !== true) continue // 手动覆盖保留
     const targetAuthorized = enabledModels?.[modelKeyOf(entry.provider, entry.model)] === true
     if (targetAuthorized) {
+      // t8:写面统一查 supportsReasoningEffort(不依赖档位表条目)——provider
+      // 不支持 effort(GPT-5.6 等)时即使条目意图有 effort 也不落盘。
       next[role] = {
         provider: entry.provider,
         model: entry.model,
-        ...entry.reasoningEffort === undefined ? {} : { reasoningEffort: entry.reasoningEffort },
+        ...entry.reasoningEffort !== undefined && supportsReasoningEffort(entry.provider)
+          ? { reasoningEffort: entry.reasoningEffort }
+          : {},
         auto: true,
       }
     } else {
@@ -453,14 +474,16 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                   return
                 }
                 // 选中模型所属组 → 写 {provider: 组 provider, model}(旧 provider
-                // 不保留);t26:目标组为 cc-switch(GPT-5.6 不支持 reasoning effort)
-                // 时**不保留旧 effort**——写 {provider, model} 无 effort 字段;
+                // 不保留);t8:目标组不支持 reasoning effort(GPT-5.6 等)时
+                // **不保留旧 effort**——写 {provider, model} 无 effort 字段;
                 // 其他组保留当前 reasoningEffort(切模型不丢思考等级)。
                 const group = groups.find(g => g.models.includes(model))
                 void write(row.role, {
                   provider: group?.providerId,
                   model,
-                  ...group?.providerId === 'cc-switch' ? {} : { reasoningEffort: row.reasoningEffort },
+                  ...group?.providerId !== undefined && supportsReasoningEffort(group.providerId)
+                    ? { reasoningEffort: row.reasoningEffort }
+                    : {},
                 })
               }}
             >
@@ -489,9 +512,9 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                 aria-label={`${row.role} ${t('settings.agentTeam.effortAria')}`}
                 // t21:删「继承」选项;极端空值(无生效 effort)fallback 到
                 // EFFORT_OPTIONS[0],避免 select 无匹配显示空白。
-                // t26:当前模型为 cc-switch(GPT-5.6 不支持 reasoning effort)→
+                // t8:当前模型 provider 不支持 reasoning effort(GPT-5.6 等)→
                 // 禁用 effort 下拉(选 effort 无意义;覆盖写面也不再落 effort)。
-                disabled={row.provider === 'cc-switch'}
+                disabled={!supportsReasoningEffort(row.provider)}
                 value={EFFORT_OPTIONS.includes(row.reasoningEffort as (typeof EFFORT_OPTIONS)[number])
                   ? row.reasoningEffort
                   : EFFORT_OPTIONS[0]}

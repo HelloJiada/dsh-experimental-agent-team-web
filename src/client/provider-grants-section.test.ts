@@ -20,6 +20,7 @@ import {
   roleDefaultsMap,
   rolePresetModelGroups,
   settingsCenterFromStateBody,
+  supportsReasoningEffort,
   toggleProviderModels,
 } from './ProviderGrantsSection.tsx'
 
@@ -266,5 +267,25 @@ describe('settingsCenterFromStateBody — /state 顶层数据解析(t20 base/覆
   it('结构不符 → 空数组/空 map', () => {
     expect(settingsCenterFromStateBody(undefined)).toEqual({ providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {} })
     expect(settingsCenterFromStateBody({ teams: [] })).toEqual({ providers: [], roleDefaultsBase: {}, roleDefaultsOverrides: {} })
+  })
+})
+
+describe('supportsReasoningEffort — 能力表查表(t8 通用适配)', () => {
+  it('已知不支持列表(cc-switch)→ false', () => {
+    expect(supportsReasoningEffort('cc-switch')).toBe(false)
+  })
+
+  it('deepseek-official(默认支持)→ true', () => {
+    expect(supportsReasoningEffort('deepseek-official')).toBe(true)
+  })
+
+  it('未知 provider 默认支持(新增模型未登记也安全)→ true', () => {
+    expect(supportsReasoningEffort('kimi-coding')).toBe(true)
+    expect(supportsReasoningEffort('xiaomi')).toBe(true)
+    expect(supportsReasoningEffort('future-provider')).toBe(true)
+  })
+
+  it('undefined → false(无 provider 无 effort)', () => {
+    expect(supportsReasoningEffort(undefined)).toBe(false)
   })
 })
