@@ -714,10 +714,13 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
   const roleRows = mergeRoleDefaults(center.roleDefaultsBase, snapshot.value?.roleDefaults)
   // t11/t12:队长行——顶部合成;t12 接入实时覆盖(settings.roleDefaults.captain
   // 经 snapshot 订阅,写面 scope.set 即时回显),模型/思考深度下拉可用。
+  // t12 修复:autoAssignRoleDefaults 会把 captain 写入 settings 覆盖 →
+  // mergeRoleDefaults 也产出 captain 行;这里合成的队长行是唯一展示,
+  // 过滤 roleRows 里的 captain 避免重复(两个队长 bug)。
   const captainOverride = snapshot.value?.roleDefaults?.captain
   const presetRows: readonly RolePresetRow[] = [
     { role: 'captain', ...captainOverride ?? {}, overridden: captainOverride !== undefined },
-    ...roleRows,
+    ...roleRows.filter(row => row.role !== 'captain'),
   ]
   // t22:授权联动——groups 传实时授权 snapshot(开关切换后 scope.set →
   // snapshot 更新 → uSES 重渲染 → 角色预设下拉即时增删 provider 组)。
