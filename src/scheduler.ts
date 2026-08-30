@@ -93,6 +93,47 @@ function isMemberAvailable(ctx: Context, member: TeamMember): boolean {
   return live === undefined || live.status === 'idle'
 }
 
+/** t3:成员暂不可用时 kick 的延迟重试参数(有界,避免反复打扰)。 */
+const KICK_RETRY_DELAY_MS = 600
+const KICK_RETRY_LIMIT = 3
+
+/** 每个 (workspace, teamId, memberName) 的进行中重试计数(内存)。 */
+const kickRetryCounts = new Map<string, number>()
+
+function kickRetryKey(workspace: string, teamId: string, memberName: string): string {
+  return `${workspace}\u0000${teamId}\u0000${memberName}`
+}
+
+/**
+ * t3:成员暂不可用时安排一次延迟重试 kick(fire-and-forget)。有界重试——
+ * 达上限或成员已可用/removed 后由下一次重试内部判定停止。幂等:每次重试
+ * 重新读团队状态,已开始工作(有 open attempt/status 非 idle)即不再派单。
+ * @param retry - 重试执行回调(调用 runtime.kickMember,由调用方注入)。
+ */
+function scheduleKickRetry(
+  retry: () => Promise<void>,
+  workspace: string,
+  teamId: string,
+  memberName: string,
+  ctx: Context,
+): void {
+  const key = kickRetryKey(workspace, teamId, memberName)
+  const count = kickRetryCounts.get(key) ?? 0
+  if (count >= KICK_RETRY_LIMIT) {
+    kickRetryCounts.delete(key)
+    return
+  }
+  kickRetryCounts.set(key, count + 1)
+  const timer = setTimeout(() => {
+    kickRetryCounts.delete(key)
+    void retry().catch((error: unknown) => {
+      ctx.logger.warn(`agent-team-web: kick retry failed for "${memberName}" in "${teamId}": ${String(error)}`)
+    })
+  }, KICK_RETRY_DELAY_MS)
+  // 不持有句柄:fire-and-forget,进程退出即放弃(与 kickTeamAsync 同模式)。
+  timer.unref?.()
+}
+
 function ownedOpenTask(tasks: readonly TeamTask[], memberName: string): TeamTask | undefined {
   return tasks.find(task => task.assignee === memberName
     && (task.status === 'claimed' || task.status === 'in_progress'))
@@ -230,7 +271,8 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
     }
   }
 
-  const runtime: TeamScheduler = {
+  let runtime: TeamScheduler
+  runtime = {
     async kickTeam(workspace, teamId, suppliedCaptain) {
       const stateRoot = stateRootOf(workspace, config)
       const team = await readTeam(stateRoot, teamId)
@@ -264,7 +306,22 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
         const captain = liveCaptain(ctx, team.captainSessionId, suppliedCaptain)
         if (captain === undefined) return
         let member = team.members.find(candidate => candidate.name === memberName && candidate.status !== 'removed')
-        if (member === undefined || member.id === '' || !isMemberAvailable(ctx, member)) return
+        // t3:成员暂不可用(存在但 live 状态非 idle,如刚 add_member 初始化中)时
+        // 静默 return 会导致建任务后无人唤醒、任务卡 pending。安排延迟重试
+        // (有界:最多 KICK_RETRY_LIMIT 次,间隔 KICK_RETRY_DELAY_MS)——每次
+        // 重试都会重新检查成员状态(已 idle/已开始工作则停止,removed 不重试)。
+        if (member === undefined || member.id === '') return // 不存在/无 id:不重试
+        if (!isMemberAvailable(ctx, member)) {
+          // 重试闭包:延迟后重新调用本方法(runtime 已赋值,方法执行期安全)。
+          scheduleKickRetry(
+            () => runtime.kickMember(workspace, teamId, memberName, suppliedCaptain),
+            workspace,
+            teamId,
+            memberName,
+            ctx,
+          )
+          return
+        }
 
         // A mailbox-only fallback is real pending work. Deliver it before a
         // fresh task and acknowledge only after Harness accepts the follow-up.

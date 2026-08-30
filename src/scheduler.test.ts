@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isHelppableTask, installTeamScheduler, nextHelpTask, type SchedulerConfig } from './scheduler.ts'
 import { beginTaskAttempt, invalidateTaskAttempt } from './state.ts'
 import { memberOpenTask } from './tools.ts'
@@ -385,5 +385,64 @@ describe('kickTeam 集成 — Owner 优先与撤出通知（审查 #2 回归）'
     expect(helperMail).toContain('已恢复任务')
     expect(helperMail).toContain('停止协助')
     expect(helperMail).toContain('t1')
+  })
+})
+
+describe('kickMember 延迟重试 — t3 成员暂不可用不卡 pending', () => {
+  let workspace: string
+  let stateRoot: string
+  const config: SchedulerConfig = { stateDir: '.agent-team-web', stallThresholdMs: STALL }
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-retry-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(join(stateRoot, 'team-sched', 'inbox'), { recursive: true })
+  })
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true })
+  })
+
+  it('成员暂不可用(running)→ 安排重试;延迟后成员 idle → 重试成功派单', async () => {
+    const state = team({ members: [member('A')], tasks: [task('t1', { assignee: 'A' })] })
+    await writeFile(join(stateRoot, 'team-sched', 'team.json'), JSON.stringify(state, null, 2))
+
+    // 可变 live 状态:首次 running(暂不可用),延迟后 idle(可派单)。
+    const liveState: Record<string, { status: 'idle' | 'running' }> = {
+      'session-captain': { status: 'idle' },
+      'session-A': { status: 'running' },
+    }
+    const scheduler = installTeamScheduler(context({ live: liveState }), config)
+
+    // 首次 kick:成员 A running → 暂不可用 → 安排重试(不派单)。
+    await scheduler.kickMember(workspace, 'team-sched', 'A')
+    let fresh = JSON.parse(await readFile(join(stateRoot, 'team-sched', 'team.json'), 'utf8'))
+    expect(fresh.members.find((m: { name: string }) => m.name === 'A')?.status).not.toBe('working')
+
+    // 成员变 idle 后等待真实 600ms 重试窗口 → 重试执行 → 成功派单。
+    liveState['session-A'] = { status: 'idle' }
+    await new Promise(resolve => setTimeout(resolve, 700))
+    fresh = JSON.parse(await readFile(join(stateRoot, 'team-sched', 'team.json'), 'utf8'))
+    expect(fresh.members.find((m: { name: string }) => m.name === 'A')?.status).toBe('working')
+    expect(fresh.tasks.find((t: { id: string }) => t.id === 't1')?.status).toBe('claimed')
+  })
+
+  it('重试有上限:成员持续不可用则有限次重试后放弃,不无限打扰', async () => {
+    const state = team({ members: [member('A')], tasks: [task('t1', { assignee: 'A' })] })
+    await writeFile(join(stateRoot, 'team-sched', 'team.json'), JSON.stringify(state, null, 2))
+
+    const liveState: Record<string, { status: 'idle' | 'running' }> = {
+      'session-captain': { status: 'idle' },
+      'session-A': { status: 'running' }, // 始终不可用
+    }
+    const scheduler = installTeamScheduler(context({ live: liveState }), config)
+
+    await scheduler.kickMember(workspace, 'team-sched', 'A')
+    // 等待多次重试窗口(超上限),成员始终 running → 不应被派单,且重试最终停止。
+    for (let i = 0; i < 5; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 700))
+    }
+    const fresh = JSON.parse(await readFile(join(stateRoot, 'team-sched', 'team.json'), 'utf8'))
+    expect(fresh.members.find((m: { name: string }) => m.name === 'A')?.status).not.toBe('working')
   })
 })
