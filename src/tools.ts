@@ -1060,9 +1060,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             assignee = args.assignee
           }
         } else {
-          if (args.assignee !== undefined) {
-            throw new Error('members cannot set assignee when claiming a task')
-          }
+          // t16 优化:成员侧即使误传 assignee 也忽略(不拒绝)——claim 只允许
+          // 成员认领自己名下的任务,assignee 以任务为准;避免模型自动补
+          // assignee 字段导致"members cannot set assignee"反复卡死。
           if (assignee !== undefined && assignee !== identity.name) {
             throw new Error(`task ${task.id} is assigned to "${assignee}", not you`)
           }
