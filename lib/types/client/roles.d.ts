@@ -35,9 +35,10 @@ export declare function nameTitle(name: string, t: AgentTeamsTranslate): string;
  * names (`技术员 一号`, legacy `技术员一号`). */
 export declare function isRoleName(name: string): boolean;
 /**
- * 角色职责说明表(t9,查看弹窗数据源)——与 host members.ts
- * ROLE_BEHAVIOR_TEMPLATES 语义对齐的精简中文版,供设置页「查看」弹窗展示。
- * 每个角色:标语(slogan) + 工作方式步骤(steps) + 交付物(deliverable)。
+ * 角色职责说明表(t9 全量版)——与 host members.ts ROLE_BEHAVIOR_TEMPLATES
+ * 逐点对齐的中文完整版,供设置页「查看」弹窗展示。每个角色包含:
+ * 定位(slogan) + 工作顺序(steps, 完整步骤) + 交付物(deliverable) +
+ * 核心准则(rules, 行为红线/关键约定)。
  */
 export interface RoleDuty {
     readonly slogan: string;
@@ -46,6 +47,7 @@ export interface RoleDuty {
         readonly desc: string;
     }[];
     readonly deliverable: string;
+    readonly rules: readonly string[];
 }
 /** 已知角色职责(查看弹窗展示);未知角色缺省为 undefined(弹窗不展示职责区)。 */
 export declare const ROLE_DUTY: Readonly<Record<string, RoleDuty>>;

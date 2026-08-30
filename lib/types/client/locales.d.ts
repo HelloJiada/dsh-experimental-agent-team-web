@@ -74,6 +74,7 @@ export declare const zh: {
     'settings.agentTeam.viewAria': string;
     'settings.agentTeam.viewSteps': string;
     'settings.agentTeam.viewDeliverable': string;
+    'settings.agentTeam.viewRules': string;
     'settings.agentTeam.viewCurrent': string;
     'settings.agentTeam.viewEmpty': string;
     'settings.agentTeam.modelDefault': string;
@@ -352,6 +353,7 @@ export declare const en: {
     'settings.agentTeam.viewAria': string;
     'settings.agentTeam.viewSteps': string;
     'settings.agentTeam.viewDeliverable': string;
+    'settings.agentTeam.viewRules': string;
     'settings.agentTeam.viewCurrent': string;
     'settings.agentTeam.viewEmpty': string;
     'settings.agentTeam.modelDefault': string;

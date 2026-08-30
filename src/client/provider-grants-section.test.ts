@@ -315,6 +315,10 @@ describe('ROLE_DUTY — 角色职责说明表(t9 查看弹窗数据源)', () => 
         expect(step.desc.length).toBeGreaterThan(0)
       }
       expect(duty?.deliverable.length).toBeGreaterThan(0)
+      expect(duty?.rules.length).toBeGreaterThan(0)
+      for (const rule of duty?.rules ?? []) {
+        expect(rule.length).toBeGreaterThan(0)
+      }
     }
   })
 

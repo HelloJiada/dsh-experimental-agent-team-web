@@ -331,3 +331,22 @@
   font-size: 12px;
   line-height: 20px;
 }
+
+/* t9 全量版:职责内容滚动容器(内容变长,对齐 DSH viewer 的 max-height+overflow)。 */
+.modalBody {
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  margin-right: -4px;
+  padding-right: 4px;
+}
+.ruleRow {
+  display: flex;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.ruleBullet {
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+}

@@ -575,7 +575,7 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
             {viewedDuty === undefined
               ? <p className={styles.modalEmpty}>{t('settings.agentTeam.viewEmpty')}</p>
               : (
-                <>
+                <div className={styles.modalBody}>
                   <p className={styles.roleSlogan}>{viewedDuty.slogan}</p>
                   <p className={styles.modalSectionTitle}>{t('settings.agentTeam.viewSteps')}</p>
                   {viewedDuty.steps.map((step, index) => (
@@ -586,7 +586,14 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                   ))}
                   <p className={styles.modalSectionTitle}>{t('settings.agentTeam.viewDeliverable')}</p>
                   <p className={styles.dutyDesc} style={{ padding: '0 10px' }}>{viewedDuty.deliverable}</p>
-                </>
+                  <p className={styles.modalSectionTitle}>{t('settings.agentTeam.viewRules')}</p>
+                  {viewedDuty.rules.map(rule => (
+                    <div key={rule} className={styles.ruleRow}>
+                      <span className={styles.ruleBullet}>•</span>
+                      <span className={styles.dutyDesc}>{rule}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             <p className={styles.modalSectionTitle} style={{ marginTop: 14, borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: 10 }}>
               {t('settings.agentTeam.viewCurrent')}
