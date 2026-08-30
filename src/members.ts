@@ -85,12 +85,6 @@ export interface MemberLlmSelectionRequest {
    * canonical role, consulted when no explicit route is given. Absent fields
    * inside it fall through to the captain-inherit path below. */
   roleDefaults?: Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>
-  /** Captain preset (t12): settings.roleDefaults['captain'] — the configured
-   * default the captain wants members to inherit when neither an explicit
-   * route nor a role default exists. It overrides the live captain-session
-   * route (so a ds-flash session can have members inherit gpt-5.6-sol), but
-   * never affects the captain's own session model. */
-  captainDefaults?: Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>
 }
 
 /** Process-local bridge between spawn admission and synchronous child setup. */
@@ -189,28 +183,17 @@ export async function resolveMemberLlmSelection(
   const current = captain.session.requestHeader()?.config
   const currentProvider = current?.provider ?? captain.options.provider
   const currentModel = current?.model ?? captain.options.model
-  // t12:captain 预设(settings.roleDefaults['captain'])作为成员默认继承源——
-  // 在「继承队长会话路由」之前插入:未显式指定、未配角色档位时,用 captain
-  // 配置覆盖会话路由(会话 ds-flash 时成员可继承 gpt-5.6-sol)。不影响队长
-  // 自己(队长=会话,走 currentProvider/currentModel 的原始来源)。
-  const captainDefaults = request.captainDefaults
-  const captainProvider = captainDefaults?.provider?.trim()
-  const captainModel = captainDefaults?.model?.trim()
-  const inheritProvider = captainProvider ?? currentProvider
-  const inheritModel = captainModel ?? currentModel
-  // t12 修复(政委/质检观察):provider 与 model 必须同源配对,杜绝
-  // `cc-switch + deepseek-v4-*` 错配。原链 `model = roleDefaults.model ??
-  // captainModel ?? ...` 在「角色档位只有 deepseek model 无 provider(内置
-  // DEFAULT_ROLE_LLM)」+「captainDefaults 有 cc-switch provider」时,会让
-  // model 取 deepseek、provider 取 cc-switch。修正:model 只有在 provider
-  // 也来自同一层时才从该层取——roleDefaults 带 provider 才用其 model;
-  // 否则走 captainDefaults 的同源对(captainProvider→captainModel)。
+  // 成员路由 bug 修复(保留):provider 与 model 必须同源配对,杜绝
+  // `cc-switch + deepseek-v4-*` 错配。原链 `model = roleDefaults.model ?? ...`
+  // 在「角色档位只有 deepseek model 无 provider(内置 DEFAULT_ROLE_LLM)」+
+  // 「队长会话是 cc-switch」时,会让 model 取 deepseek、provider 取 cc-switch。
+  // 修正:model 只有在 provider 也来自同一层时才从该层取——roleDefaults 带
+  // provider 才用其 model,否则回落 defaultModel/队长会话 model。
   const roleProvider = request.roleDefaults?.provider?.trim()
   const roleModel = request.roleDefaults?.model?.trim()
-  const provider = explicitProvider ?? roleProvider ?? inheritProvider
+  const provider = explicitProvider ?? roleProvider ?? currentProvider
   const model = explicitModel
     ?? (roleProvider !== undefined ? roleModel : undefined)
-    ?? (captainProvider !== undefined ? captainModel : undefined)
     ?? defaultModel ?? currentModel
   if (provider === undefined || model === undefined) {
     throw new Error('cannot resolve the member LLM route from the current captain session')
@@ -222,33 +205,16 @@ export async function resolveMemberLlmSelection(
   // target-default behavior even when the route did not change. Role defaults
   // (auto-assign) sit between: their effort applies on their own route, and
   // the captain-inherit path stays intact when no role default exists.
-  // t12:captain preset effort 在「成员继承 captain 配置路由」时生效(同 captain
-  // 路由继承 captainDefaults.reasoningEffort;未配置则沿用会话 effort 逻辑)。
   const roleEffort = request.roleDefaults?.reasoningEffort?.trim()
-  // t12 修复:effort 与 model 同源——roleDefaults 的 effort 仅在「未发生
-  // captain 覆盖」时生效(此时 provider 要么来自 roleDefaults 要么继承队长,
-  // effort 不跨 provider 泄漏);一旦 provider 由 captainDefaults 提供,角色
-  // 档位的 effort(可能是 deepseek 内置档位的)不适用,避免跨 provider 泄漏。
-  const captainOverridesProvider = captainProvider !== undefined
-  const roleEffortApplies = !captainOverridesProvider
-  const captainEffort = captainDefaults?.reasoningEffort?.trim()
-  const captainInherited = captainDefaults?.provider?.trim() !== undefined
-    || captainDefaults?.model?.trim() !== undefined
   const sameRoute = provider === currentProvider && model === currentModel
-  const sameCaptainRoute = captainInherited
-    && provider === inheritProvider && model === inheritModel
   const reasoningEffort = explicitEffort === undefined
-    ? roleEffort !== undefined && roleEffort !== '' && roleEffortApplies
+    ? roleEffort !== undefined && roleEffort !== ''
       ? roleEffort === 'default'
         ? undefined
         : ReasoningEffortId(roleEffort)
-      : captainEffort !== undefined && captainEffort !== '' && sameCaptainRoute
-        ? captainEffort === 'default'
-          ? undefined
-          : ReasoningEffortId(captainEffort)
-        : sameRoute
-          ? current?.reasoningEffort
-          : undefined
+      : sameRoute
+        ? current?.reasoningEffort
+        : undefined
     : explicitEffort === 'default'
       ? undefined
       : ReasoningEffortId(explicitEffort)

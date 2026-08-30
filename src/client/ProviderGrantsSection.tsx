@@ -175,12 +175,6 @@ export interface RoleAutoAssignEntry {
 }
 
 export const ROLE_AUTO_ASSIGN_TABLE: Readonly<Record<string, RoleAutoAssignEntry>> = {
-  // t12 扩展:队长档位——授权 cc-switch 时队长(指挥者)自动用 gpt-5.6-sol,
-  // 未授权回退 deepseek-v4-pro(职责核心用好模型)。
-  captain: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
-    fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
-  },
   researcher: {
     provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
@@ -715,16 +709,6 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
   const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
   // t20 主因修复:实时合并——显示值 = 实时覆盖(scope snapshot) ?? base(/state)。
   const roleRows = mergeRoleDefaults(center.roleDefaultsBase, snapshot.value?.roleDefaults)
-  // t11/t12:队长行——顶部合成;t12 接入实时覆盖(settings.roleDefaults.captain
-  // 经 snapshot 订阅,写面 scope.set 即时回显),模型/思考深度下拉可用。
-  // t12 修复:autoAssignRoleDefaults 会把 captain 写入 settings 覆盖 →
-  // mergeRoleDefaults 也产出 captain 行;这里合成的队长行是唯一展示,
-  // 过滤 roleRows 里的 captain 避免重复(两个队长 bug)。
-  const captainOverride = snapshot.value?.roleDefaults?.captain
-  const presetRows: readonly RolePresetRow[] = [
-    { role: 'captain', ...captainOverride ?? {}, overridden: captainOverride !== undefined },
-    ...roleRows.filter(row => row.role !== 'captain'),
-  ]
   // t22:授权联动——groups 传实时授权 snapshot(开关切换后 scope.set →
   // snapshot 更新 → uSES 重渲染 → 角色预设下拉即时增删 provider 组)。
   const modelGroups = rolePresetModelGroups(center.providers, snapshot.value?.enabledModels)
@@ -735,7 +719,7 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
         : (
           <>
             <ModelGrantCard rows={providerRows} providers={center.providers} scope={scope} snapshot={snapshot} t={t} />
-            <RolePresetCard rows={presetRows} groups={modelGroups} scope={scope} snapshot={snapshot} t={t} />
+            <RolePresetCard rows={roleRows} groups={modelGroups} scope={scope} snapshot={snapshot} t={t} />
           </>
         )}
       {/* t10:自成长卡独立于前两卡(provider 为空也展示——经验库是全局积累)。 */}

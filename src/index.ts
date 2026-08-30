@@ -26,9 +26,6 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
-import { registerCaptainRoute, markCaptainAgent } from './captain-route.ts'
-import { readTeam } from './state.ts'
-import { readdir } from 'node:fs/promises'
 import { DEFAULT_ROLE_LLM } from './members.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
@@ -273,11 +270,6 @@ export function apply(ctx: Context, config: Config): void {
     roleDefaultsFor: (roleKey) => settingsAccess.roleDefaultsFor?.(roleKey),
   })
 
-  // t12 扩展:队长路由覆盖——AgentTeam 激活时,队长(指挥者)的 LLM 请求按
-  // settings.roleDefaults['captain'] 路由(职责核心用好模型,如 gpt)。仅
-  // 队长 agent + 配置存在时生效,其他会话/普通对话不受影响。
-  registerCaptainRoute(ctx, () => settingsAccess.roleDefaultsFor?.('captain'))
-
   // Deterministic activation surfaces: the closed-namespace `/agent-teams`
   // host command (surfaces in the Web GUI slash menu via the Harness
   // ui-commands client) and the plain-text gesture boundary for surfaces
@@ -307,31 +299,6 @@ export function apply(ctx: Context, config: Config): void {
     const workspaceRegistry = (ctx.get(WORKSPACE_KEYS[0]) ?? ctx.get(WORKSPACE_KEYS[1])) as WorkspaceRegistry | undefined
     if (webServer === undefined || workspaceRegistry === undefined) return
     webRegistered = true
-
-    // t18:重启后从磁盘恢复队长标记——captainAgentIds 是内存 Set,重启清空;
-    // 扫描每个 workspace 的活跃团队(非 archive),对其 captainSessionId
-    // markCaptainAgent,使队长路由覆盖跨重启保持(否则重启后队长仍走 flash)。
-    void (async () => {
-      for (const workspace of workspaceRegistry.list()) {
-        const stateRoot = join(workspace.path, resolved.stateDir)
-        try {
-          const entries = await readdir(stateRoot, { withFileTypes: true })
-          for (const entry of entries) {
-            if (!entry.isDirectory() || entry.name === 'archive') continue
-            try {
-              const team = await readTeam(stateRoot, entry.name)
-              if (team?.captainSessionId !== undefined && team.captainSessionId !== '') {
-                markCaptainAgent(team.captainSessionId)
-              }
-            } catch {
-              // 单个团队读失败(损坏/并发归档):跳过。
-            }
-          }
-        } catch {
-          // workspace 无团队目录:跳过。
-        }
-      }
-    })()
 
     // R-17/H-1: publish the per-boot capability token into the served HTML so
     // the browser panel can echo it in `x-dsh-agent-teams-token`. Only this

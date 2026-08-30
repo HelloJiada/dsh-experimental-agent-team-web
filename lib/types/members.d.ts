@@ -49,16 +49,6 @@ export interface MemberLlmSelectionRequest {
         model?: string;
         reasoningEffort?: string;
     }>;
-    /** Captain preset (t12): settings.roleDefaults['captain'] — the configured
-     * default the captain wants members to inherit when neither an explicit
-     * route nor a role default exists. It overrides the live captain-session
-     * route (so a ds-flash session can have members inherit gpt-5.6-sol), but
-     * never affects the captain's own session model. */
-    captainDefaults?: Readonly<{
-        provider?: string;
-        model?: string;
-        reasoningEffort?: string;
-    }>;
 }
 /** Process-local bridge between spawn admission and synchronous child setup. */
 export interface MemberSelectionRuntime {
