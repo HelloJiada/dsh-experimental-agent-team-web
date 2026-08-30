@@ -302,7 +302,7 @@ describe('supportsReasoningEffort — 能力表查表(t8 通用适配)', () => {
 
 describe('ROLE_DUTY — 角色职责说明表(t9 查看弹窗数据源)', () => {
   const ALL_ROLES = [
-    'researcher', 'engineer', 'qa', 'designer', 'data',
+    'captain', 'researcher', 'engineer', 'qa', 'designer', 'data',
     'docs', 'security', 'reviewer', 'commissar',
   ]
 

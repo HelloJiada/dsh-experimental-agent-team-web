@@ -480,12 +480,15 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
         </button>
       </header>
       <ul className={styles.list}>
-        {rows.map(row => (
+        {rows.map(row => {
+          const isCaptain = row.role === 'captain'
+          return (
           <li key={row.role} className={styles.row} data-overridden={row.overridden}>
             <span className={styles.nameWrap}>
               <span className={styles.name} title={row.role}>{roleTitle(row.role, t)}</span>
               <span className={styles.rowSub}>{row.role}</span>
             </span>
+            {!isCaptain && (<>
             <select
               className={styles.select}
               aria-label={`${row.role} ${t('settings.agentTeam.modelAria')}`}
@@ -555,6 +558,8 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
               >
                 {EFFORT_OPTIONS.map(effort => <option key={effort} value={effort}>{effort}</option>)}
               </select>
+            </>)}
+
               {/* t9:查看职责按钮——纯眼睛图标,对齐 DSH Agent 预设交互。 */}
               <button
                 type="button"
@@ -567,7 +572,7 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
               </button>
             </li>
           )
-        )}
+        })}
       </ul>
       {/* t9:职责说明弹窗(对齐 DSH Agent 预设的只读 viewer)。 */}
       {viewing !== undefined && (
@@ -705,6 +710,12 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
   const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
   // t20 主因修复:实时合并——显示值 = 实时覆盖(scope snapshot) ?? base(/state)。
   const roleRows = mergeRoleDefaults(center.roleDefaultsBase, snapshot.value?.roleDefaults)
+  // t11:队长行——顶部合成(host 无 captain 档位数据,任务 B 才引入;
+  // 此处先只展示名称+查看按钮,模型/思考深度下拉任务 B 接入)。
+  const presetRows: readonly RolePresetRow[] = [
+    { role: 'captain', overridden: false },
+    ...roleRows,
+  ]
   // t22:授权联动——groups 传实时授权 snapshot(开关切换后 scope.set →
   // snapshot 更新 → uSES 重渲染 → 角色预设下拉即时增删 provider 组)。
   const modelGroups = rolePresetModelGroups(center.providers, snapshot.value?.enabledModels)
@@ -715,7 +726,7 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
         : (
           <>
             <ModelGrantCard rows={providerRows} providers={center.providers} scope={scope} snapshot={snapshot} t={t} />
-            <RolePresetCard rows={roleRows} groups={modelGroups} scope={scope} snapshot={snapshot} t={t} />
+            <RolePresetCard rows={presetRows} groups={modelGroups} scope={scope} snapshot={snapshot} t={t} />
           </>
         )}
       {/* t10:自成长卡独立于前两卡(provider 为空也展示——经验库是全局积累)。 */}
