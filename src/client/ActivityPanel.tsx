@@ -86,6 +86,7 @@ import {
   panelUsesAutoHeight,
   parsePanelLayout,
   panelDockAnchor,
+  PANEL_DISMISSAL_STORAGE_KEY,
   resizePanelLayout,
   resolvePanelGeometry,
   type PanelBounds,
@@ -194,17 +195,18 @@ export interface DismissalState {
 }
 
 /**
- * 纯函数(t24):删除后完全消失状态转移——活动团队数量变化驱动:
+ * 纯函数(t24;用户诉求修订):面板消失状态转移——活动团队数量驱动:
  * - liveCount > 0(有活动团队,含新团队出现)→ hadLive=true、dismissed=false(复位);
- * - liveCount === 0 且 hadLive(从有变无,语音删除或 X 关闭)→ dismissed=true(完全消失);
- * - liveCount === 0 且从未有过(liveCount 0 首挂)→ 保持原状(交给 !hasTeams 门控)。
+ * - liveCount === 0 → 保持原状(dismissed 不变)。面板的完全隐藏只由显式关闭
+ *   (X 按钮 closeTeam 直接 setDismissal)触发;语音删除/归档/会话切换导致的
+ *   可见团队归零不再自动消失——创建过团队的用户希望面板常驻。
  */
 export function dismissalTransition(
   prev: DismissalState,
   liveCount: number,
 ): DismissalState {
   if (liveCount > 0) return { hadLive: true, dismissed: false }
-  return prev.hadLive ? { hadLive: prev.hadLive, dismissed: true } : prev
+  return prev
 }
 
 export function taskStatusLabel(status: string, t: AgentTeamsTranslate): string {
@@ -1065,17 +1067,42 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     // return () => { clearTimeout(timer) }
   }, [visibleCount, autoOpened, wasActive])
 
-  // t24:删除后完全消失状态机——活动团队从有变无(语音删除或 X 关闭)→ 面板
-  // 完全隐藏(含徽标/空壳/归档区);新团队出现(visibleTeams 重新 > 0)→ 复位
-  // 恢复正常显示。纯函数导出供 node 直测。
-  const [dismissal, setDismissal] = useState<DismissalState>({ hadLive: false, dismissed: false })
+  // t24:删除后完全消失状态机——用户诉求修订:面板在创建过团队后常驻,只有
+  // 显式关闭(X 按钮 closeTeam)才 dismissed 完全隐藏;语音删除/归档/会话
+  // 切换均不再自动消失(面板保留,展示归档区/空壳/徽标)。新团队出现
+  // (visibleTeams 重新 > 0)→ 复位恢复正常显示。纯函数导出供 node 直测。
+  // 持久化:hadLive/dismissed 跨刷新保留(localStorage),重启后若曾创建过团队
+  // 且未显式关闭,面板保持显示。
+  const [dismissal, setDismissal] = useState<DismissalState>(() => {
+    if (typeof window === 'undefined') return { hadLive: false, dismissed: false }
+    try {
+      const raw = window.localStorage.getItem(PANEL_DISMISSAL_STORAGE_KEY)
+      if (raw === null) return { hadLive: false, dismissed: false }
+      const parsed: unknown = JSON.parse(raw)
+      if (typeof parsed !== 'object' || parsed === null) return { hadLive: false, dismissed: false }
+      const record = parsed as Record<string, unknown>
+      return {
+        hadLive: record.hadLive === true,
+        dismissed: record.dismissed === true,
+      }
+    } catch {
+      return { hadLive: false, dismissed: false }
+    }
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(PANEL_DISMISSAL_STORAGE_KEY, JSON.stringify(dismissal))
+    } catch {
+      // 存储不可用(隐私模式等):仅内存态,不崩溃。
+    }
+  }, [dismissal])
   useEffect(() => {
     setDismissal(prev => {
+      // 任何 live 团队存在 → hadLive=true、dismissed 复位(面板常驻的前提)。
       const next = dismissalTransition(prev, visibleTeams.length)
-      // t15:语音删除(agent_teams_delete)→ 轮询发现团队消失 → dismissed=true,
-      // 面板 return null 但 dock 宽度让步残留(useLayoutEffect 依赖未变不重跑;
-      // closeTeam/X 按钮路径 t27 已显式清理,此处补轮询路径)。dismissed 置位
-      // 时同步释放全局宽度让步,会话立即恢复全宽。
+      // t15 保留:显式关闭(closeTeam 置位 dismissed)时若 dock 宽度让步残留,
+      // 此处顺带释放(useLayoutEffect 依赖未变不重跑的兜底)。
       if (!prev.dismissed && next.dismissed) applyDockLayout(false)
       return next
     })
@@ -1270,10 +1297,12 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     transform: `translate3d(${geometry.x}px, ${geometry.y}px, 0)`,
   }
 
-  // t24:删除后完全消失(活动团队从有变无)→ 无条件 return null,无徽标/
-  // 空壳/归档区;新团队出现后 dismissal 复位,面板恢复正常。
+  // t24:删除后完全消失(显式关闭)→ 无条件 return null,无徽标/空壳/归档区。
   if (dismissal.dismissed) return null
-  if (!hasTeams && !expanded) return null
+  // 用户诉求修订:创建过团队(hadLive)后面板常驻——即使当前会话名下无 live
+  // 团队(会话切换/重启/团队归档),也显示折叠徽标与归档区;从未创建过团队
+  // 且未展开时保持隐藏(不打扰)。
+  if (!dismissal.hadLive && !hasTeams && !expanded) return null
 
   return (
     <>

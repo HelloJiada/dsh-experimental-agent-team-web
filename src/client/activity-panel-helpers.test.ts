@@ -240,8 +240,8 @@ describe('memberModelLabel — 成员模型小字(t7 最终格式 ds-v4-flash ·
   })
 })
 
-describe('dismissalTransition — 删除后完全消失状态机(t24)', () => {
-  it('从未有过活动团队 + 无团队 → 保持原状(交给 !hasTeams 门控)', () => {
+describe('dismissalTransition — 面板消失状态机(t24,用户诉求修订)', () => {
+  it('从未有过活动团队 + 无团队 → 保持原状(交给 !hadLive 门控)', () => {
     expect(dismissalTransition({ hadLive: false, dismissed: false }, 0))
       .toEqual({ hadLive: false, dismissed: false })
   })
@@ -253,10 +253,11 @@ describe('dismissalTransition — 删除后完全消失状态机(t24)', () => {
       .toEqual({ hadLive: true, dismissed: false })
   })
 
-  it('活动团队从有变无(删除)→ dismissed=true 完全消失(即使归档区非空)', () => {
+  it('活动团队归零 → 保持原状,不自动消失(dismissed 只由显式关闭置位)', () => {
+    // 创建过团队(hadLive=true),可见团队归零(归档/会话切换/重启)→ 保持显示。
     expect(dismissalTransition({ hadLive: true, dismissed: false }, 0))
-      .toEqual({ hadLive: true, dismissed: true })
-    // 已 dismissed 后仍无团队 → 保持完全消失。
+      .toEqual({ hadLive: true, dismissed: false })
+    // 显式关闭后(closeTeam 置位)再遇归零 → 保持消失。
     expect(dismissalTransition({ hadLive: true, dismissed: true }, 0))
       .toEqual({ hadLive: true, dismissed: true })
   })

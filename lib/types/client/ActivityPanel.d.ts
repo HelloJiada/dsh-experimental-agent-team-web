@@ -39,10 +39,11 @@ export interface DismissalState {
     readonly dismissed: boolean;
 }
 /**
- * 纯函数(t24):删除后完全消失状态转移——活动团队数量变化驱动:
+ * 纯函数(t24;用户诉求修订):面板消失状态转移——活动团队数量驱动:
  * - liveCount > 0(有活动团队,含新团队出现)→ hadLive=true、dismissed=false(复位);
- * - liveCount === 0 且 hadLive(从有变无,语音删除或 X 关闭)→ dismissed=true(完全消失);
- * - liveCount === 0 且从未有过(liveCount 0 首挂)→ 保持原状(交给 !hasTeams 门控)。
+ * - liveCount === 0 → 保持原状(dismissed 不变)。面板的完全隐藏只由显式关闭
+ *   (X 按钮 closeTeam 直接 setDismissal)触发;语音删除/归档/会话切换导致的
+ *   可见团队归零不再自动消失——创建过团队的用户希望面板常驻。
  */
 export declare function dismissalTransition(prev: DismissalState, liveCount: number): DismissalState;
 export declare function taskStatusLabel(status: string, t: AgentTeamsTranslate): string;

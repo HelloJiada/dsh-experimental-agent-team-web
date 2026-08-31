@@ -18,6 +18,8 @@ export interface PanelBounds {
     readonly anchorRight: number;
 }
 export declare const PANEL_LAYOUT_STORAGE_KEY = "agent-team-web:activity-panel:v1";
+/** 面板消失状态持久化 key(用户诉求:创建过团队后面板常驻,显式关闭才隐藏)。 */
+export declare const PANEL_DISMISSAL_STORAGE_KEY = "agent-team-web:activity-panel:dismissal:v1";
 export declare const PANEL_COMPACT_BREAKPOINT = 960;
 export declare const PANEL_DEFAULT_WIDTH = 388;
 export declare const PANEL_DEFAULT_HEIGHT = 640;
