@@ -1066,10 +1066,16 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             ...task.attemptId === undefined ? {} : { attempt_id: task.attemptId },
           }
         }
-        // R-02:待输入任务不可认领(调度器同样跳过)——先回答待确认问题
-        // (update_task input_answered=true 清除)再派单,避免成员缺输入停滞。
+        // R-02:待输入任务不可由成员认领(调度器同样跳过)——先回答待确认
+        // 问题(update_task input_answered=true 清除)再派单,避免成员缺输入停滞。
+        // 队长例外(验收点②:队长手动 assignee 指定不受影响,队长决策权保留):
+        // 队长是输入提供方——队长认领待输入任务即视为输入已提供,顺带清除标记
+        // (与"开始执行即视为已提供输入"同一语义,显式 false 压制描述派生)。
         if (taskAwaitingInput(task)) {
-          throw new Error(`task ${task.id} is awaiting input (待输入) — answer the pending question first (update_task with input_answered=true) before it can be claimed`)
+          if (identity.kind !== 'captain') {
+            throw new Error(`task ${task.id} is awaiting input (待输入) — the captain must answer the pending question first (update_task with input_answered=true) before a member can claim it`)
+          }
+          task.awaitingInput = false
         }
         const pending = unsatisfiedDependencies(fresh.tasks, task.dependencies)
         if (pending.length > 0) {

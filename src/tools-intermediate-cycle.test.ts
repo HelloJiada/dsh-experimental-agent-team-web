@@ -178,6 +178,48 @@ describe('R-02 — awaitingInput 清除闭环(工具级 + 纯函数)', () => {
     expect(claimed.attempt_id).toBeDefined()
   })
 
+  it('队长可直接认领待输入任务(队长决策权保留,验收点②),并清除 awaitingInput', async () => {
+    await writeTeamToDisk(stateRoot, team({ tasks: [task('t1', { awaitingInput: true })] }))
+    const captain = agent(workspace, CAPTAIN_ID)
+
+    // 队长认领待输入任务不被拦:队长是输入提供方,认领即视为输入已提供。
+    const claimed = await tool('agent_teams_claim_task').execute(
+      { task_id: 't1', assignee: 'captain' },
+      execOf(captain),
+    ) as { task_id: string; assignee: string; attempt: number }
+    expect(claimed.task_id).toBe('t1')
+    expect(claimed.assignee).toBe('captain')
+    expect(claimed.attempt).toBe(1)
+
+    // 认领后 awaitingInput 清除落盘:显式 false 压制描述派生,后续可正常派给成员。
+    let persisted = await readTeam(stateRoot, 'team-tools')
+    let t1 = persisted?.tasks.find(t => t.id === 't1')
+    expect(t1?.awaitingInput).toBe(false)
+    expect(taskAwaitingInput(t1!)).toBe(false)
+    // 任务已由队长认领(status=claimed),不再参与待派单;清除标记已落盘。
+    expect(t1?.status).toBe('claimed')
+    expect(t1?.assignee).toBe('captain')
+
+    // 队长重派回成员后,清除的标记不再拦截调度器/成员认领。
+    const reassigned = await tool('agent_teams_reassign_task').execute(
+      { task_id: 't1', assignee: '技术员', reason: '队长已提供输入,转交成员执行' },
+      execOf(captain),
+    ) as { task_id: string; assignee: string }
+    expect(reassigned.assignee).toBe('技术员')
+    persisted = await readTeam(stateRoot, 'team-tools')
+    t1 = persisted?.tasks.find(t => t.id === 't1')
+    expect(taskAwaitingInput(t1!)).toBe(false)
+    expect(nextReadyTask(persisted!.tasks, '技术员')?.id).toBe('t1')
+
+    // 成员可正常认领(awaitingInput 已清除,不再拦截)。
+    const engineer = agent(workspace, ENGINEER_ID)
+    const claimedByMember = await tool('agent_teams_claim_task').execute(
+      { task_id: 't1' },
+      execOf(engineer),
+    ) as { task_id: string; assignee: string }
+    expect(claimedByMember.assignee).toBe('技术员')
+  })
+
   it('nextReadyTask 跳过派生型(无显式标记但描述含待确认)与显式 true 任务,放行显式 false 任务', () => {
     const tasks = [
       task('t1', { subject: 'a', awaitingInput: true }),

@@ -106,6 +106,46 @@ describe('descriptionAwaitingInput — 任务描述待确认问题检测', () =>
     expect(descriptionAwaitingInput('为什么这样做：见历史复盘')).toBe(false)
     expect(descriptionAwaitingInput('无前置，可立即开工')).toBe(false)
   })
+
+  it('长技术描述中段提及"需要确认 X"属实现指令,不误判(t25 误标根因)', () => {
+    // 1235 字符实现规格,第 970 字符处"需要确认金币包数据源"是给执行者的指令,
+    // 不是等待队长输入的问题——不得判定为待输入。
+    const longSpec = '修复三方支付弹窗金币包商品卡 "x coins + x vouchers" 文案消失。\n\n'
+      + '背景：t18 后金币包在 StorePopupActivity 走订阅分支（setSubscriptionProductInfo）→ '
+      + 'PaymentMethodDialog.productInfoMode=SUBSCRIPTION → bindProductInfo 里 isCoin=false → '
+      + 'mBind.productContent.setVisibility(GONE)。结果：金币包商品卡只剩价格+优惠文案。\n\n'
+      + '修复方案评估（需技术员确认最优）：\n方案 A：StorePopupActivity 订阅分支对金币包额外调 '
+      + 'setCoinProductInfo 之后再 setSubscriptionProductInfo？\n方案 B：bindProductInfo 内对金币包特殊处理：'
+      + '需要确认金币包商品在弹窗内的 coins/vouchers 数据源——StorePopupActivity 订阅分支没传，'
+      + '但 product 有 getGoodCoin/getGoodGiving/getThirdGoodGiving。可在 bindProductInfo 金币包分支里用 '
+      + 'product.getGoodCoin()/resolveVouchers(product) 填充 tv_product_coin/tv_product_vouchers。\n\n'
+      + '请先读代码确认：\n1. bindProductInfo 完整逻辑与布局\n2. setCoinProductInfo 与 setSubscriptionProductInfo 的字段设置\n\n'
+      + '完成后 diff 总结。'
+    expect(descriptionAwaitingInput(longSpec)).toBe(false)
+  })
+
+  it('长描述中提示词位于前部(问题前置式)仍判定为待输入', () => {
+    const leading = '待确认：目标平台是 Web 还是 CLI？\n\n'
+      + '背景：实现导出功能涉及多端适配，需要先确定目标平台再规划其余步骤。'
+      + '后续流程、接口、验收标准都依赖该平台选择，请队长确认后技术员再开工。'
+    expect(descriptionAwaitingInput(leading)).toBe(true)
+  })
+
+  it('长描述中提示词后随冒号/问号(显式提问式)仍判定为待输入', () => {
+    // 提示词出现在第 60 字符之后(不在前部窗口),但后随冒号/问号 → 显式提问式。
+    const colon = '背景：金币包商品卡在订阅模式下只显示价格与优惠文案，'
+      + 'coins 与 vouchers 区域被隐藏且无数据。用户期望恢复显示。'
+      + '修复涉及 StorePopupActivity 与 PaymentMethodDialog 两处布局与数据流，'
+      + '需先确认数据源归属，方案评估如下：\n\n'
+      + '需要确认：金币包数据源是 goodCoin 还是 thirdGoodGiving？\n'
+      + '其余按既定流程推进即可，仅此一项等队长/成员提供输入。'
+    expect(descriptionAwaitingInput(colon)).toBe(true)
+    const question = '背景：改造涉及两套支付弹窗，且订阅分支与内购分支共用同一弹窗布局，'
+      + '字段互斥关系复杂，切换时会互相覆盖，需要先厘清 productInfoMode 与各 setter 的调用顺序，'
+      + '避免方案选型在实现中途返工，相关讨论与历史决策见此前任务复盘，具体按以下方式推进：\n\n'
+      + '请确认：优先级后开工？其余细节见附件，无其他阻塞。'
+    expect(descriptionAwaitingInput(question)).toBe(true)
+  })
 })
 
 describe('taskBlockedByReview — 等待政委复核中间态', () => {

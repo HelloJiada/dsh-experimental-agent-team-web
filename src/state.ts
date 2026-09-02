@@ -881,15 +881,46 @@ const AWAITING_INPUT_HINTS: readonly string[] = [
 const STANDALONE_QUESTION_LINE = /^[?？]\s*$/mu
 
 /**
+ * 待确认提示词在描述中的位置/形态阈值(awaitingInput 判定,避免误标)。
+ * - 前部窗口:待确认问题通常置于描述开头(队长提问式任务)。
+ * - 短描述上限:整段即问题的短任务(如「待确认：目标平台」)。
+ * 长技术规格中段顺带提及"需要确认 X 的数据源"属实现指令而非待确认问题,
+ * 不得误标(t25 误标根因:1235 字符描述第 970 字符处命中"需要确认")。
+ */
+const AWAITING_INPUT_LEADING_CHARS = 60
+const AWAITING_INPUT_SHORT_DESC_CHARS = 120
+
+/**
  * 改进 4:任务描述是否含有待确认问题(等待队长/成员提供输入)。
  * 纯函数:命中显式提示词(待确认/待输入/请确认…)或独立成行的问号即判定,
  * 空描述恒为 false。create_task 以此置位 awaitingInput,快照读取时也以此派生兜底。
+ *
+ * 判定规则(长描述防误标):
+ * 1. 独立成行的问号 → true;
+ * 2. 短描述(≤120 字符,整段即问题)中提示词出现在任意位置 → true;
+ * 3. 长描述中提示词须位于前部(前 60 字符,问题前置式),或后随
+ *    冒号/问号(显式提问式,如「需要确认：X」),否则视为实现指令不判定。
  */
 export function descriptionAwaitingInput(description: string | undefined): boolean {
   if (description === undefined || description === '') return false
   if (STANDALONE_QUESTION_LINE.test(description)) return true
   const normalized = description.toLowerCase()
-  return AWAITING_INPUT_HINTS.some((hint) => normalized.includes(hint))
+  if (description.length <= AWAITING_INPUT_SHORT_DESC_CHARS) {
+    return AWAITING_INPUT_HINTS.some((hint) => normalized.includes(hint))
+  }
+  const leading = normalized.slice(0, AWAITING_INPUT_LEADING_CHARS)
+  if (AWAITING_INPUT_HINTS.some((hint) => leading.includes(hint))) return true
+  // 长描述:提示词后紧跟 冒号/问号 的显式提问式仍判定(可出现在任意位置)。
+  return AWAITING_INPUT_HINTS.some((hint) => {
+    let from = 0
+    for (;;) {
+      const index = normalized.indexOf(hint, from)
+      if (index === -1) return false
+      const after = normalized[index + hint.length]
+      if (after === '：' || after === ':' || after === '？' || after === '?') return true
+      from = index + hint.length
+    }
+  })
 }
 
 /**

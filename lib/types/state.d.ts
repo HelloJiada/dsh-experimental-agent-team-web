@@ -209,6 +209,12 @@ export declare function taskReviewPassed(task: TeamTask): boolean;
  * 改进 4:任务描述是否含有待确认问题(等待队长/成员提供输入)。
  * 纯函数:命中显式提示词(待确认/待输入/请确认…)或独立成行的问号即判定,
  * 空描述恒为 false。create_task 以此置位 awaitingInput,快照读取时也以此派生兜底。
+ *
+ * 判定规则(长描述防误标):
+ * 1. 独立成行的问号 → true;
+ * 2. 短描述(≤120 字符,整段即问题)中提示词出现在任意位置 → true;
+ * 3. 长描述中提示词须位于前部(前 60 字符,问题前置式),或后随
+ *    冒号/问号(显式提问式,如「需要确认：X」),否则视为实现指令不判定。
  */
 export declare function descriptionAwaitingInput(description: string | undefined): boolean;
 /**
