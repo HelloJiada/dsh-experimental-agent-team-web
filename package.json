@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-agent-team-web",
   "description": "External Agent Teams web bundle for DeepSeek Harness",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
