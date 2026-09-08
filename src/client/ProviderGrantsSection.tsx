@@ -19,8 +19,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { agentTeamsWebToken } from './activity-monitor.ts'
 import type { AgentTeamsTranslate } from './locales.ts'
 import { roleTitle, ROLE_DUTY } from './roles.ts'
@@ -65,6 +65,24 @@ export interface ProviderGrantRow {
 
 /** 角色预设行(t17:合并视图直接透传,模型选项改由全 provider 分组提供)。 */
 export type RolePresetRow = RolePresetView
+export type PresetGroupId = 'ds' | 'gpt' | 'mixed'
+
+export interface RolePresetTemplateEntry {
+  readonly provider?: string
+  readonly model?: string
+  readonly reasoningEffort?: string
+}
+
+export interface RolePresetTemplate {
+  readonly id: string
+  readonly group: PresetGroupId
+  readonly label: string
+  readonly description: string
+  readonly cost: string
+  readonly speed: string
+  readonly quality: string
+  readonly roleDefaults: Readonly<Record<string, RolePresetTemplateEntry>>
+}
 
 /** 注入面:scope(读写命名空间) + t(文案)。 */
 export interface ProviderGrantsSectionInjected {
@@ -88,6 +106,209 @@ const EMPTY_SNAPSHOT: SettingsScopeSnapshot<ProviderGrantsSectionValue> = {
 
 /** 思考深度选项(与角色档位 effort 值域对齐)。 */
 export const EFFORT_OPTIONS = ['high', 'max', 'low', 'off'] as const
+
+export const ROLE_PRESET_TEMPLATES: readonly RolePresetTemplate[] = [
+  {
+    id: 'ds-current-default',
+    group: 'ds',
+    label: '当前默认',
+    description: '恢复到当前 Web profile 内置的 AgentTeam 默认配置。',
+    cost: '低到中',
+    speed: '高',
+    quality: '中高',
+    roleDefaults: {
+      researcher: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      engineer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      qa: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+      data: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      docs: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+      security: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+      reviewer: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      commissar: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'ds-all-flash',
+    group: 'ds',
+    label: '全 DS 低成本铺量型',
+    description: '所有常规执行位尽量用 DS，适合预算优先与批量轻任务。',
+    cost: '很低',
+    speed: '很高',
+    quality: '中',
+    roleDefaults: {
+      researcher: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      engineer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      qa: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+      data: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      docs: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+      security: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      reviewer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      commissar: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'ds-pro-balanced',
+    group: 'ds',
+    label: 'Pro 队长的全 DS 均衡协作型',
+    description: '用 Pro 扛研究、数据、审查，用 Flash 负责实现、QA 与文书。',
+    cost: '低到中',
+    speed: '高',
+    quality: '中高',
+    roleDefaults: {
+      researcher: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      engineer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      qa: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+      data: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      docs: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+      security: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+      reviewer: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      commissar: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'ds-pro-risk',
+    group: 'ds',
+    label: 'Pro 队长的全 DS 中高风险任务型',
+    description: '关键判断位全部升到 Pro，只在文书和视觉位保留更省的 Flash。',
+    cost: '中到高',
+    speed: '中',
+    quality: '高',
+    roleDefaults: {
+      researcher: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      engineer: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      qa: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+      data: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      docs: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+      security: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
+      reviewer: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      commissar: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'gpt-current-default',
+    group: 'gpt',
+    label: '当前默认',
+    description: 'GPT 默认模板：Astra 用于政委与安全；不改变队长模型。',
+    cost: '待评估',
+    speed: '待实测',
+    quality: '待实测',
+    roleDefaults: {
+      researcher: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+      qa: { provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+      designer: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+      data: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      docs: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+      security: { provider: 'cc-switch', model: 'gpt-6-astra', reasoningEffort: 'max' },
+      reviewer: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      commissar: { provider: 'cc-switch', model: 'gpt-6-astra', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'gpt-all-balanced',
+    group: 'gpt',
+    label: '全 GPT 通用性价比型',
+    description: 'Sol 负责统筹，Luna 负责主要执行与表达。',
+    cost: '高',
+    speed: '中',
+    quality: '高',
+    roleDefaults: {
+      researcher: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'high' },
+      qa: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'high' },
+      designer: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+      data: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      docs: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+      security: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'max' },
+      reviewer: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      commissar: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'gpt-all-terra',
+    group: 'gpt',
+    label: '全 GPT 长上下文工程型',
+    description: 'Terra 负责研究与实现；三款 GPT-5.6 均配置 1M 上下文。',
+    cost: '高',
+    speed: '中',
+    quality: '高',
+    roleDefaults: {
+      researcher: { provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+      qa: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'high' },
+      designer: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+      data: { provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+      docs: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+      security: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'max' },
+      reviewer: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      commissar: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'mixed-current-default',
+    group: 'mixed',
+    label: '当前默认',
+    description: '推荐的混编默认配置：GPT 负责关键统筹与理解，DS 负责低价执行与输出。',
+    cost: '中',
+    speed: '中高',
+    quality: '高',
+    roleDefaults: {
+      researcher: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'high' },
+      engineer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      qa: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+      data: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      docs: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+      security: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'max' },
+      reviewer: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      commissar: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'mixed-sol-luna-ds',
+    group: 'mixed',
+    label: 'Sol + Luna + DS 通用性价比型',
+    description: '关键执行位用 Luna，收尾与输出位用 DS。',
+    cost: '中',
+    speed: '中高',
+    quality: '高',
+    roleDefaults: {
+      researcher: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'high' },
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'high' },
+      qa: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+      data: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      docs: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+      security: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'max' },
+      reviewer: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      commissar: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+    },
+  },
+  {
+    id: 'mixed-sol-terra-ds',
+    group: 'mixed',
+    label: 'Sol + Terra + DS 长上下文执行型',
+    description: 'Terra 负责吃大上下文，DS 负责低价输出。',
+    cost: '中到高',
+    speed: '中',
+    quality: '高',
+    roleDefaults: {
+      researcher: { provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+      engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+      qa: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+      designer: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
+      data: { provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high' },
+      docs: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
+      security: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'max' },
+      reviewer: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      commissar: { provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+    },
+  },
+]
 
 /**
  * 已知**不支持** reasoning effort 的 provider 列表(t8 通用适配)。
@@ -176,39 +397,39 @@ export interface RoleAutoAssignEntry {
 
 export const ROLE_AUTO_ASSIGN_TABLE: Readonly<Record<string, RoleAutoAssignEntry>> = {
   researcher: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
   },
   data: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
   },
   reviewer: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-sol', reasoningEffort: 'high',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
   },
   commissar: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-6-astra', reasoningEffort: 'high',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
   },
   security: {
-    provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'max',
+    provider: 'cc-switch', model: 'gpt-6-astra', reasoningEffort: 'max',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
   },
   engineer: {
-    provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
   },
   qa: {
-    provider: 'cc-switch', model: 'gpt-5.6-terra[1M]', reasoningEffort: 'high',
+    provider: 'cc-switch', model: 'gpt-5.6-terra', reasoningEffort: 'high',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
   },
   docs: {
-    provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low',
+    provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'low',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'low' },
   },
   designer: {
-    provider: 'cc-switch', model: 'gpt-5.6-luna[1M]', reasoningEffort: 'low',
+    provider: 'cc-switch', model: 'gpt-5.6-luna', reasoningEffort: 'low',
     fallback: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
   },
 }
@@ -316,6 +537,29 @@ export function roleDefaultsMap(
 /** 纯函数(t17):「恢复默认」= 清空全部 roleDefaults 覆盖,所有角色回落三源链。 */
 export function resetRoleDefaults(): Record<string, { provider?: string; model?: string; reasoningEffort?: string }> {
   return {}
+}
+
+export function rolePresetTemplatesByGroup(group: PresetGroupId): readonly RolePresetTemplate[] {
+  return ROLE_PRESET_TEMPLATES.filter(template => template.group === group)
+}
+
+export function applyRolePresetTemplate(
+  template: RolePresetTemplate,
+): Record<string, { provider?: string; model?: string; reasoningEffort?: string }> {
+  return Object.fromEntries(Object.entries(template.roleDefaults).map(([role, value]) => [role, { ...value }]))
+}
+
+export function presetDiffCount(
+  rows: readonly RolePresetRow[],
+  template: RolePresetTemplate,
+): number {
+  let changed = 0
+  for (const row of rows) {
+    const next = template.roleDefaults[row.role]
+    if (next === undefined) continue
+    if (row.provider !== next.provider || row.model !== next.model || row.reasoningEffort !== next.reasoningEffort) changed += 1
+  }
+  return changed
 }
 
 /** 纯函数(t17/t22):模型下拉按 provider 分组——可调度判定与第一张卡
@@ -458,6 +702,9 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
 }): ReactNode {
   // t9:当前查看职责的角色(undefined = 弹窗关闭)。
   const [viewing, setViewing] = useState<RolePresetRow | undefined>(undefined)
+  const [presetOpen, setPresetOpen] = useState(false)
+  const [presetGroup, setPresetGroup] = useState<PresetGroupId>('ds')
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(rolePresetTemplatesByGroup('ds')[0]?.id ?? '')
   const write = async (role: string, value: { provider?: string; model?: string; reasoningEffort?: string } | undefined): Promise<void> => {
     if (scope === undefined) return
     await scope.set('roleDefaults', roleDefaultsMap(snapshot.value?.roleDefaults, role, value))
@@ -466,9 +713,18 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
     if (scope === undefined) return
     await scope.set('roleDefaults', resetRoleDefaults())
   }
+  const applyPreset = async (): Promise<void> => {
+    if (scope === undefined) return
+    const template = rolePresetTemplatesByGroup(presetGroup).find(entry => entry.id === selectedPresetId)
+    if (template === undefined) return
+    await scope.set('roleDefaults', applyRolePresetTemplate(template))
+    setPresetOpen(false)
+  }
   if (rows.length === 0) return null
   const viewedRole = viewing?.role
   const viewedDuty = viewedRole === undefined ? undefined : ROLE_DUTY[viewedRole]
+  const presetTemplates = rolePresetTemplatesByGroup(presetGroup)
+  const selectedPreset = presetTemplates.find(entry => entry.id === selectedPresetId) ?? presetTemplates[0]
   return (
     <section className={styles.card} aria-label={t('settings.agentTeam.rolePreset')}>
       <header className={styles.head}>
@@ -481,7 +737,79 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
         >
           {t('settings.agentTeam.reset')}
         </button>
+        <button
+          type="button"
+          className={styles.resetBtn}
+          onClick={() => {
+            const nextOpen = !presetOpen
+            setPresetOpen(nextOpen)
+            if (nextOpen) {
+              const first = rolePresetTemplatesByGroup(presetGroup)[0]
+              if (first !== undefined) setSelectedPresetId(first.id)
+            }
+          }}
+        >
+          {t('settings.agentTeam.applyPreset')}
+        </button>
       </header>
+      {presetOpen && (
+        <div className={styles.presetPopover}>
+          <div className={styles.presetTitle}>{t('settings.agentTeam.presetTitle')}</div>
+          <p className={styles.presetHelp}>{t('settings.agentTeam.presetHelp')}</p>
+          <p className={styles.presetHelp}>成本、速度、质量为未实测参考分级；Astra 待评估。套用预设不改变队长模型。</p>
+          <div className={styles.presetTabs}>
+            {(['ds', 'gpt', 'mixed'] as const).map(group => (
+              <button
+                key={group}
+                type="button"
+                className={styles.presetTab}
+                data-active={presetGroup === group}
+                onClick={() => {
+                  setPresetGroup(group)
+                  const first = rolePresetTemplatesByGroup(group)[0]
+                  if (first !== undefined) setSelectedPresetId(first.id)
+                }}
+              >
+                {group === 'ds'
+                  ? t('settings.agentTeam.presetGroup.ds')
+                  : group === 'gpt'
+                    ? t('settings.agentTeam.presetGroup.gpt')
+                    : t('settings.agentTeam.presetGroup.mixed')}
+              </button>
+            ))}
+          </div>
+          <div className={styles.presetList}>
+            {presetTemplates.map(template => (
+              <button
+                key={template.id}
+                type="button"
+                className={styles.presetItem}
+                data-active={selectedPreset?.id === template.id}
+                onClick={() => { setSelectedPresetId(template.id) }}
+              >
+                <span className={styles.presetItemHead}>
+                  <span className={styles.presetItemName}>{template.label}</span>
+                  <span className={styles.presetDiffBadge}>{`${t('settings.agentTeam.preset.diff')} ${presetDiffCount(rows, template)}`}</span>
+                </span>
+                <span className={styles.presetMetaRow}>
+                  <span className={styles.presetMetaChip}>{`成本：${template.cost}`}</span>
+                  <span className={styles.presetMetaChip}>{`速度：${template.speed}`}</span>
+                  <span className={styles.presetMetaChip}>{`质量：${template.quality}`}</span>
+                </span>
+                <span className={styles.presetItemDesc}>{template.description}</span>
+              </button>
+            ))}
+          </div>
+          <div className={styles.presetActions}>
+            <button type="button" className={styles.presetActionGhost} onClick={() => { setPresetOpen(false) }}>
+              {t('settings.agentTeam.preset.cancel')}
+            </button>
+            <button type="button" className={styles.presetActionPrimary} onClick={() => { void applyPreset() }}>
+              {t('settings.agentTeam.preset.apply')}
+            </button>
+          </div>
+        </div>
+      )}
       <ul className={styles.list}>
         {rows.map(row => (
           <li key={row.role} className={styles.row} data-overridden={row.overridden}>

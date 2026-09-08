@@ -6,7 +6,11 @@ Consumers install a prebuilt bundle. They must never need to build from source o
 
 ## Why
 
-The bundle never imports the DeepSeek Harness monorepo at runtime. The Agent Teams record types are vendored in `src/agent-team-types.ts`, so the repository builds from npm-published dependencies plus local source. Consumers therefore never trigger a large monorepo git fetch during install.
+The bundle never imports the DeepSeek Harness monorepo at runtime. All host
+interfaces come from npm-published `@deepseek-ai/dsh-*@0.1.3-alpha.2` packages,
+and the AgentTeams kernel (roster, mailbox, task DAG, scheduler) is implemented
+inside this repository. Consumers therefore never trigger a large monorepo git
+fetch during install, and no unpublished package is required.
 
 ## Roles
 

@@ -4,7 +4,7 @@
 
 ## 0. 前置条件
 
-- 一个可运行的 DSH Web Profile（已装 `@deepseek-ai/dsh-client-runtime` 等 Host 包）；
+- 一个可运行的 DSH Web Profile（已装 `@deepseek-ai/dsh-api-session-controller` 等公共 Host 包，DSH `0.1.3-alpha.2`）；
 - 本 bundle（`@deepseek-ai/dsh-experimental-agent-team-web`，agent-team-web runtime 已内置于其中）。
 
 ## 1. 关键前提：宿主必须识别 `agent-team-web/*` 事件类型
@@ -17,7 +17,7 @@ runtime 的事件是 **best-effort**：只有宿主把 `agent-team-web/*`（7 �
 
 ```bash
 # 在 profile 目录（如 ~/.dsh/profiles/web）；agent-team-web runtime 已内置于本 bundle
-pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.0.tgz
+pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.6.tgz
 ```
 
 在 profile patch 中按需启用本 bundle（与包内 `cordis.patch.yml` 一致）：

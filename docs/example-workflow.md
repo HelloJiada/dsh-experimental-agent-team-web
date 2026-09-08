@@ -6,13 +6,16 @@
 
 ## 1. 环境准备
 
-在一个已提供以下包的 DSH Web Profile 中启用本 bundle：
+在一个已提供以下公共 Host 包（DSH `0.1.3-alpha.2`）的 DSH Web Profile 中启用本 bundle：
 
-- `@deepseek-ai/dsh-experimental-agent-team`
 - `@deepseek-ai/dsh-session-projection`
-- `@deepseek-ai/dsh-client-runtime`
+- `@deepseek-ai/dsh-api-session-controller`
+- `@deepseek-ai/dsh-client-store`
+- `@deepseek-ai/dsh-client-ui-chat`
 - `@deepseek-ai/dsh-client-ui-conversation`
 - `@deepseek-ai/dsh-invariants`
+
+本 bundle 自带 AgentTeams 内核，无需安装上游 `@deepseek-ai/dsh-experimental-agent-team` 包。
 
 启用方式见 [../README.md](../README.md) 的 “Enable in a DSH profile”。
 

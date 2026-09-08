@@ -16,8 +16,8 @@
  * @module dsh-agent-team-web/client/provider-grants-section
  */
 import type { ReactNode } from 'react';
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client';
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots';
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client';
 import type { AgentTeamsTranslate } from './locales.ts';
 /**
  * AgentTeam 设置中心命名空间(client 侧本地常量,与 host provider-grants.ts
@@ -56,6 +56,22 @@ export interface ProviderGrantRow {
 }
 /** 角色预设行(t17:合并视图直接透传,模型选项改由全 provider 分组提供)。 */
 export type RolePresetRow = RolePresetView;
+export type PresetGroupId = 'ds' | 'gpt' | 'mixed';
+export interface RolePresetTemplateEntry {
+    readonly provider?: string;
+    readonly model?: string;
+    readonly reasoningEffort?: string;
+}
+export interface RolePresetTemplate {
+    readonly id: string;
+    readonly group: PresetGroupId;
+    readonly label: string;
+    readonly description: string;
+    readonly cost: string;
+    readonly speed: string;
+    readonly quality: string;
+    readonly roleDefaults: Readonly<Record<string, RolePresetTemplateEntry>>;
+}
 /** 注入面:scope(读写命名空间) + t(文案)。 */
 export interface ProviderGrantsSectionInjected {
     scope: SettingsScope<ProviderGrantsSectionValue>;
@@ -65,6 +81,7 @@ export interface ProviderGrantsSectionInjected {
 export type ProviderGrantsSectionProps = Partial<InjectFace<ProviderGrantsSectionInjected>>;
 /** 思考深度选项(与角色档位 effort 值域对齐)。 */
 export declare const EFFORT_OPTIONS: readonly ["high", "max", "low", "off"];
+export declare const ROLE_PRESET_TEMPLATES: readonly RolePresetTemplate[];
 /**
  * 已知**不支持** reasoning effort 的 provider 列表(t8 通用适配)。
  * 这些 provider 的模型没有可选的思考深度——自动重分配/模型切换/effort
@@ -160,6 +177,13 @@ export declare function resetRoleDefaults(): Record<string, {
     model?: string;
     reasoningEffort?: string;
 }>;
+export declare function rolePresetTemplatesByGroup(group: PresetGroupId): readonly RolePresetTemplate[];
+export declare function applyRolePresetTemplate(template: RolePresetTemplate): Record<string, {
+    provider?: string;
+    model?: string;
+    reasoningEffort?: string;
+}>;
+export declare function presetDiffCount(rows: readonly RolePresetRow[], template: RolePresetTemplate): number;
 /** 纯函数(t17/t22):模型下拉按 provider 分组——可调度判定与第一张卡
  * providerGrantRows.enabled 语义一致:deepseek-official 恒可调度(全量模型);
  * 其他 provider = models 非空 && 全部模型已授权(enabledModels 每个

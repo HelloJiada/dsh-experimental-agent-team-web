@@ -20,5 +20,5 @@ export interface AgentTeamsCardInjected {
 /** Complete keyed Chat renderer props. */
 export type AgentTeamsCardProps = PropsRuntime<'conversation.chat.node', 'agent-teams'> & PropsLocale<'agentTeamWeb'> & AgentTeamsCardInjected;
 /** Render one durable team as a compact conversation card. */
-export declare function AgentTeamsCard({ node, openMember, sessionId, t }: AgentTeamsCardProps): import("react").JSX.Element;
+export declare function AgentTeamsCard({ node, openMember, t }: AgentTeamsCardProps): import("react").JSX.Element;
 //# sourceMappingURL=AgentTeamsCard.d.ts.map

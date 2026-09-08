@@ -17,8 +17,9 @@
  * @module dsh-agent-team-web/client/activity
  */
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client';
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
-import type { ObservableSnapshot, SessionListState } from '@deepseek-ai/dsh-client-runtime/client';
 import { type ActivityMember, type ActivityTask, type ActivityTeam } from './activity-monitor.ts';
 import type { AgentTeamsTranslate } from './locales.ts';
 /**

@@ -14,7 +14,6 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import * as dshSession from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEventMap, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AgentTeamsEventType } from './event-types.ts'
@@ -55,10 +54,13 @@ export function appendTeamEvent(
   // `ignorable: true` writer surface, omit these informational records unless
   // the running harness already recognizes them. Disk state remains the
   // authoritative source for the activity panel.
-  const known = (dshSession as unknown as {
-    KNOWN_SESSION_EVENT_TYPES?: ReadonlySet<string>
-  }).KNOWN_SESSION_EVENT_TYPES
-  if (known?.has(type) !== true) {
+  // DSH 0.1.3's released persistence vocabulary does not include this
+  // external plugin namespace. A dirty source checkout may happen to augment
+  // KNOWN_SESSION_EVENT_TYPES, but relying on that would make persisted logs
+  // unreadable on the released build. New official teams use `team/*` events
+  // owned by TeamService, so legacy informational events are always omitted.
+  const known = false
+  if (!known) {
     // R-34:静默丢弃会让面板事件流难以排查——未识别事件至少 warn 一次
     // (按类型去重防刷屏),并累计总数作为可观测指标。
     skippedEventCount += 1

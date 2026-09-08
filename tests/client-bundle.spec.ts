@@ -114,7 +114,7 @@ describe('client bundle protocol', () => {
     ]))
     expect([...requested].every(id => available.has(id))).toBe(true)
     expect(exports).toMatchObject({
-      inject: ['conversationEvents', 'slots', 'sessions', 'locale', 'settingsScope'],
+      inject: ['uiConversation', 'slots', 'sessions', 'locale', 'settingsScope'],
       apply: expect.any(Function),
     })
 
@@ -127,7 +127,7 @@ describe('client bundle protocol', () => {
         register: (): void => undefined,
         bind: (): (key: string) => string => (key: string) => key,
       },
-      conversationEvents: { register: (): void => undefined },
+      uiConversation: { events: { register: (): void => undefined } },
       settingsScope: {
         bind: (): unknown => ({
           getSnapshot: () => ({ status: 'loading', value: undefined }),

@@ -12,7 +12,7 @@
  * @module dsh-agent-team-web/members
  */
 import type { Context } from '@deepseek-ai/cordis';
-import { type Agent } from '@deepseek-ai/dsh-agent';
+import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { BestPracticeEntry } from './best-practices.ts';
 import type { TeamMember, TeamState } from './types.ts';
 /** Runtime knobs for member spawning, resolved from plugin config. */
@@ -83,7 +83,7 @@ export declare function resolveMemberLlmSelection(ctx: Context, captain: Agent, 
  * record. Legacy members without a complete saved route retain Harness's
  * descriptor provider/model behavior.
  */
-export declare function installMemberSelectionRuntime(ctx: Context, stateDir: string): MemberSelectionRuntime;
+export declare function installMemberSelectionRuntime(_ctx: Context, _stateDir: string): MemberSelectionRuntime;
 /**
  * The member's system prompt (persona), shadowing the deployment persona for
  * that child. Self-contained: it replaces the whole persona section.
@@ -142,23 +142,6 @@ export declare function deliverToMember(ctx: Context, captain: Agent, childId: s
  * @param childId - the member's durable child session id.
  */
 export declare function interruptMember(ctx: Context, captain: Agent, childId: string): void;
-/**
- * Install the missing per-child retirement boundary above Harness rc.6.
- *
- * Upstream `interrupt()` deliberately preserves continuable sessions and the
- * upstream seam exposes no targeted forget/retire method. The durable
- * AgentTeams index therefore rejects `followup()` before it can cold-resume a
- * retired member. Catalog rows deliberately remain discoverable: Harness rc.8
- * uses the direct-child catalog to authorize historical transcript reads and
- * `openSubagent()`, so filtering those rows would make an archived member's
- * persisted conversation inaccessible. Exact ids keep unrelated subagents
- * untouched while the followup boundary still prevents further model turns.
- *
- * R-21/L-4: the check is now backed by a 1s TTL cache, so the global guard
- * costs one Set lookup per followup instead of a disk read per call; the
- * patch scope stays global (any path that tries to resume a retired id is
- * refused) but the per-call cost is bounded.
- */
 export declare function installRetiredMemberGuard(ctx: Context, stateDir: string): void;
 /**
  * Snapshot the real driver activity for durable member ids.

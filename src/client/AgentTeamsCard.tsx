@@ -52,11 +52,11 @@ function openActivityPanel(data: AgentTeamsCardData): void {
 }
 
 /** Render one durable team as a compact conversation card. */
-export function AgentTeamsCard({ node, openMember, sessionId, t }: AgentTeamsCardProps) {
+export function AgentTeamsCard({ node, openMember, t }: AgentTeamsCardProps) {
   const data = node.data as AgentTeamsCardData
-  // `conversation.chat.node` is session-scoped, so its framework-owned id is
-  // a stable owner even while another conversation becomes current.
-  const owner = data.captainSessionId || sessionId
+  // DSH 0.1.3's chat-node owner no longer exposes sessionId. The recorded
+  // captain session remains the durable monitor identity for this card.
+  const owner = data.captainSessionId
   const { teams, archivedTeams } = useSyncExternalStore(
     subscribeActivitySnapshots,
     getActivitySnapshotsSnapshot,

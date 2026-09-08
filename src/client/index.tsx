@@ -1,7 +1,8 @@
 /** Browser plugin for the AgentTeams activity floater and conversation card. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the official browser locale service into ClientContext.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -11,6 +12,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // The frame-level overlay is declared by ui-layout. This import is type-only;
 // ctx.slots.inject below owns the runtime wait for the declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// Pull the renderer-owned ctx.slots service augmentation into ClientContext.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section'
 // entry) and the ctx.settingsScope augmentation (settings-namespace scope).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -40,7 +43,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  * `settingsScope` 必须显式声明——cordis 服务代理守卫在未 inject 时访问会抛
  * "cannot get property 'settingsScope' without inject",渲染期崩溃被错误边界
  * 吞掉导致 content 区空白(t11 根因)。 */
-export const inject = ['conversationEvents', 'slots', 'sessions', 'locale', 'settingsScope']
+export const inject = ['uiConversation', 'slots', 'sessions', 'locale', 'settingsScope']
 
 /** The replayed user message is the canonical transcript entry. */
 function HiddenAgentTeamsCommand(): null {
@@ -88,7 +91,7 @@ export function apply(ctx: ClientContext): void {
     key: 'agent-teams',
   }, HiddenAgentTeamsCommand))
 
-  ctx.conversationEvents.register(agentTeamsCardDefinition)
+  ctx.uiConversation.events.register(agentTeamsCardDefinition)
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'agent-teams',

@@ -10,7 +10,7 @@
  * the card survives restarts without writing an out-of-repo event type.
  * @module dsh-agent-team-web/client/card
  */
-import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-runtime/client';
+import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client';
 /** Final keyed Chat payload for the team summary card. */
 export interface AgentTeamsCardData {
     readonly teamId: string;
@@ -23,7 +23,7 @@ export interface AgentTeamsCardData {
         readonly role: string;
     }[];
 }
-declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     interface ChatNodeDataMap {
         /** Lightweight team summary card anchoring the conversation. */
         'agent-teams': AgentTeamsCardData;

@@ -13,19 +13,19 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { installModelSelection, type Agent, type ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 // Declaration merge only: makes ctx.subagents visible.
-import { foldSubagentDescriptor, SubagentError } from '@deepseek-ai/dsh-subagent'
+import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { join } from 'node:path'
 import { isCommissarRole } from './commissar-gate.ts'
 import { canonicalExecRole } from './role-limits.ts'
-import { readRetiredMemberIds, readTeamSync } from './state.ts'
 import { registerMemberAgent } from './member-state-guard.ts'
 import { truncatePracticeForInjection } from './best-practices.ts'
 import type { BestPracticeEntry } from './best-practices.ts'
 import type { TeamMember, TeamState } from './types.ts'
+import { readRetiredMemberIds } from './state.ts'
 
 /** Captain-only AgentTeams tools hidden from newly spawned members. */
 const MEMBER_DENIED_TOOLS = [
@@ -118,32 +118,6 @@ export const DEFAULT_ROLE_LLM: Readonly<Record<string, Readonly<{ provider?: str
   commissar: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
 }
 
-function pendingSelectionKey(parentSessionId: string, label: string): string {
-  return `${parentSessionId}\u0000${label}`
-}
-
-function selectionFromMember(member: TeamMember | undefined): MemberLlmSelection | undefined {
-  if (member?.provider === undefined || member.model === undefined) return undefined
-  const provider = member.provider.trim()
-  const model = member.model.trim()
-  if (provider === '' || model === '') return undefined
-  const reasoningEffort = member.reasoningEffort?.trim()
-  return {
-    provider,
-    model,
-    ...reasoningEffort === undefined || reasoningEffort === '' ? {} : { reasoningEffort },
-  }
-}
-
-function modelSelection(selection: MemberLlmSelection): ModelSelection {
-  return {
-    provider: selection.provider,
-    model: selection.model,
-    ...selection.reasoningEffort === undefined
-      ? {}
-      : { reasoningEffort: ReasoningEffortId(selection.reasoningEffort) },
-  }
-}
 
 /**
  * Resolve one member's complete model selection. Ordinary members snapshot the
@@ -241,63 +215,21 @@ export async function resolveMemberLlmSelection(
  * record. Legacy members without a complete saved route retain Harness's
  * descriptor provider/model behavior.
  */
-export function installMemberSelectionRuntime(ctx: Context, stateDir: string): MemberSelectionRuntime {
-  const pending = new Map<string, MemberLlmSelection>()
-  ctx.subagents.registerContinuableSetup((childCtx) => {
-    const child = childCtx.agent
-    if (child === undefined) return () => undefined
-    const suffix = child.session.events.slice(child.session.header.seedLength ?? 0)
-    const descriptor = foldSubagentDescriptor(suffix)
-    if (descriptor?.mode !== 'continuable' || !descriptor.label.startsWith(MEMBER_LABEL_PREFIX)) {
-      return () => undefined
-    }
-
-    const parentSessionId = child.session.header.parentSession
-    if (parentSessionId === undefined) return () => undefined
-    // R-18/H-2: every continuable member child (fresh or cold-resumed) is
-    // registered with the state-dir guard so its file tools are denied the
-    // team state directory.
-    registerMemberAgent(child.id)
-    const key = pendingSelectionKey(parentSessionId, descriptor.label)
-    let selection = pending.get(key)
-    if (selection === undefined) {
-      const identity = descriptor.label.slice(MEMBER_LABEL_PREFIX.length)
-      const separator = identity.indexOf(':')
-      if (separator < 1 || separator === identity.length - 1) return () => undefined
-      const teamId = identity.slice(0, separator)
-      const memberName = identity.slice(separator + 1)
-      const workspace = child.session.header.cwd ?? process.cwd()
-      const team = readTeamSync(join(workspace, stateDir), teamId)
-      if (team?.captainSessionId !== parentSessionId) return () => undefined
-      selection = selectionFromMember(team.members.find(member => member.name === memberName))
-      // An old team record has no provider/reasoning snapshot. Its durable
-      // Harness descriptor still restores provider/model, so leave it alone.
-      if (selection === undefined) return () => undefined
-      if (descriptor.agentProvider !== selection.provider || descriptor.agentModel !== selection.model) {
-        throw new Error(
-          `agent-team-web: saved model route for member "${memberName}" does not match its subagent descriptor`,
-        )
-      }
-    }
-
-    return installModelSelection(childCtx, {
-      current: modelSelection(selection),
-      assembled: undefined,
-    })
-  })
-
+export function installMemberSelectionRuntime(_ctx: Context, _stateDir: string): MemberSelectionRuntime {
+  // DSH 0.1.3 persists the complete `agentOptions` on the continuable
+  // descriptor and restores it itself. Keep only the admission guard used by
+  // the legacy test/runtime path; no child setup hook is installed.
+  const pending = new Set<string>()
   return {
     async withPending<T>(
       parentSessionId: string,
       label: string,
-      selection: MemberLlmSelection,
+      _selection: MemberLlmSelection,
       operation: () => Promise<T>,
     ): Promise<T> {
-      const key = pendingSelectionKey(parentSessionId, label)
-      if (pending.has(key)) {
-        throw new Error(`member model selection is already pending for "${label}"`)
-      }
-      pending.set(key, selection)
+      const key = `${parentSessionId}\u0000${label}`
+      if (pending.has(key)) throw new Error(`member model selection is already pending for "${label}"`)
+      pending.add(key)
       try {
         return await operation()
       } finally {
@@ -521,6 +453,9 @@ export async function spawnMember(
         agentOptions: {
           provider: llmSelection.provider,
           model: llmSelection.model,
+          ...llmSelection.reasoningEffort === undefined
+            ? {}
+            : { reasoningEffort: ReasoningEffortId(llmSelection.reasoningEffort) },
         },
         ...config.maxDepth !== undefined ? { maxDepth: config.maxDepth } : {},
       },
@@ -558,10 +493,13 @@ export async function deliverToMember(
   signal: AbortSignal,
 ): Promise<boolean> {
   try {
-    await ctx.subagents.followup(captain, brandedSessionId(childId), [{ type: 'text', text }], {
-      source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-experimental-agent-team-web' },
-      signal,
-    })
+    const runtime = ctx.subagents as unknown as {
+      sendMessage?: (parent: Agent, childId: SessionId, content: { type: 'text'; text: string }[], options: { signal: AbortSignal }) => Promise<unknown>
+      followup?: (parent: Agent, childId: SessionId, content: { type: 'text'; text: string }[], options: { signal: AbortSignal }) => Promise<unknown>
+    }
+    const send = runtime.sendMessage ?? runtime.followup
+    if (send === undefined) throw new Error('subagent runtime exposes neither sendMessage nor legacy followup')
+    await send.call(ctx.subagents, captain, brandedSessionId(childId), [{ type: 'text', text }], { signal })
     return true
   } catch (error: unknown) {
     ctx.logger.warn(`agent-team-web: followup to member ${childId} failed: ${String(error)}`)
@@ -584,60 +522,33 @@ export function interruptMember(ctx: Context, captain: Agent, childId: string): 
   }
 }
 
-/** Retired-member index cache TTL: bounds disk reads while followup stays guarded. */
-const RETIRED_INDEX_CACHE_MS = 1_000
-
-/** Process-local retired-id cache per state root (id set + load time). */
+/** Legacy followup retirement guard, installed only when a compatibility
+ * runtime/test still exposes the removed method. DSH 0.1.3 production uses
+ * sendMessage and the official facade never invokes this monkey patch. */
 const retiredIndexCache = new Map<string, { ids: Set<string>; loadedAt: number }>()
-
-/** Read the retired deny-list with a short TTL cache (avoids a disk read per followup). */
-async function readRetiredIdsCached(stateRoot: string): Promise<Set<string>> {
-  const cached = retiredIndexCache.get(stateRoot)
-  const now = Date.now()
-  if (cached !== undefined && now - cached.loadedAt < RETIRED_INDEX_CACHE_MS) return cached.ids
-  const ids = await readRetiredMemberIds(stateRoot)
-  retiredIndexCache.set(stateRoot, { ids, loadedAt: now })
-  return ids
-}
-
-/**
- * Install the missing per-child retirement boundary above Harness rc.6.
- *
- * Upstream `interrupt()` deliberately preserves continuable sessions and the
- * upstream seam exposes no targeted forget/retire method. The durable
- * AgentTeams index therefore rejects `followup()` before it can cold-resume a
- * retired member. Catalog rows deliberately remain discoverable: Harness rc.8
- * uses the direct-child catalog to authorize historical transcript reads and
- * `openSubagent()`, so filtering those rows would make an archived member's
- * persisted conversation inaccessible. Exact ids keep unrelated subagents
- * untouched while the followup boundary still prevents further model turns.
- *
- * R-21/L-4: the check is now backed by a 1s TTL cache, so the global guard
- * costs one Set lookup per followup instead of a disk read per call; the
- * patch scope stays global (any path that tries to resume a retired id is
- * refused) but the per-call cost is bounded.
- */
 export function installRetiredMemberGuard(ctx: Context, stateDir: string): void {
-  const runtime = ctx.subagents
+  const runtime = ctx.subagents as unknown as {
+    followup?: (parent: Agent, childId: SessionId, ...rest: unknown[]) => Promise<unknown>
+  }
+  if (runtime.followup === undefined) return
   ctx.effect(() => {
-    const followup = runtime.followup
-    const guardedFollowup: typeof runtime.followup = async (parent, childId, content, options) => {
+    const followup = runtime.followup!
+    const guarded = async (parent: Agent, childId: SessionId, ...rest: unknown[]): Promise<unknown> => {
       const stateRoot = join(parent.session.header.cwd ?? process.cwd(), stateDir)
-      const retired = await readRetiredIdsCached(stateRoot)
-      if (retired.has(childId)) {
-        throw new SubagentError(
-          `AgentTeams member "${childId}" was retired and cannot be resumed`,
-          'NOT_RESUMABLE',
-        )
+      let cached = retiredIndexCache.get(stateRoot)
+      const now = Date.now()
+      if (cached === undefined || now - cached.loadedAt >= 1_000) {
+        cached = { ids: await readRetiredMemberIds(stateRoot), loadedAt: now }
+        retiredIndexCache.set(stateRoot, cached)
       }
-      return followup.call(runtime, parent, childId, content, options)
+      if (cached.ids.has(String(childId))) {
+        throw new SubagentError(`AgentTeams member "${childId}" was retired and cannot be resumed`, 'NOT_RESUMABLE')
+      }
+      return await followup.call(ctx.subagents, parent, childId, ...rest)
     }
-
-    runtime.followup = guardedFollowup
-    return () => {
-      if (runtime.followup === guardedFollowup) runtime.followup = followup
-    }
-  }, 'agent-team-web: retired member guard')
+    runtime.followup = guarded
+    return () => { if (runtime.followup === guarded) runtime.followup = followup }
+  }, 'agent-team-web: legacy retired member guard')
 }
 
 /**

@@ -1,6 +1,6 @@
 /** Browser plugin for the AgentTeams activity floater and conversation card. */
 import type { Context } from '@deepseek-ai/cordis';
-import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client';
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client';
 import { type AgentTeamsLocaleKey } from './locales.ts';
 declare module '@deepseek-ai/dsh-client-ui-slots' {
     interface LocaleNamespaceMap {

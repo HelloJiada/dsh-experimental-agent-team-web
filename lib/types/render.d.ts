@@ -8,7 +8,7 @@
  * (锁键仍由 tools.ts / close-route.ts / scheduler.ts 各自持有)。
  * @module dsh-agent-team-web/render
  */
-import type { JsonValue } from '@deepseek-ai/dsh-session';
+import type { JsonValue } from '@deepseek-ai/dsh-util-values';
 import { type TaskRetro, type TaskSignals } from './types.ts';
 /**
  * 产出信号的 snake_case 序列化(update_task 输出与 status 输出共用)。

@@ -5,7 +5,7 @@
 #    agent-team-web runtime (team kernel, scheduler, event emitter) is built
 #    into this bundle — no separate runtime package is needed:
 #    cd ~/.dsh/profiles/web
-#    pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.0.tgz
+#    pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.6.tgz
 #
 # 2) Ensure the host recognizes agent-team-web/* session events.
 #    The runtime records them best-effort; if `KNOWN_SESSION_EVENT_TYPES`

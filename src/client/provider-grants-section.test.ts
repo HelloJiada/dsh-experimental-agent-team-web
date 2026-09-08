@@ -27,6 +27,9 @@ import {
   resetRoleDefaults,
   roleDefaultsMap,
   rolePresetModelGroups,
+  rolePresetTemplatesByGroup,
+  applyRolePresetTemplate,
+  presetDiffCount,
   settingsCenterFromStateBody,
   supportsReasoningEffort,
   toggleProviderModels,
@@ -164,6 +167,48 @@ describe('rolePresetModelGroups — 模型下拉按 provider 分组 + 授权过�
 describe('resetRoleDefaults — 「恢复默认」全清(t17)', () => {
   it('返回空 map(scope.set 后所有角色回落三源链)', () => {
     expect(resetRoleDefaults()).toEqual({})
+  })
+})
+
+describe('role preset templates — 预设分组与应用', () => {
+  it('最新 GPT 默认使用 Astra 且模型 ID 不含旧后缀', () => {
+    const template = rolePresetTemplatesByGroup('gpt')[0]!
+    expect(template.roleDefaults.commissar?.model).toBe('gpt-6-astra')
+    expect(template.roleDefaults.security?.model).toBe('gpt-6-astra')
+    expect(template.roleDefaults.engineer?.model).toBe('gpt-5.6-terra')
+    for (const group of ['ds', 'gpt', 'mixed'] as const) {
+      for (const item of rolePresetTemplatesByGroup(group)) {
+        expect(Object.values(item.roleDefaults).every(value => !value.model?.includes('[1M]'))).toBe(true)
+      }
+    }
+  })
+  it('按分组返回模板，DS 组首项为当前默认', () => {
+    const ds = rolePresetTemplatesByGroup('ds')
+    const gpt = rolePresetTemplatesByGroup('gpt')
+    const mixed = rolePresetTemplatesByGroup('mixed')
+    expect(ds.length).toBeGreaterThan(0)
+    expect(gpt.length).toBeGreaterThan(0)
+    expect(mixed.length).toBeGreaterThan(0)
+    expect(ds[0]?.label).toBe('当前默认')
+  })
+
+  it('applyRolePresetTemplate 产出可直接写入的 roleDefaults map', () => {
+    const template = rolePresetTemplatesByGroup('ds')[0]
+    if (template === undefined) throw new Error('missing ds template')
+    expect(applyRolePresetTemplate(template)).toMatchObject({
+      researcher: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      engineer: { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' },
+    })
+  })
+
+  it('presetDiffCount 统计当前行与模板差异数量', () => {
+    const template = rolePresetTemplatesByGroup('ds')[0]
+    if (template === undefined) throw new Error('missing ds template')
+    const rows = [
+      { role: 'researcher', provider: 'cc-switch', model: 'gpt-5.6-sol[1M]', reasoningEffort: 'high', overridden: true },
+      { role: 'engineer', provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high', overridden: false },
+    ]
+    expect(presetDiffCount(rows, template)).toBe(1)
   })
 })
 
