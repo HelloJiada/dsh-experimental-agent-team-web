@@ -6,8 +6,8 @@
 
 1. 本 bundle（`@deepseek-ai/dsh-experimental-agent-team-web`）已在 Web Profile 中生效；
 2. 本 bundle 的 Team 活动监视器已被正确注入；
-3. `agent-team-web/*` best-effort session 事件已被宿主识别；
-4. Captain 侧的 current-session 活动入口与轻量监视器能准确反映真实数据。
+3. `.agent-team-web/` 磁盘状态与 `/plugins/agent-team-web/state` 快照可读取；
+4. Captain 侧的 current-session 活动入口与轻量监视器能准确反映这些真实数据。
 
 完整核对表见 [verification-checklist.md](verification-checklist.md)。本文件只保留最短路径。
 
@@ -18,7 +18,7 @@
 ```bash
 # 安装本 bundle（示例：release tarball）
 cd ~/.dsh/profiles/web
-pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.6.tgz
+pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.7.tgz
 ```
 
 Profile patch 可直接复用：
@@ -83,21 +83,24 @@ Use AgentTeams to review the last 20 commits from performance, security, and pro
 
 ## 5. 若 Team 视图为空，先排查这三个问题
 
-### A. 宿主没有识别 `agent-team-web/*`
+### A. 磁盘状态或 `/state` 路由不可用
 
-runtime 的 session 事件是 **best-effort**。如果宿主的 `KNOWN_SESSION_EVENT_TYPES` 不包含 `agent-team-web/*`，那么：
+本 bundle 不把 `agent-team-web/*` 写入 Session；面板以磁盘状态为真源。先确认：
 
-- `.agent-team-web/` 磁盘状态可能存在；
-- 但本 bundle 读不到 committed event log；
-- 活动入口不会显示。
+```bash
+curl -s http://127.0.0.1:3080/plugins/agent-team-web/state
+```
+
+应返回含 `teams` 的 JSON；同时当前 workspace 下应存在 `.agent-team-web/<teamId>/team.json`。
 
 ### B. bundle 没有注入到 profile
 
 确认 patch 已生效，并且 `dsh --profile web --dump-config` 中能看到 `agent-team-web`。
 
-### C. 当前会话还没有 committed Team records
+### C. 当前会话与团队 captain session 不匹配
 
-有时队伍刚启动、还没写入 committed 事件。等到至少出现建队 / 加成员 / 建任务事件后再刷新视图。
+面板只显示当前会话拥有的团队。回到执行 `/agent-teams` 的主会话，并确认 `/state` 返回的
+`captainSessionId` 与当前 session 一致；必要时强制刷新客户端 bundle。
 
 ## 6. 无真机时的替代验证
 

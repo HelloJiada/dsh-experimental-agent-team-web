@@ -372,24 +372,25 @@ describe('installRetiredMemberGuard — 退休成员 followup 边界', () => {
     expect(calls).toEqual(['child-live'])
   })
 
-  it('R-21/L-4:TTL 缓存生效——写入退休索引后立即可拒绝(不依赖每次磁盘读)', async () => {
-    await writeFile(join(stateRoot, 'retired-members.json'), `${JSON.stringify(['child-retired'], null, 2)}\n`)
+  it('sendMessage 与 followup 都实时读取 durable retired index，刚退休立即拒绝', async () => {
+    const calls: string[] = []
+    const send = async (_parent: unknown, childId: string) => { calls.push(`send:${childId}`) }
+    const followup = async (_parent: unknown, childId: string) => { calls.push(`followup:${childId}`) }
     const ctx = baseCtx({
-      effect: (cb: () => () => void) => {
-        const cleanup = cb()
-        return cleanup
-      },
+      effect: (cb: () => () => void) => cb(),
+      subagents: { ...baseCtx().subagents, sendMessage: send, followup },
     } as unknown as Partial<Context>)
     installRetiredMemberGuard(ctx, STATE_DIR)
-    const guarded = (ctx.subagents as unknown as { followup: (p: unknown, id: string) => Promise<void> }).followup
+    const runtime = ctx.subagents as unknown as {
+      sendMessage: (p: unknown, id: string) => Promise<void>
+      followup: (p: unknown, id: string) => Promise<void>
+    }
 
-    // 首次调用加载缓存并拒绝退休 id。
-    await expect(guarded(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
-
-    // TTL 窗口内,即使索引文件被外部改写(模拟直接编辑),守卫仍按缓存拒绝——
-    // 观察行为不变(拒绝),证明缓存路径生效而非每次读盘。
-    await writeFile(join(stateRoot, 'retired-members.json'), `${JSON.stringify([], null, 2)}\n`)
-    await expect(guarded(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
+    await runtime.sendMessage(captain(workspace), 'child-live')
+    await writeFile(join(stateRoot, 'retired-members.json'), `${JSON.stringify(['child-retired'], null, 2)}\n`)
+    await expect(runtime.sendMessage(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
+    await expect(runtime.followup(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
+    expect(calls).toEqual(['send:child-live'])
   })
 })
 

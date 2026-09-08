@@ -18,6 +18,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolDispatchExecution, ToolExecutionResult, ToolFailure } from '@deepseek-ai/dsh-tools'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { findTeamByParticipant } from './state.ts'
 
 /** File-touching tools whose target paths the guard inspects. */
 const GUARDED_TOOLS: ReadonlySet<string> = new Set(['read', 'write', 'edit', 'glob', 'grep'])
@@ -117,6 +118,25 @@ export function isMemberAgent(id: string): boolean {
   return memberAgentIds.has(id)
 }
 
+/** Test/process-reset helper: forget only the process-local acceleration set. */
+export function resetMemberAgents(): void {
+  memberAgentIds.clear()
+}
+
+/**
+ * Resolve membership from the durable active roster when a cold-resumed child
+ * was not observed by this process. `findTeamByParticipant` excludes removed
+ * members and therefore never upgrades a retired id back into active membership.
+ */
+async function ensureMemberAgent(id: string, workspace: string, stateDir: string): Promise<boolean> {
+  if (memberAgentIds.has(id)) return true
+  const team = await findTeamByParticipant(resolve(workspace, stateDir), id)
+  if (team?.captainSessionId === id) return false
+  const active = team?.members.some(member => member.id === id && member.status !== 'removed') === true
+  if (active) memberAgentIds.add(id)
+  return active
+}
+
 /** Build the denial result shape the registry expects. */
 function denialResult(message: string): ToolExecutionResult {
   const failure: ToolFailure = { message }
@@ -139,8 +159,9 @@ export function installMemberStateGuard(ctx: Context, stateDir: string): () => v
     next: () => Promise<ToolExecutionResult>,
   ): Promise<ToolExecutionResult> => {
     const agent = exec.agent
-    if (agent === undefined || !memberAgentIds.has(agent.id)) return next()
+    if (agent === undefined) return next()
     const workspace = agent.session.header.cwd ?? process.cwd()
+    if (!await ensureMemberAgent(agent.id, workspace, stateDir)) return next()
     const denial = memberStateDenial(exec.name, exec.arguments as Record<string, unknown>, workspace, stateDir)
     if (denial === undefined) return next()
     return denialResult(denial)

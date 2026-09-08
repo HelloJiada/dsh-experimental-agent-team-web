@@ -38,6 +38,8 @@ export declare function registerMemberAgent(id: string): void;
 export declare function unregisterMemberAgent(id: string): void;
 /** Whether a session id is a live team member the guard protects. */
 export declare function isMemberAgent(id: string): boolean;
+/** Test/process-reset helper: forget only the process-local acceleration set. */
+export declare function resetMemberAgents(): void;
 /**
  * Install the dispatch-time state-dir guard for member agents.
  * @param ctx - the plugin context (injects `tools`).

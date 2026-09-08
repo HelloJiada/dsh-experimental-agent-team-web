@@ -522,33 +522,36 @@ export function interruptMember(ctx: Context, captain: Agent, childId: string): 
   }
 }
 
-/** Legacy followup retirement guard, installed only when a compatibility
- * runtime/test still exposes the removed method. DSH 0.1.3 production uses
- * sendMessage and the official facade never invokes this monkey patch. */
-const retiredIndexCache = new Map<string, { ids: Set<string>; loadedAt: number }>()
-export function installRetiredMemberGuard(ctx: Context, stateDir: string): void {
-  const runtime = ctx.subagents as unknown as {
-    followup?: (parent: Agent, childId: SessionId, ...rest: unknown[]) => Promise<unknown>
+/** Refuse every delivery to a durably retired child before DSH can cold-resume it. */
+async function assertMemberNotRetired(parent: Agent, childId: string, stateDir: string): Promise<void> {
+  const stateRoot = join(parent.session.header.cwd ?? process.cwd(), stateDir)
+  const retired = await readRetiredMemberIds(stateRoot)
+  if (retired.has(childId)) {
+    throw new SubagentError(`AgentTeams member "${childId}" was retired and cannot be resumed`, 'NOT_RESUMABLE')
   }
-  if (runtime.followup === undefined) return
+}
+
+/**
+ * Defense-in-depth retirement boundary for both DSH 0.1.3 `sendMessage` and
+ * the legacy `followup` name. The durable index is read on every call so a
+ * just-retired member is rejected without a negative-cache window.
+ */
+export function installRetiredMemberGuard(ctx: Context, stateDir: string): void {
+  const runtime = ctx.subagents as unknown as Record<string, unknown>
   ctx.effect(() => {
-    const followup = runtime.followup!
-    const guarded = async (parent: Agent, childId: SessionId, ...rest: unknown[]): Promise<unknown> => {
-      const stateRoot = join(parent.session.header.cwd ?? process.cwd(), stateDir)
-      let cached = retiredIndexCache.get(stateRoot)
-      const now = Date.now()
-      if (cached === undefined || now - cached.loadedAt >= 1_000) {
-        cached = { ids: await readRetiredMemberIds(stateRoot), loadedAt: now }
-        retiredIndexCache.set(stateRoot, cached)
+    const restorers: Array<() => void> = []
+    for (const method of ['sendMessage', 'followup'] as const) {
+      const original = runtime[method]
+      if (typeof original !== 'function') continue
+      const guarded = async (parent: Agent, childId: SessionId, ...rest: unknown[]): Promise<unknown> => {
+        await assertMemberNotRetired(parent, String(childId), stateDir)
+        return await original.call(ctx.subagents, parent, childId, ...rest)
       }
-      if (cached.ids.has(String(childId))) {
-        throw new SubagentError(`AgentTeams member "${childId}" was retired and cannot be resumed`, 'NOT_RESUMABLE')
-      }
-      return await followup.call(ctx.subagents, parent, childId, ...rest)
+      runtime[method] = guarded
+      restorers.push(() => { if (runtime[method] === guarded) runtime[method] = original })
     }
-    runtime.followup = guarded
-    return () => { if (runtime.followup === guarded) runtime.followup = followup }
-  }, 'agent-team-web: legacy retired member guard')
+    return () => { for (const restore of restorers.reverse()) restore() }
+  }, 'agent-team-web: retired member delivery guard')
 }
 
 /**

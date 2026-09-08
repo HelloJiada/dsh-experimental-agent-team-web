@@ -142,6 +142,11 @@ export declare function deliverToMember(ctx: Context, captain: Agent, childId: s
  * @param childId - the member's durable child session id.
  */
 export declare function interruptMember(ctx: Context, captain: Agent, childId: string): void;
+/**
+ * Defense-in-depth retirement boundary for both DSH 0.1.3 `sendMessage` and
+ * the legacy `followup` name. The durable index is read on every call so a
+ * just-retired member is rejected without a negative-cache window.
+ */
 export declare function installRetiredMemberGuard(ctx: Context, stateDir: string): void;
 /**
  * Snapshot the real driver activity for durable member ids.

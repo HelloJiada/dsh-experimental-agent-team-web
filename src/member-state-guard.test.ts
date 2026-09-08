@@ -5,12 +5,16 @@
  */
 
 import { join } from 'node:path'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
 import {
   installMemberStateGuard,
   isUnderStateRoot,
   memberStateDenial,
   registerMemberAgent,
+  resetMemberAgents,
   stateRootOf,
   unregisterMemberAgent,
 } from './member-state-guard.ts'
@@ -166,6 +170,33 @@ describe('installMemberStateGuard — dispatch wrapper', () => {
       expect(stranger.content[0]?.text).toBe('ok')
     } finally {
       unregisterMemberAgent(memberId)
+    }
+  })
+
+  it('cold-resume lazily restores only active roster members', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'agent-team-cold-guard-'))
+    const stateRoot = join(workspace, STATE_DIR)
+    await mkdir(join(stateRoot, 'team-a'), { recursive: true })
+    await writeFile(join(stateRoot, 'team-a', 'team.json'), JSON.stringify({
+      name: 'team-a', id: 'team-a', captainSessionId: 'captain', createdAt: 1,
+      members: [
+        { id: 'active-child', name: 'active', status: 'idle', joinedAt: 1 },
+        { id: 'removed-child', name: 'removed', status: 'removed', joinedAt: 1 },
+      ],
+      tasks: [], taskSeq: 0,
+    }))
+    resetMemberAgents()
+    const handler = vi.fn()
+    installMemberStateGuard({ on: (_name: string, listener: unknown) => { handler(listener); return () => undefined } } as never, STATE_DIR)
+    const next = vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' as const }] }))
+    const exec = (id: string) => ({ name: 'read', arguments: { file_path: join(stateRoot, 'team-a', 'team.json') }, agent: { id, session: { header: { cwd: workspace } } } })
+    try {
+      expect((await handler.mock.calls[0]![0](exec('active-child'), next)).isError).toBe(true)
+      expect((await handler.mock.calls[0]![0](exec('removed-child'), next)).content[0]?.text).toBe('ok')
+      expect((await handler.mock.calls[0]![0](exec('captain'), next)).content[0]?.text).toBe('ok')
+    } finally {
+      resetMemberAgents()
+      await rm(workspace, { recursive: true, force: true })
     }
   })
 

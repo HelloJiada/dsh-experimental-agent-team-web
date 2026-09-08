@@ -7,17 +7,18 @@
 - 一个可运行的 DSH Web Profile（已装 `@deepseek-ai/dsh-api-session-controller` 等公共 Host 包，DSH `0.1.3-alpha.2`）；
 - 本 bundle（`@deepseek-ai/dsh-experimental-agent-team-web`，agent-team-web runtime 已内置于其中）。
 
-## 1. 关键前提：宿主必须识别 `agent-team-web/*` 事件类型
+## 1. 关键前提：以磁盘状态和 `/state` 路由为验收真源
 
-runtime 的事件是 **best-effort**：只有宿主把 `agent-team-web/*`（7 种）纳入其 `KNOWN_SESSION_EVENT_TYPES` 时，事件才会作为 session 事件落盘；否则磁盘状态 `.agent-team-web/` 仍是权威，但本 bundle 的 projection 读不到事件流，活动入口不会显示。
-
-验证方法：跑一个真实团队流程后，检查 lead session 的 committed event log 中是否出现 `agent-team-web/*` 事件。
+DSH 0.1.3 不允许外部插件安全扩展持久化事件词汇表，因此本 bundle 不把
+`agent-team-web/*` 写入 Session。团队权威状态位于工作区 `.agent-team-web/`，Web 面板
+轮询 `/plugins/agent-team-web/state`。验证时检查 `team.json` 与该 HTTP JSON；不要以
+Session committed event log 是否出现插件事件作为通过条件。
 
 ## 2. 安装与启用
 
 ```bash
 # 在 profile 目录（如 ~/.dsh/profiles/web）；agent-team-web runtime 已内置于本 bundle
-pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.6.tgz
+pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.7.tgz
 ```
 
 在 profile patch 中按需启用本 bundle（与包内 `cordis.patch.yml` 一致）：
@@ -48,7 +49,7 @@ pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.6.tgz
 | --- | --- |
 | 活动入口范围 | 只有当前 session 有 active 或 blocked 工作时出现活动徽标与 transcript 摘要；无符合条件工作时不出现 |
 | 打开与布局 | 点击任一入口打开非模态监视器；宽屏默认停靠，可选悬浮、拖动和缩放；≤960px 为紧凑安全边距 overlay；几何仅本地浏览器持久化 |
-| 监视器摘要 | 健康度、成员数、active/blocked 任务数与 committed 事件一致；Captain Briefing / Top Interventions 中阻塞任务优先，failed / cancelled 任务**不**出现 |
+| 监视器摘要 | 健康度、成员数、active/blocked 任务数与 `.agent-team-web` 磁盘状态及 `/state` 快照一致；Captain Briefing / Top Interventions 中阻塞任务优先，failed / cancelled 任务**不**出现 |
 | 成员导航 | 点击成员打开已有成员 session；不创建新会话 |
 | 默认内容边界 | 默认监视器不嵌入完整 timeline、筛选器、依赖 DAG 或 command explorer |
 | 依赖图：DAG detail | `dependencyDag` DTO 保持可用：分层、状态、owner、依赖边数正确；这是 detail/projection 能力，不是默认监视器内容 |
@@ -59,7 +60,7 @@ pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.6.tgz
 
 ## 5. 已知边界（验证时逐条确认）
 
-- 事件是 best-effort：`KNOWN_SESSION_EVENT_TYPES` 未含 `agent-team-web/*` 时活动入口不会显示；
+- `agent-team-web/*` Session 事件不会写入；活动面板只以磁盘状态和 `/plugins/agent-team-web/state` 为数据源；
 - 名字 → id 解析是近似：`captain` → 团队 session；成员按 name 折叠查找；未知名字回退到团队 id（见 `docs/contract-alignment.md`）；
 - `output` / `attempt` / `attemptId` / `handoffId` 与时间戳暂不进入视图；
 - `team-deleted` 只进入历史时间线，投影保留删除前最后状态；
@@ -74,6 +75,6 @@ pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.6.tgz
 pnpm test
 ```
 
-- 骨架断言：`tests/profile-skeleton.spec.ts`（示例 patch 与冒烟文档引用私有 bundle / `agent-team-web/*` 事件名）；
+- 骨架断言：`tests/profile-skeleton.spec.ts`（示例 patch、冒烟文档与磁盘 `/state` 验收约定）；
 - 布局断言：`tests/package-layout.spec.ts`、`tests/client-bundle.spec.ts`；
 - 回放 fixture：`tests/fixtures/team-lifecycle.ts`（16 条真实形状的 `agent-team-web/*` 事件，供回放测试复用）。
