@@ -50,6 +50,15 @@ export interface MemberLlmSelectionRequest {
         reasoningEffort?: string;
     }>;
 }
+/** One portable route candidate, ordered by caller priority. */
+export interface MemberLlmSelectionCandidate {
+    readonly label: string;
+    readonly request: MemberLlmSelectionRequest;
+    /** Explicit user intent is fail-closed; it never falls through. */
+    readonly explicit?: boolean;
+}
+/** Resolve portable candidates with authorization before adapter validation. */
+export declare function resolveMemberLlmCandidates(ctx: Context, captain: Agent, candidates: readonly MemberLlmSelectionCandidate[], isGranted: (provider: string, model: string) => boolean, signal?: AbortSignal): Promise<MemberLlmSelection>;
 /** Process-local bridge between spawn admission and synchronous child setup. */
 export interface MemberSelectionRuntime {
     /** Make one selection visible while Harness materializes the fresh child. */

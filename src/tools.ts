@@ -67,8 +67,9 @@ import {
   installMemberSelectionRuntime,
   interruptMember,
   memberActivity,
-  resolveMemberLlmSelection,
+  resolveMemberLlmCandidates,
   spawnMember,
+  type MemberLlmSelectionCandidate,
   type MemberRuntimeConfig,
 } from './members.ts'
 import { TERMINAL_TASK_STATUSES, TASK_RETRO_CAUSES, ESTIMATE_LEVEL_RANGES, type TeamMember, type TeamState, type TeamTask, type TaskRetroCause } from './types.ts'
@@ -170,6 +171,37 @@ function workspaceOf(agent: Agent): string {
 /** Resolved absolute state root. */
 function stateRootOf(workspace: string, config: ToolsConfig): string {
   return join(workspace, config.stateDir)
+}
+
+/**
+ * Build portable route candidates in precedence order. Partial role presets are
+ * intentionally skipped: a model-only preset must never be paired with the
+ * captain's provider (provider/model are an inseparable route tuple).
+ */
+function memberRouteCandidates(
+  config: ToolsConfig,
+  roleKey: string,
+  explicit: { provider?: string; model?: string; reasoningEffort?: string },
+): MemberLlmSelectionCandidate[] {
+  const candidates: MemberLlmSelectionCandidate[] = []
+  if (explicit.provider !== undefined || explicit.model !== undefined || explicit.reasoningEffort !== undefined) {
+    candidates.push({
+      label: 'explicit',
+      explicit: true,
+      request: explicit,
+    })
+  }
+  const roleSources: Array<[string, { provider?: string; model?: string; reasoningEffort?: string } | undefined]> = [
+    ['settings role default', config.roleDefaultsFor?.(roleKey)],
+    ['profile role default', config.roleLlmDefaults?.[roleKey]],
+    ['builtin role default', DEFAULT_ROLE_LLM[roleKey]],
+  ]
+  for (const [label, role] of roleSources) {
+    if (role?.provider === undefined || role.model === undefined) continue
+    candidates.push({ label, request: { roleDefaults: role } })
+  }
+  candidates.push({ label: 'captain route', request: {} })
+  return candidates
 }
 
 /**
@@ -436,10 +468,20 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           // the exact same spawn path as agent_teams_add_member, so its fields
           // and lifecycle match a manually added member. The usage prompt tells
           // the captain not to add a second one, and add_member guards it too.
-          const commissarSelection = await resolveMemberLlmSelection(ctx, captain, {
-            defaultModel: config.memberModel,
-            ...DEFAULT_ROLE_LLM.commissar === undefined ? {} : { roleDefaults: DEFAULT_ROLE_LLM.commissar },
-          }, exec.signal)
+          const captainRoute = captain.session.requestHeader()?.config
+          const grant = (provider: string, model: string): boolean => {
+            if (config.modelGrantedFor !== undefined) return config.modelGrantedFor(provider, model)
+            return provider === 'deepseek-official'
+              || (provider === (captainRoute?.provider ?? captain.options.provider)
+                && model === (captainRoute?.model ?? captain.options.model))
+          }
+          const commissarSelection = await resolveMemberLlmCandidates(
+            ctx,
+            captain,
+            memberRouteCandidates(config, 'commissar', {}),
+            grant,
+            exec.signal,
+          )
           const commissar: TeamMember = {
             id: '',
             name: '政委',
@@ -580,49 +622,29 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       // (t13 三源链:settings.roleDefaults 覆盖 → profile roleLlmDefaults →
       // 内置 DEFAULT_ROLE_LLM);再否则继承队长路由。
       const roleKey = canonicalExecRole(args.role)
-      const roleDefaults = config.roleDefaultsFor?.(roleKey)
-        ?? config.roleLlmDefaults?.[roleKey]
-        ?? DEFAULT_ROLE_LLM[roleKey]
-      const selection = await resolveMemberLlmSelection(ctx, captain, {
-        provider: args.provider,
-        model: args.model,
-        defaultModel: config.memberModel,
-        reasoningEffort: args.reasoning_effort,
-        ...roleDefaults === undefined ? {} : { roleDefaults },
-      }, exec.signal)
-      // AgentTeam 设置中心(t13):显式指定或角色档位指定的非默认 provider 的
-      // 模型,需在设置页授权后才可用(deepseek-official 名下恒授权)。判定走
-      // config.modelGrantedFor(`${provider}/${model}` 复合 key,settings scope
-      // 闭包);无 settings 服务(undefined)→ 仅 deepseek 授权。继承队长路由
-      // 的 provider 不拦截(队长自己正在用的即视为可用)。未授权时尝试回退
-      // deepseek-official + warn;回退失败则保留原 selection(软约束)。
-      const explicitlyRouted = args.provider !== undefined
-        || (roleDefaults !== undefined && roleDefaults.provider !== undefined)
-      let effectiveSelection = selection
-      if (explicitlyRouted && selection.provider !== 'deepseek-official') {
-        const granted = config.modelGrantedFor?.(selection.provider, selection.model)
-          ?? (selection.provider === 'deepseek-official')
-        if (!granted) {
-          ctx.logger.warn(`agent-team-web: model "${selection.provider}/${selection.model}" is not authorized for AgentTeams members (enable it in the settings page); falling back to deepseek-official`)
-          // 模型档位回退默认:绝不携带原路由的显式 model(如 kimi-k2.7-code),
-          // 按 角色默认档位 → 配置 memberModel → 队长当前 model 取 deepseek
-          // 档位,避免 provider/model 错配;显式 reasoningEffort 仍尊重
-          // (目标模型会校验,不匹配时回退失败保留原 selection 属软约束)。
-          const fallbackModel = roleDefaults?.model ?? config.memberModel
-            ?? captain.session.requestHeader()?.config?.model ?? captain.options.model
-          try {
-            effectiveSelection = await resolveMemberLlmSelection(ctx, captain, {
-              provider: 'deepseek-official',
-              model: fallbackModel,
-              defaultModel: config.memberModel,
-              reasoningEffort: args.reasoning_effort,
-              ...roleDefaults === undefined ? {} : { roleDefaults },
-            }, exec.signal)
-          } catch (fallbackError: unknown) {
-            ctx.logger.warn(`agent-team-web: fallback to deepseek-official failed (${String(fallbackError)}); keeping original selection`)
-          }
-        }
+      const captainRoute = captain.session.requestHeader()?.config
+      const grant = (provider: string, model: string): boolean => {
+        if (config.modelGrantedFor !== undefined) return config.modelGrantedFor(provider, model)
+        // Without the optional settings service, the captain's already-live
+        // route is the only non-DeepSeek route we can safely inherit.
+        return provider === 'deepseek-official'
+          || (provider === (captainRoute?.provider ?? captain.options.provider)
+            && model === (captainRoute?.model ?? captain.options.model))
       }
+      // Candidate admission is fail-closed. In particular, do not resurrect the
+      // previous soft fallback that spawned a member on an unauthorized route
+      // after a DeepSeek fallback failed.
+      const effectiveSelection = await resolveMemberLlmCandidates(
+        ctx,
+        captain,
+        memberRouteCandidates(config, roleKey, {
+          provider: args.provider,
+          model: args.model,
+          reasoningEffort: args.reasoning_effort,
+        }),
+        grant,
+        exec.signal,
+      )
       const member: TeamMember = {
         id: '',
         name: prepared.memberName,

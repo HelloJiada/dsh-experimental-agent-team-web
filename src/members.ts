@@ -87,6 +87,100 @@ export interface MemberLlmSelectionRequest {
   roleDefaults?: Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>
 }
 
+/** One portable route candidate, ordered by caller priority. */
+export interface MemberLlmSelectionCandidate {
+  readonly label: string
+  readonly request: MemberLlmSelectionRequest
+  /** Explicit user intent is fail-closed; it never falls through. */
+  readonly explicit?: boolean
+}
+
+interface MemberRoute {
+  readonly provider: string
+  readonly model: string
+  readonly reasoningEffort?: string
+}
+
+function memberRouteForRequest(captain: Agent, request: MemberLlmSelectionRequest): MemberRoute {
+  const explicitProvider = request.provider?.trim()
+  const explicitModel = request.model?.trim()
+  const defaultModel = request.defaultModel?.trim()
+  const explicitEffort = request.reasoningEffort?.trim()
+  if (request.provider !== undefined && explicitProvider === '') throw new Error('member LLM provider must not be empty')
+  if (request.model !== undefined && explicitModel === '') throw new Error('member model must not be empty')
+  if (request.defaultModel !== undefined && defaultModel === '') throw new Error('configured memberModel must not be empty')
+  if (request.reasoningEffort !== undefined && explicitEffort === '') throw new Error('member reasoning effort must not be empty')
+  if (explicitProvider !== undefined && explicitModel === undefined) {
+    throw new Error('an explicit member LLM provider requires an explicit member model')
+  }
+  const current = captain.session.requestHeader()?.config
+  const currentProvider = current?.provider ?? captain.options.provider
+  const currentModel = current?.model ?? captain.options.model
+  const roleProvider = request.roleDefaults?.provider?.trim()
+  const roleModel = request.roleDefaults?.model?.trim()
+  const provider = explicitProvider ?? roleProvider ?? currentProvider
+  const model = explicitModel
+    ?? (roleProvider !== undefined ? roleModel : undefined)
+    ?? defaultModel ?? currentModel
+  if (provider === undefined || model === undefined) {
+    throw new Error('cannot resolve the member LLM route from the current captain session')
+  }
+  const roleEffort = request.roleDefaults?.reasoningEffort?.trim()
+  const sameRoute = provider === currentProvider && model === currentModel
+  const reasoningEffort = explicitEffort === undefined
+    ? roleEffort !== undefined && roleEffort !== ''
+      ? roleEffort
+      : sameRoute ? current?.reasoningEffort : undefined
+    : explicitEffort
+  return { provider, model, ...reasoningEffort === undefined ? {} : { reasoningEffort } }
+}
+
+async function resolveMemberRoute(
+  ctx: Context,
+  route: MemberRoute,
+  signal?: AbortSignal,
+): Promise<MemberLlmSelection> {
+  const effort = route.reasoningEffort === undefined || route.reasoningEffort === 'default'
+    ? undefined : ReasoningEffortId(route.reasoningEffort)
+  const resolved = await ctx.llm.resolveCallConfig({
+    provider: route.provider,
+    model: route.model,
+    ...effort === undefined ? {} : { reasoningEffort: effort },
+  }, signal)
+  return {
+    provider: resolved.provider,
+    model: resolved.model,
+    ...resolved.reasoningEffort === undefined ? {} : { reasoningEffort: String(resolved.reasoningEffort) },
+  }
+}
+
+/** Resolve portable candidates with authorization before adapter validation. */
+export async function resolveMemberLlmCandidates(
+  ctx: Context,
+  captain: Agent,
+  candidates: readonly MemberLlmSelectionCandidate[],
+  isGranted: (provider: string, model: string) => boolean,
+  signal?: AbortSignal,
+): Promise<MemberLlmSelection> {
+  const failures: string[] = []
+  for (const candidate of candidates) {
+    try {
+      const route = memberRouteForRequest(captain, candidate.request)
+      if (!isGranted(route.provider, route.model)) {
+        throw new Error(`model ${route.provider}/${route.model} is not authorized`)
+      }
+      return await resolveMemberRoute(ctx, route, signal)
+    } catch (error: unknown) {
+      const reason = String(error instanceof Error ? error.message : error)
+      if (candidate.explicit === true) {
+        throw new Error(`explicit member route ${candidate.label} rejected: ${reason}`)
+      }
+      failures.push(`${candidate.label}: ${reason}`)
+    }
+  }
+  throw new Error(`no authorized member LLM route is usable (${failures.join('; ') || 'no candidates'})`)
+}
+
 /** Process-local bridge between spawn admission and synchronous child setup. */
 export interface MemberSelectionRuntime {
   /** Make one selection visible while Harness materializes the fresh child. */

@@ -91,8 +91,10 @@ function harness(
     prepareContinuable?: boolean
     persona?: boolean
     toolFilter?: boolean
+    resolveCallConfig?: (config: { provider?: string; model?: string; reasoningEffort?: string }) => Promise<{ provider: string; model: string; reasoningEffort?: string }>
   } = {},
   spawnRequests: Array<{ request: { persona: string; toolFilter: { deny: readonly string[] } } }> = [],
+  toolConfig: Partial<ToolsConfig> = {},
 ): (name: string) => CapturedTool {
   const tools = new Map<string, CapturedTool>()
   let childSeq = 0
@@ -110,7 +112,7 @@ function harness(
         : undefined,
     },
     llm: {
-      resolveCallConfig: async () => ({ provider: 'p', model: 'm' }),
+      resolveCallConfig: providerOverrides.resolveCallConfig ?? (async () => ({ provider: 'p', model: 'm' })),
     },
     logger: { warn: () => undefined, debug: () => undefined },
     on: () => undefined,
@@ -133,7 +135,7 @@ function harness(
       },
     },
   } as unknown as Context
-  registerAgentTeamsTools(fakeCtx, config)
+  registerAgentTeamsTools(fakeCtx, { ...config, ...toolConfig })
   return (name: string) => {
     const def = tools.get(name)
     if (def === undefined) throw new Error(`tool "${name}" not registered`)
@@ -342,7 +344,7 @@ describe('agent_teams_add_member — 添加成员', () => {
     )).rejects.toThrow(/已达上限/)
   })
 
-  it('provider 授权:显式指定未授权 provider 回退 deepseek-official(软约束不阻断)', async () => {
+  it('provider authorization: an explicit ungranted route rejects without spawning or fallback', async () => {
     // 独立 harness:显式传 provider='kimi-coding'(未授权)→ 回退 deepseek-official。
     // 回退需能解析(测试 ctx.llm 接受任意 provider/model)。
     const tools = new Map<string, CapturedTool>()
@@ -372,20 +374,78 @@ describe('agent_teams_add_member — 添加成员', () => {
       if (def === undefined) throw new Error(`tool "${name}" not registered`)
       return def
     }
-    // 显式指定 kimi-coding(未授权)→ 应回退 deepseek-official,成员创建成功。
-    const result = await grantTool('agent_teams_add_member').execute(
+    await expect(grantTool('agent_teams_add_member').execute(
       { role: 'engineer', provider: 'kimi-coding', model: 'kimi-k2.7-code' },
       execOf(agent(workspace, CAPTAIN_ID)),
-    ) as { member_name: string; provider: string; model: string }
-    expect(result.member_name).toBe('技术员')
-    expect(result.provider).toBe('deepseek-official') // 未授权 → 回退
-    // 模型档位回退默认:不携带原路由的 kimi-k2.7-code,落回角色默认档位。
-    expect(result.model).toBe('deepseek-v4-flash')
-    // 落盘成员记录也应为 deepseek-official(与 spawn 描述符一致,冷恢复不炸)。
+    )).rejects.toThrow(/explicit member route explicit rejected.*not authorized/)
     const persisted = await readTeam(stateRoot, 'team-tools')
-    const persistedEngineer = persisted?.members.find(m => m.name === '技术员')
-    expect(persistedEngineer?.provider).toBe('deepseek-official')
-    expect(persistedEngineer?.model).toBe('deepseek-v4-flash')
+    expect(persisted?.members.find(m => m.name === '技术员')).toBeUndefined()
+  })
+
+  it('explicit unknown provider/model/effort failures do not spawn or persist a member', async () => {
+    const spawned: Array<{ request: { persona: string; toolFilter: { deny: readonly string[] } } }> = []
+    const tools = harness(new Set(), {
+      resolveCallConfig: async (route) => {
+        if (route.provider === 'foreign') throw new Error('unknown provider')
+        if (route.model === 'invalid-model') throw new Error('unknown model')
+        if (route.reasoningEffort === 'invalid-effort') throw new Error('unsupported effort')
+        return { provider: route.provider ?? 'p', model: route.model ?? 'm', reasoningEffort: route.reasoningEffort }
+      },
+    }, spawned, {
+      // Grant these routes specifically so unknown-provider/model cases reach
+      // adapter validation rather than stopping at the authorization boundary.
+      modelGrantedFor: (provider, model) => (
+        (provider === 'foreign' && model === 'm')
+        || (provider === 'p' && (model === 'invalid-model' || model === 'm'))
+      ),
+    })
+    const initialSpawns = spawned.length
+    for (const route of [
+      { provider: 'foreign', model: 'm' },
+      { provider: 'p', model: 'invalid-model' },
+      { provider: 'p', model: 'm', reasoning_effort: 'invalid-effort' },
+    ]) {
+      await expect(tools('agent_teams_add_member').execute({ role: 'engineer', ...route }, execOf(agent(workspace, CAPTAIN_ID))))
+        .rejects.toThrow(/explicit member route explicit rejected/)
+    }
+    expect(spawned).toHaveLength(initialSpawns)
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    expect(persisted?.members.filter(member => member.role === 'engineer')).toHaveLength(0)
+  })
+
+  it('falls back from an ungranted complete profile role route to captain and spawns', async () => {
+    const spawned: Array<{ request: { persona: string; toolFilter: { deny: readonly string[] } } }> = []
+    const tools = harness(new Set(), {}, spawned, {
+      roleLlmDefaults: { engineer: { provider: 'foreign', model: 'blocked-model' } },
+    })
+    const result = await tools('agent_teams_add_member').execute({ role: 'engineer' }, execOf(agent(workspace, CAPTAIN_ID))) as { provider: string; model: string }
+    expect(result).toMatchObject({ provider: 'p', model: 'm' })
+    expect(spawned).toHaveLength(1)
+  })
+
+  it('model-only role defaults do not cross-pair, and role plus captain adapter failures leave no member', async () => {
+    const spawned: Array<{ request: { persona: string; toolFilter: { deny: readonly string[] } } }> = []
+    const tools = harness(new Set(), {
+      resolveCallConfig: async (route) => {
+        if (route.model === 'role-model' || route.model === 'm') throw new Error(`adapter rejected ${route.model}`)
+        return { provider: route.provider ?? 'p', model: route.model ?? 'm' }
+      },
+    }, spawned, {
+      // model-only engineer default must be skipped; complete qa route then
+      // captain are both admitted and rejected by the adapter.
+      roleLlmDefaults: {
+        engineer: { model: 'role-model' },
+        qa: { provider: 'p', model: 'role-model' },
+      },
+      modelGrantedFor: (provider, model) => provider === 'p' && (model === 'role-model' || model === 'm'),
+    })
+    await expect(tools('agent_teams_add_member').execute({ role: 'qa' }, execOf(agent(workspace, CAPTAIN_ID))))
+      .rejects.toThrow(/profile role default:.*captain route:/)
+    await expect(tools('agent_teams_add_member').execute({ role: 'engineer' }, execOf(agent(workspace, CAPTAIN_ID))))
+      .rejects.toThrow(/captain route:.*adapter rejected m/)
+    expect(spawned).toHaveLength(0)
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    expect(persisted?.members.filter(member => member.role === 'qa' || member.role === 'engineer')).toHaveLength(0)
   })
 
   it('模型授权:设置页已授权模型 → 不回退,成员按显式路由 spawn', async () => {
@@ -487,12 +547,11 @@ describe('agent_teams_add_member — 添加成员', () => {
       execOf(agent(workspace, CAPTAIN_ID)),
     ) as { member_name: string; provider: string }
     expect(granted.provider).toBe('kimi-coding')
-    // 未授权(xiaomi/xiaomi-m1):scope 判定 false → 回退 deepseek-official(软约束)。
-    const revoked = await execTool('agent_teams_add_member').execute(
+    // Explicitly ungranted route rejects; it must not silently fall back.
+    await expect(execTool('agent_teams_add_member').execute(
       { role: 'qa', provider: 'xiaomi', model: 'xiaomi-m1' },
       execOf(agent(workspace, CAPTAIN_ID)),
-    ) as { member_name: string; provider: string }
-    expect(revoked.provider).toBe('deepseek-official')
+    )).rejects.toThrow(/explicit member route explicit rejected.*not authorized/)
     // deepseek-official 恒授权,不走 scope 判定。
     const builtin = await execTool('agent_teams_add_member').execute(
       { role: 'researcher', provider: 'deepseek-official', model: 'deepseek-v4-pro' },

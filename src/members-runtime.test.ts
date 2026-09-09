@@ -20,6 +20,7 @@ import {
   interruptMember,
   memberActivity,
   memberWelcome,
+  resolveMemberLlmCandidates,
   resolveMemberLlmSelection,
   spawnMember,
   type MemberRuntimeConfig,
@@ -246,6 +247,35 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     expect(selection.provider).toBe('deepseek-official')
     expect(selection.model).toBe('deepseek-v4-flash')
     expect(selection.reasoningEffort).toBe('low')
+  })
+})
+
+describe('resolveMemberLlmCandidates — portable route admission', () => {
+  it('rejects an explicit ungranted route without trying captain fallback', async () => {
+    let calls = 0
+    const ctx = baseCtx({ llm: { resolveCallConfig: async (config: { provider: string; model: string }) => { calls++; return config } } })
+    await expect(resolveMemberLlmCandidates(ctx, captain('/ws'), [
+      { label: 'explicit', explicit: true, request: { provider: 'foreign', model: 'm1' } },
+      { label: 'captain route', request: {} },
+    ], () => false)).rejects.toThrow(/explicit member route explicit rejected.*not authorized/)
+    expect(calls).toBe(0)
+  })
+
+  it('falls back from an ungranted complete role route to the captain route', async () => {
+    const ctx = baseCtx({ llm: { resolveCallConfig: async (config: { provider: string; model: string }) => config } })
+    const selection = await resolveMemberLlmCandidates(ctx, captain('/ws'), [
+      { label: 'profile role default', request: { roleDefaults: { provider: 'foreign', model: 'm1' } } },
+      { label: 'captain route', request: {} },
+    ], (provider, model) => provider === 'p' && model === 'm')
+    expect(selection).toMatchObject({ provider: 'p', model: 'm' })
+  })
+
+  it('aggregates the captain failure after nonexplicit candidates fail', async () => {
+    const ctx = baseCtx({ llm: { resolveCallConfig: async () => { throw new Error('adapter rejected route') } } })
+    await expect(resolveMemberLlmCandidates(ctx, captain('/ws'), [
+      { label: 'profile role default', request: { roleDefaults: { provider: 'p', model: 'role' } } },
+      { label: 'captain route', request: {} },
+    ], () => true)).rejects.toThrow(/profile role default:.*captain route:/)
   })
 })
 
