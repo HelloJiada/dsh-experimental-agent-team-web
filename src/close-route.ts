@@ -20,6 +20,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
+import { canonicalWorkspaceId } from './workspace-identity.ts'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import { appendTeamEvent } from './events.ts'
 import { interruptMember } from './members.ts'
@@ -93,6 +94,8 @@ export async function readJsonBody(req: IncomingMessage, cap = CLOSE_BODY_CAP_BY
 export interface CloseTeamRequest {
   readonly teamId: string
   readonly captainSessionId: string
+  /** Canonical workspace token computed by the host snapshot route. */
+  readonly workspaceId?: string
 }
 
 /** A live team located under exactly one registered workspace state root. */
@@ -219,6 +222,7 @@ export async function handleCloseTeam(
   const request = body as Partial<CloseTeamRequest> | null | undefined
   const teamId = request?.teamId
   const captainSessionId = request?.captainSessionId
+  const workspaceId = request?.workspaceId
   if (typeof teamId !== 'string' || teamId === '' || typeof captainSessionId !== 'string' || captainSessionId === '') {
     sendJson(res, 400, { ok: false, reason: 'teamId and captainSessionId required' })
     return
@@ -228,9 +232,29 @@ export async function handleCloseTeam(
     stateRoot: join(workspace.path, config.stateDir),
     workspace: workspace.title,
   }))
+  if (workspaceId !== undefined && (typeof workspaceId !== 'string' || workspaceId === '')) {
+    sendJson(res, 400, { ok: false, reason: 'workspaceId must be a non-empty canonical token' })
+    return
+  }
+  // A registered workspace legitimately may not have created its AgentTeam
+  // state directory yet. It is not an error for another workspace's close;
+  // only canonical roots that are actually reachable participate.
+  const canonicalRoots: Array<(typeof roots)[number] & { workspaceId: string }> = []
+  for (const root of roots) {
+    try {
+      canonicalRoots.push({ ...root, workspaceId: await canonicalWorkspaceId(root.stateRoot) })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+  const requestedRoot = workspaceId === undefined ? undefined : canonicalRoots.find((root) => root.workspaceId === workspaceId)
+  if (workspaceId !== undefined && requestedRoot === undefined) {
+    sendJson(res, 403, { ok: false, reason: 'workspaceId does not match a registered canonical workspace' })
+    return
+  }
   let located: LocatedTeam | undefined
   try {
-    located = await locateTeam(roots, teamId)
+    located = await locateTeam(requestedRoot === undefined ? canonicalRoots : [requestedRoot], teamId)
   } catch {
     sendJson(res, 400, { ok: false, reason: 'team id is ambiguous across workspaces' })
     return

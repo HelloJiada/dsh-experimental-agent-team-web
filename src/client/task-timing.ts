@@ -117,6 +117,17 @@ export function taskSignalsText(task: ActivityTask, t: AgentTeamsTranslate): str
   return parts.join(' · ')
 }
 
+/** Budget fact is objective and must remain separate from retrospective attribution. */
+export function budgetFactText(task: ActivityTask, t: AgentTeamsTranslate): string | null {
+  if (task.budgetFact === undefined) return null
+  const key: AgentTeamsLocaleKey = task.budgetFact === 'over_budget'
+    ? 'retro.budgetFact.overBudget'
+    : task.budgetFact === 'within_budget'
+      ? 'retro.budgetFact.withinBudget'
+      : 'retro.budgetFact.unknown'
+  return t(key)
+}
+
 /** 复盘原因 → 本地化 key 的静态映射(避免动态字符串索引)。 */
 const RETRO_CAUSE_KEYS: Record<string, AgentTeamsLocaleKey> = {
   underestimated: 'retro.cause.underestimated',
@@ -138,7 +149,20 @@ export function retroCauseLabel(cause: string, t: AgentTeamsTranslate): string {
 export function retroDetailText(task: ActivityTask, t: AgentTeamsTranslate): string | null {
   const retro = task.retro
   if (retro === undefined) return null
-  const parts = [t('retro.causeLabel', { cause: retroCauseLabel(retro.cause, t) })]
+  const sourceKey: AgentTeamsLocaleKey | undefined = retro.causeSource === 'member'
+    ? 'retro.causeSource.member'
+    : retro.causeSource === 'captain'
+      ? 'retro.causeSource.captain'
+      : retro.causeSource === 'auto'
+        ? 'retro.causeSource.auto'
+        : retro.causeSource === 'unknown'
+          ? 'retro.causeSource.unknown'
+          : undefined
+  // Legacy retros omit source entirely; retain their existing concise copy.
+  const cause = sourceKey === undefined
+    ? retroCauseLabel(retro.cause, t)
+    : `${t(sourceKey)} · ${retroCauseLabel(retro.cause, t)}`
+  const parts = [t('retro.causeLabel', { cause })]
   // 经验/最优方案是复盘的核心价值,必须展示(cancelled 留空则不显示)。
   if (retro.recommendation !== undefined && retro.recommendation !== '') {
     parts.push(t('timing.recommendation', { note: retro.recommendation }))

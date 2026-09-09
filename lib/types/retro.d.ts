@@ -61,6 +61,8 @@ export interface RetroTaskFacts {
     readonly includesGateWait?: boolean;
     /** 边界:本 attempt 曾有 helper 介入。 */
     readonly hasHelper?: boolean;
+    /** Authorized attribution source, omitted for legacy records. */
+    readonly causeSource?: 'auto' | 'member' | 'captain' | 'unknown';
 }
 /**
  * 结算一次任务耗时(幂等):补记 completedAt 与 actualMs,并算 overrunMs。

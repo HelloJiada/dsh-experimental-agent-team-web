@@ -1513,6 +1513,15 @@
   font-weight: 600;
 }
 
+/* Objective budget fact is independent from retrospective attribution. */
+.taskDetailBudgetFact {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+.taskDetailBudgetFact[data-budget-fact='over_budget'] { color: var(--dsw-alias-state-warning); font-weight: 700; }
+.taskDetailBudgetFact[data-budget-fact='within_budget'] { color: var(--dsw-alias-state-success); }
+
 /* 自成长:任务详情"产出信号"与"复盘"行。 */
 .taskDetailSignals,
 .taskDetailRetro {

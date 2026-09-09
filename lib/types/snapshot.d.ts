@@ -101,6 +101,8 @@ export interface TeamActivityMessage {
 /** The full panel payload for one team. */
 export interface TeamActivitySnapshot {
     readonly workspace: string;
+    /** Canonical workspace identity; older hosts may omit it. */
+    readonly workspaceId?: string;
     readonly teamId: string;
     readonly name: string;
     readonly description?: string;
@@ -147,6 +149,8 @@ export interface TeamSnapshotOptions {
     /** AgentTeam 设置中心(t13):settings 命名空间 enabledModels 快照读取
      * 函数(apply 期捕获 scope 的闭包);undefined → 非 deepseek 全未授权。 */
     readonly enabledModels?: () => Record<string, boolean>;
+    /** Host-computed canonical workspace token (never read from team.json). */
+    readonly workspaceId?: string;
 }
 /**
  * Assemble one team snapshot from its durable files plus live activity.

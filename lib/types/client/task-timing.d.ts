@@ -28,6 +28,8 @@ export declare function memberElapsedText(member: ActivityMember, t: AgentTeamsT
 export declare function memberTimingState(member: ActivityMember, tasks: readonly ActivityTask[], now?: number): TaskTimingState;
 /** 任务详情的产出信号行(含成员自报);无信号返回 null。 */
 export declare function taskSignalsText(task: ActivityTask, t: AgentTeamsTranslate): string | null;
+/** Budget fact is objective and must remain separate from retrospective attribution. */
+export declare function budgetFactText(task: ActivityTask, t: AgentTeamsTranslate): string | null;
 /** 复盘原因标签(zh/en 双语)。 */
 export declare function retroCauseLabel(cause: string, t: AgentTeamsTranslate): string;
 /** 任务详情的复盘行(原因/经验/边界标注/队长校准);无复盘返回 null。 */

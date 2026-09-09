@@ -28,6 +28,8 @@ export type TaskRiskLevel = 'low' | 'medium' | 'high' | 'critical'
  * 任务被低估 / 依赖阻塞 / 需求变化 / 成员效率 / 环境问题 / 按时完成 / 其他。
  * 方向决策:on_time 也沉淀经验;cancelled 记耗时但不推经验(归 other)。
  */
+export type TaskRetroCauseSource = 'auto' | 'member' | 'captain' | 'unknown'
+
 export type TaskRetroCause =
   | 'underestimated'
   | 'dependency-blocked'
@@ -131,6 +133,8 @@ export interface TaskRetro {
   readonly overran: boolean
   /** 原因分类(自动归因或成员/队长声明)。 */
   readonly cause: TaskRetroCause
+  /** Who supplied the attribution; facts remain independently derived. */
+  readonly causeSource?: TaskRetroCauseSource
   /** 复盘摘要。 */
   readonly summary: string
   /** 成员可选填:一句话经验(bestPractice 原始素材)。 */
@@ -268,6 +272,8 @@ export interface TeamMessage {
 export interface TeamState {
   /** Original team name. */
   name: string
+  /** Canonical workspace identity (optional for legacy team.json). */
+  workspaceId?: string
   /** Sanitized directory id; the team's stable identity. */
   id: string
   /** Team purpose/goal. */

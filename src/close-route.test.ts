@@ -16,6 +16,7 @@ import {
 } from './close-route.ts'
 import { readTeam } from './state.ts'
 import { TOKEN_HEADER } from './web-auth-constants.ts'
+import { canonicalWorkspaceId } from './workspace-identity.ts'
 import type { ToolsConfig } from './tools.ts'
 import type { TeamMember, TeamState, TeamTask } from './types.ts'
 
@@ -279,6 +280,49 @@ describe('handleCloseTeam — POST /plugins/agent-team-web/close', () => {
       closeAuth,
     )
     expect(state.status).toBe(409)
+  })
+
+  it('403 when supplied workspaceId does not equal a host-recomputed root token', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    const { res, state } = response()
+    await handleCloseTeam(
+      context(), config, registry([{ path: workspace, title: 'w' }]),
+      authorizedPost(JSON.stringify({ teamId: 'team-close', captainSessionId: 'session-captain', workspaceId: 'ws_forged' })),
+      res, closeAuth,
+    )
+    expect(state.status).toBe(403)
+    expect(JSON.parse(state.body).reason).toMatch(/workspaceId/)
+  })
+
+  it('200 accepts only the host-recomputed canonical workspaceId', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    const { res, state } = response()
+    await handleCloseTeam(
+      context(), config, registry([{ path: workspace, title: 'w' }]),
+      authorizedPost(JSON.stringify({
+        teamId: 'team-close', captainSessionId: 'session-captain', workspaceId: await canonicalWorkspaceId(stateRoot),
+      })),
+      res, closeAuth,
+    )
+    expect(state.status).toBe(200)
+  })
+
+  it('skips a registered workspace with no state directory when closing another workspace', async () => {
+    const emptyWorkspace = await mkdtemp(join(tmpdir(), 'agent-team-empty-'))
+    try {
+      await writeTeamToDisk(stateRoot, team())
+      const { res, state } = response()
+      await handleCloseTeam(
+        context(), config, registry([{ path: emptyWorkspace, title: 'empty' }, { path: workspace, title: 'healthy' }]),
+        authorizedPost(JSON.stringify({
+          teamId: 'team-close', captainSessionId: 'session-captain', workspaceId: await canonicalWorkspaceId(stateRoot),
+        })),
+        res, closeAuth,
+      )
+      expect(state.status).toBe(200)
+    } finally {
+      await rm(emptyWorkspace, { recursive: true, force: true })
+    }
   })
 
   it('400 when the team id exists under multiple workspaces (ambiguous)', async () => {

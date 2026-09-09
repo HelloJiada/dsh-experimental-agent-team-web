@@ -348,6 +348,7 @@ describe('agent_teams_update_task — 正常终结分支(R-14)', () => {
     expect(t1?.actualMs).toBeTypeOf('number')
     expect(t1?.retro).toBeDefined()
     expect(t1?.retro?.cause).toBe('environment') // 显式 retro_cause 生效
+    expect(t1?.retro?.causeSource).toBe('member')
     expect(t1?.retro?.retroNote).toBe('环境问题:沙箱缺依赖')
     // failed 属于"记经验"的终结态:经验应入库。
     const library = await readBestPractices(stateRoot)

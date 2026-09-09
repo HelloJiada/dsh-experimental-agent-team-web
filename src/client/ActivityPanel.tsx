@@ -65,6 +65,7 @@ import { taskReviewPending, taskReviewState } from './task-review.ts'
 import { taskAwaitingInput, taskBlockedByReview, taskIntermediateFlag } from './task-intermediate.ts'
 import { taskHelper } from './task-helping.ts'
 import {
+  budgetFactText,
   memberElapsedText,
   memberTimingState,
   retroDetailText,
@@ -560,6 +561,11 @@ function DependencyMap({ tasks, t, compact = false }: {
             {(detailExpanded || !compact) && taskSignalsText(detailTask, t) !== null && (
               <span className={css.taskDetailSignals} data-timing={timingData(detailTask)}>
                 {taskSignalsText(detailTask, t)}
+              </span>
+            )}
+            {(detailExpanded || !compact) && budgetFactText(detailTask, t) !== null && (
+              <span className={css.taskDetailBudgetFact} data-budget-fact={detailTask.budgetFact}>
+                {budgetFactText(detailTask, t)}
               </span>
             )}
             {(detailExpanded || !compact) && retroDetailText(detailTask, t) !== null && (
@@ -1202,6 +1208,7 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
         body: JSON.stringify({
           teamId: liveTeam.teamId,
           captainSessionId: liveTeam.captainSessionId,
+          ...liveTeam.workspaceId === undefined ? {} : { workspaceId: liveTeam.workspaceId },
         }),
       })
       if (!response.ok) {

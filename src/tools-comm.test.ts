@@ -245,6 +245,16 @@ describe('agent_teams_retro_review — 队长复盘校准', () => {
     expect(library[0]?.sourceTaskId).toBe('t1')
   })
 
+  it('revised 校准记录 captain causeSource', async () => {
+    await writeTeamToDisk(stateRoot, team({ tasks: [retroTask('t1')] }))
+    await tool('agent_teams_retro_review').execute(
+      { task_id: 't1', verdict: 'revised', cause: 'environment' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    )
+    const persisted = await readTeam(stateRoot, 'team-tools')
+    expect(persisted?.tasks.find(t => t.id === 't1')?.retro?.causeSource).toBe('captain')
+  })
+
   it('错误分支:无复盘任务校准被拒', async () => {
     await writeTeamToDisk(stateRoot, team({ tasks: [task('t1', { status: 'in_progress', assignee: '技术员' })] }))
     await expect(tool('agent_teams_retro_review').execute(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentTeamsTranslate } from './locales.ts'
 import {
+  budgetFactText,
   memberElapsedText,
   memberTimingState,
   retroDetailText,
@@ -29,6 +30,13 @@ const t: AgentTeamsTranslate = (key, params = {}) => {
     'retro.cause.underestimated': '任务被低估',
     'retro.cause.onTime': '按时完成',
     'retro.causeLabel': '原因：{cause}',
+    'retro.budgetFact.overBudget': '预算事实：超预算',
+    'retro.budgetFact.withinBudget': '预算事实：预算内',
+    'retro.budgetFact.unknown': '预算事实：未知',
+    'retro.causeSource.member': '成员归因',
+    'retro.causeSource.captain': '队长校准',
+    'retro.causeSource.auto': '自动分析',
+    'retro.causeSource.unknown': '来源未知',
   }
   const template = templates[key]
   if (template === undefined) return key
@@ -47,6 +55,17 @@ function task(overrides: Partial<ActivityTask> = {}): ActivityTask {
     ...overrides,
   }
 }
+
+describe('budget facts stay separate from attribution', () => {
+  it('renders objective budget fact independently', () => {
+    expect(budgetFactText(task({ budgetFact: 'over_budget' }), t)).toContain('超预算')
+  })
+  it('renders attribution source without changing budget fact', () => {
+    const value = task({ budgetFact: 'over_budget', retro: { attempt: 1, actualMs: 1, overran: true, cause: 'on_time', causeSource: 'member', summary: 'x', recommendation: '', createdAt: 1 } })
+    expect(retroDetailText(value, t)).toContain('成员归因')
+    expect(budgetFactText(value, t)).toContain('超预算')
+  })
+})
 
 describe('taskTimingState — 等级优先口径', () => {
   it('S 等级预算 15m:超出即 warn,超 1.5 倍即 over', () => {

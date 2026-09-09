@@ -1196,6 +1196,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
               recommendation: { type: 'string' },
               includes_gate_wait: { type: 'boolean' },
               has_helper: { type: 'boolean' },
+              cause_source: { type: 'string' },
               created_at: { type: 'number' },
             },
           },
@@ -1320,7 +1321,12 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
                 && (task.review.reviewedAt ?? 0) >= (task.claimedAt ?? 0),
               // helper 介入算进总耗时,只注明"有 helper 介入"(本 attempt 曾有 helper)。
               hasHelper: task.helperEver === true || task.helper !== undefined,
+              causeSource: args.retro_cause === undefined
+                ? 'auto'
+                : identity.kind === 'captain' ? 'captain' : 'member',
             }
+            // Attribution is accepted only from the authorized owner/captain and
+            // the current attempt; stale members are rejected above.
             task.retro = buildTaskRetro(facts, args.retro_cause)
             // L3:提炼入库(除 cancelled —— 记耗时不推经验)。bestPractice 全局库跨团队。
             // R-30:入库门槛收紧——只对"有成员经验(retro_note)或非 on_time 归因"
@@ -1793,6 +1799,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             ? { retroNote: args.note.trim() }
             : {},
           captainVerdict: args.verdict,
+          ...(args.verdict === 'revised' ? { causeSource: 'captain' as const } : {}),
         }
         task.updatedAt = Date.now()
         await writeTeam(stateRoot, fresh)

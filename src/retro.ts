@@ -131,6 +131,8 @@ export interface RetroTaskFacts {
   readonly includesGateWait?: boolean
   /** 边界:本 attempt 曾有 helper 介入。 */
   readonly hasHelper?: boolean
+  /** Authorized attribution source, omitted for legacy records. */
+  readonly causeSource?: 'auto' | 'member' | 'captain' | 'unknown'
 }
 
 /**
@@ -250,6 +252,7 @@ export function buildTaskRetro(facts: RetroTaskFacts, cause?: TaskRetroCause, no
     ...levelDeviation !== undefined ? { levelDeviation } : {},
     overran,
     cause: resolvedCause,
+    ...facts.causeSource !== undefined ? { causeSource: facts.causeSource } : {},
     summary,
     ...facts.retroNote !== undefined && facts.retroNote.trim() !== '' ? { retroNote: facts.retroNote.trim() } : {},
     recommendation,

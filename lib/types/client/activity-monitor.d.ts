@@ -70,6 +70,8 @@ export interface ActivityTask {
         readonly outputBytes: number;
         readonly selfReport?: string;
     };
+    /** 客观预算事实，独立于主观归因。 */
+    readonly budgetFact?: 'unknown' | 'within_budget' | 'over_budget';
     /** 复盘记录(自成长)。 */
     readonly retro?: {
         readonly attempt: number;
@@ -80,6 +82,7 @@ export interface ActivityTask {
         readonly levelDeviation?: number;
         readonly overran: boolean;
         readonly cause: string;
+        readonly causeSource?: 'auto' | 'member' | 'captain' | 'unknown';
         readonly summary: string;
         readonly retroNote?: string;
         readonly captainVerdict?: 'useful' | 'useless' | 'revised';
@@ -100,6 +103,7 @@ export interface ActivityMessage {
 /** One team snapshot (mirrors the host TeamActivitySnapshot). */
 export interface ActivityTeam {
     readonly workspace: string;
+    readonly workspaceId?: string;
     readonly teamId: string;
     readonly name: string;
     readonly description?: string;

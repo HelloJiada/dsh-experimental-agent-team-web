@@ -148,6 +148,13 @@ export declare const zh: {
     'retro.cause.onTime': string;
     'retro.cause.other': string;
     'retro.causeLabel': string;
+    'retro.budgetFact.unknown': string;
+    'retro.budgetFact.withinBudget': string;
+    'retro.budgetFact.overBudget': string;
+    'retro.causeSource.auto': string;
+    'retro.causeSource.member': string;
+    'retro.causeSource.captain': string;
+    'retro.causeSource.unknown': string;
     'task.calibration.pending': string;
     'task.calibration.detail': string;
     'task.detail.completed': string;
@@ -326,6 +333,13 @@ export declare const en: {
     'retro.cause.onTime': string;
     'retro.cause.other': string;
     'retro.causeLabel': string;
+    'retro.budgetFact.unknown': string;
+    'retro.budgetFact.withinBudget': string;
+    'retro.budgetFact.overBudget': string;
+    'retro.causeSource.auto': string;
+    'retro.causeSource.member': string;
+    'retro.causeSource.captain': string;
+    'retro.causeSource.unknown': string;
     'task.calibration.pending': string;
     'task.calibration.detail': string;
     'task.detail.completed': string;

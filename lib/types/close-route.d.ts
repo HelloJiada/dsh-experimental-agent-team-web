@@ -49,6 +49,8 @@ export declare function readJsonBody(req: IncomingMessage, cap?: number): Promis
 export interface CloseTeamRequest {
     readonly teamId: string;
     readonly captainSessionId: string;
+    /** Canonical workspace token computed by the host snapshot route. */
+    readonly workspaceId?: string;
 }
 /** A team is closeable when it has no tasks, or every task is completed. */
 export declare function isTeamCloseable(team: TeamState): boolean;

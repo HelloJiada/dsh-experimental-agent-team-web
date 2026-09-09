@@ -9,11 +9,12 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { canonicalWorkspaceId } from './workspace-identity.ts'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { memberActivity } from './members.ts'
 import { analyzeTeamSnapshot, type TeamIntelligence } from './intelligence.ts'
-import { currentTaskElapsedApprox, currentTaskElapsedMs, retroPendingCalibration, summarizeTeamRetro } from './retro.ts'
+import { currentTaskElapsedApprox, currentTaskElapsedMs, estimateBudgetMs, retroPendingCalibration, summarizeTeamRetro } from './retro.ts'
 import { readBestPractices } from './best-practices.ts'
 import {
   CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readMailbox, readUnreadMailbox, readTeam,
@@ -161,6 +162,8 @@ export interface TeamActivityMessage {
 /** The full panel payload for one team. */
 export interface TeamActivitySnapshot {
   readonly workspace: string
+  /** Canonical workspace identity; older hosts may omit it. */
+  readonly workspaceId?: string
   readonly teamId: string
   readonly name: string
   readonly description?: string
@@ -210,6 +213,8 @@ export interface TeamSnapshotOptions {
   /** AgentTeam 设置中心(t13):settings 命名空间 enabledModels 快照读取
    * 函数(apply 期捕获 scope 的闭包);undefined → 非 deepseek 全未授权。 */
   readonly enabledModels?: () => Record<string, boolean>
+  /** Host-computed canonical workspace token (never read from team.json). */
+  readonly workspaceId?: string
 }
 
 /** The current task of a member: its first unfinished owned task. */
@@ -356,8 +361,10 @@ export async function assembleTeamSnapshot(
   const calibration = summarizeTeamRetro(tasks, state.members)
   // AgentTeam 设置中心(t13:模型粒度授权,与 /state 顶层共用 collectProviders)。
   const providers = await collectProviders(ctx, options.enabledModels)
+  const workspaceId = options.workspaceId ?? await canonicalWorkspaceId(stateRoot)
   const base: TeamActivitySnapshot = {
     workspace,
+    workspaceId,
     teamId: state.id,
     name: state.name,
     ...state.description !== undefined ? { description: state.description } : {},
@@ -401,6 +408,11 @@ export async function assembleTeamSnapshot(
         ...task.completedAt !== undefined ? { completedAt: task.completedAt } : {},
         ...task.actualMs !== undefined ? { actualMs: task.actualMs } : {},
         ...task.overrunMs !== undefined ? { overrunMs: task.overrunMs } : {},
+        budgetFact: (() => {
+          const budget = estimateBudgetMs(task.estimateLevel, task.estimatedMs)
+          if (budget === undefined || task.actualMs === undefined) return 'unknown' as const
+          return task.actualMs > budget ? 'over_budget' as const : 'within_budget' as const
+        })(),
         ...signals !== undefined ? { signals } : {},
         ...task.retro !== undefined ? { retro: task.retro } : {},
         // 复盘质量闭环:high/critical 任务缺成员经验与队长校准 → 面板标「待校准」。
@@ -459,7 +471,10 @@ export async function collectTeamsActivity(
       try {
         const state = await readTeam(root.stateRoot, entry.name)
         if (state === undefined) continue
-        snapshots.push(await assembleTeamSnapshot(ctx, root.stateRoot, root.workspace, state, { enabledModels }))
+        snapshots.push(await assembleTeamSnapshot(ctx, root.stateRoot, root.workspace, state, {
+          enabledModels,
+          workspaceId: await canonicalWorkspaceId(root.stateRoot),
+        }))
       } catch {
         ctx.logger.warn(`agent-team-web: skipped unreadable team state "${entry.name}" in workspace "${root.workspace}"`)
       }
@@ -492,7 +507,14 @@ export async function collectArchivedTeamsActivity(
           join(root.stateRoot, 'archive'),
           root.workspace,
           state,
-          { includeRemoved: true, historic: true, enabledModels },
+          {
+            includeRemoved: true,
+            historic: true,
+            enabledModels,
+            // Archive lives below the same workspace root; identity must not
+            // change merely because this snapshot reads archive/.
+            workspaceId: await canonicalWorkspaceId(root.stateRoot),
+          },
         ))
       } catch {
         ctx.logger.warn(`agent-team-web: skipped unreadable archived team "${teamId}" in workspace "${root.workspace}"`)
