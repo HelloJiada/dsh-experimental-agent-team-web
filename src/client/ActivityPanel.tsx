@@ -50,9 +50,11 @@ import {
 import {
   getActivityMonitorTargetsSnapshot,
   getActivitySnapshotsSnapshot,
+  getHistoryDiagnosticsSnapshot,
   startActivityPolling,
   subscribeActivityMonitorTargets,
   subscribeActivitySnapshots,
+  subscribeHistoryDiagnostics,
   type ActivityMember,
   type ActivityTask,
   type ActivityTeam,
@@ -76,6 +78,8 @@ import {
 } from './task-timing.ts'
 import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
 import { copyTaskDetail, taskDetailClipboardText } from './task-detail-copy.ts'
+import { copyDiagnosticText } from './diagnostic-copy.ts'
+import { diagnosticBannerText, diagnosticClipboardText, memberNavigationDisabled, navigationPanelEffect, relevantDiagnostic } from './session-diagnostics.ts'
 import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
 import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts'
 import {
@@ -651,7 +655,7 @@ function commissarStateLabel(activity: ActivityMember['activity'], t: AgentTeams
   return t('commissar.state.unknown')
 }
 
-function TeamSection({ team, onNavigate, t, historic = false, compact = false }: {
+function TeamSection({ team, onNavigate, t, historic = false, compact = false, diagnostics }: {
   readonly team: ActivityTeam
   /** Navigate to a member transcript (floater hides immediately). */
   readonly onNavigate: (parentId: SessionId, childId: SessionId) => void
@@ -659,6 +663,7 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
   readonly historic?: boolean
   /** compact≤960:只显示耗时,隐藏预估/信号/复盘细节(方向决策 5)。 */
   readonly compact?: boolean
+  readonly diagnostics?: ReadonlyMap<string, import('./session-diagnostics.ts').TeamHistoryDiagnostic>
 }) {
   const [membersOpen, setMembersOpen] = useState(() => team.members.some((member) => member.activity === 'working' || member.unread > 0))
   // The commissar is a supervisor, not a dispatched executor: busy state,
@@ -781,6 +786,8 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
           {execMembers.map((member) => {
             const owned = team.tasks.filter((task) => task.assignee === member.name)
             const modelLabel = memberModelLabel(member.provider, member.model, member.reasoningEffort)
+            const diagnostic = diagnostics?.get(member.id)
+            const navigation = { parentId: team.captainSessionId as SessionId, childId: member.id as SessionId }
             return (
               <div key={member.id} className={css.memberBlock} data-activity={member.activity}>
                 <span className={css.memberBranch} aria-hidden><span /></span>
@@ -788,9 +795,11 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
                   type="button"
                   className={css.memberRow}
                   data-activity={member.activity}
+                  data-diagnostic={diagnostic === undefined ? undefined : 'pending'}
+                  title={diagnostic === undefined ? undefined : t('history.diagnostic.disabledReason')}
                   onClick={() => {
                     if (member.id !== '') {
-                      onNavigate(team.captainSessionId as SessionId, member.id as SessionId)
+                      onNavigate(navigation.parentId, navigation.childId)
                     }
                   }}
                 >
@@ -890,17 +899,22 @@ function historicCardTeam(data: AgentTeamsCardData, owner: string): ActivityTeam
  * session is the one currently open. */
 export type ActivityPanelProps = {
   readonly sessionsList: ObservableSnapshot<SessionListState>
-  readonly openMember: (parentId: SessionId, childId: SessionId) => void
+  readonly openMember: (parentId: SessionId, childId: SessionId) => Promise<boolean>
 } & PropsLocale<'agentTeamWeb'>
 
 export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProps) {
-  // Navigating to a member's subagent transcript is an explicit departure:
-  // hide the floater immediately instead of waiting out the autocollapse
-  // grace, so the panel never lingers over the member session.
+  // A navigation failure keeps the floater (and its retry entry point) open:
+  // hiding first would strand the user with no visible diagnostic or retry.
   const navigateToSession = (parentId: SessionId, childId: SessionId): void => {
-    setOpen(false)
-    setWasActive(false)
-    openMember(parentId, childId)
+    setDiagnosticRetry({ parentId, childId })
+    void openMember(parentId, childId).then((opened) => {
+      const effect = navigationPanelEffect(opened)
+      if (effect.hidePanel) {
+        setOpen(false)
+        setWasActive(false)
+      }
+      if (!effect.keepRetry) setDiagnosticRetry(null)
+    })
   }
   const [open, setOpen] = useState(false)
   const [openOwner, setOpenOwner] = useState<SessionId | undefined>()
@@ -912,6 +926,8 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
   const [interaction, setInteraction] = useState<'dragging' | 'resizing' | null>(null)
   const [closing, setClosing] = useState(false)
   const [archiveConfirm, setArchiveConfirm] = useState(false)
+  const [diagnosticCopyResult, setDiagnosticCopyResult] = useState<'copied' | 'failed' | null>(null)
+  const [diagnosticRetry, setDiagnosticRetry] = useState<{ parentId: SessionId; childId: SessionId } | null>(null)
   const [closeError, setCloseError] = useState<string | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const boundsRef = useRef(bounds)
@@ -929,6 +945,10 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
   const { teams, archivedTeams, connection, lastSuccessAt } = useSyncExternalStore(
     subscribeActivitySnapshots,
     getActivitySnapshotsSnapshot,
+  )
+  const historyDiagnostics = useSyncExternalStore(
+    subscribeHistoryDiagnostics,
+    getHistoryDiagnosticsSnapshot,
   )
   const currentTargets = useMemo(
     () => current === undefined ? [] : monitorTargets.filter((target) => target.sessionId === current),
@@ -1090,6 +1110,11 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     )),
     [archivedTeams, current, teams],
   )
+  const diagnosticTeams = useMemo(
+    () => [...visibleTeams, ...visibleArchived, ...visibleHistoric.map(({ data }) => historicCardTeam(data, current ?? ''))],
+    [visibleTeams, visibleArchived, visibleHistoric, current],
+  )
+  const currentDiagnostic = relevantDiagnostic(diagnosticTeams, historyDiagnostics, current ?? '')
   // 改进方向 5:归档查询 —— 历史归档区按 团队/时间/复盘状态 筛选。
   // 纯函数计算,只影响展示层;筛选状态为面板本地 UI 状态。
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilterState>(ARCHIVE_DEFAULT_FILTER)
@@ -1465,13 +1490,21 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
               </span>
             </div>
           )}
+          {currentDiagnostic !== undefined && (
+            <div role="status" aria-live="polite" className={css.diagnosticBanner}>
+              <span>{diagnosticBannerText(currentDiagnostic, t)}</span>
+              {diagnosticRetry !== null && <button type="button" onClick={() => { navigateToSession(diagnosticRetry.parentId, diagnosticRetry.childId) }}>{t('history.diagnostic.retry')}</button>}
+              <button type="button" onClick={() => { void copyDiagnosticText(diagnosticClipboardText(currentDiagnostic)).then(setDiagnosticCopyResult) }}>{t('history.diagnostic.copy')}</button>
+              {diagnosticCopyResult !== null && <span role="status" aria-live="polite">{t(diagnosticCopyResult === 'copied' ? 'history.diagnostic.copyOk' : 'history.diagnostic.copyFail')}</span>}
+            </div>
+          )}
           <div className={css.teams}>
             {visibleCount === 0
               ? <span className={css.emptyHint}>{t('activity.empty')}</span>
               : (
                 <>
                   {visibleTeams.map((team) => (
-                    <TeamSection key={team.teamId} team={team} onNavigate={navigateToSession} t={t} compact={compact} />
+                    <TeamSection key={team.teamId} team={team} onNavigate={navigateToSession} t={t} compact={compact} diagnostics={historyDiagnostics} />
                   ))}
                   {visibleArchived.length > 0 && (
                     <button type="button" className={css.historyToggle} data-history-toggle aria-expanded={historyOpen} onClick={() => { setHistoryOpen((open) => !open) }}>
@@ -1531,13 +1564,13 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
                   {historyOpen && filteredArchived.map((team) => (
                     <div key={`${team.captainSessionId}:${team.teamId}`} data-team-id={team.teamId} data-historic>
                       <span className={css.archiveLabel}>{t('archive.label')}</span>
-                      <TeamSection team={team} onNavigate={navigateToSession} t={t} historic compact={compact} />
+                      <TeamSection team={team} onNavigate={navigateToSession} t={t} historic compact={compact} diagnostics={historyDiagnostics} />
                     </div>
                   ))}
                   {historyOpen && visibleHistoric.map(({ data: team, owner }) => {
                     const teamKey = `${owner}:${team.teamId}`
                     return (
-                      <TeamSection key={teamKey} team={historicCardTeam(team, owner)} onNavigate={navigateToSession} t={t} historic compact={compact} />
+                      <TeamSection key={teamKey} team={historicCardTeam(team, owner)} onNavigate={navigateToSession} t={t} historic compact={compact} diagnostics={historyDiagnostics} />
                     )
                   })}
                 </>

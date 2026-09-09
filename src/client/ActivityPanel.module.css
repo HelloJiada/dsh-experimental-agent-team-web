@@ -1487,6 +1487,27 @@
 
 .archiveAction:disabled { opacity: .55; cursor: not-allowed; }
 
+.diagnosticBanner {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 7px 10px;
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning) 10%, var(--dsw-alias-bg-module));
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.diagnosticBanner button {
+  border: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-fill-neutral);
+  cursor: pointer;
+}
+
 .archiveConfirm {
   display: flex;
   justify-content: space-between;

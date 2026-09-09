@@ -74,7 +74,7 @@ export declare function loadBarFor(team: ActivityTeam, member: ActivityMember): 
  * session is the one currently open. */
 export type ActivityPanelProps = {
     readonly sessionsList: ObservableSnapshot<SessionListState>;
-    readonly openMember: (parentId: SessionId, childId: SessionId) => void;
+    readonly openMember: (parentId: SessionId, childId: SessionId) => Promise<boolean>;
 } & PropsLocale<'agentTeamWeb'>;
 export declare function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProps): import("react").JSX.Element | null;
 //# sourceMappingURL=ActivityPanel.d.ts.map

@@ -8,7 +8,7 @@
 
 ## DSH 0.1.3 兼容性
 
-版本 0.1.11 使用本包自包含的 AgentTeams 内核，并针对公开 DSH `0.1.3-alpha.2` 包线验证；不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
+版本 0.1.12 使用本包自包含的 AgentTeams 内核，并针对公开 DSH `0.1.3-alpha.2` 包线验证；不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
 
 ## 概览
 
@@ -53,6 +53,15 @@ DSH 设置页内置 **AgentTeam** section(`settings.section` 槽位,含导航专
 
 内核以磁盘为真源;会话事件仅信息性;团队删除即归档(而非物理删除),面板可恢复历史。
 
+## 历史会话诊断
+
+成员会话记录存放在 DSH Session 中,其磁盘格式可能随 harness 版本变化。当当前
+reader 无法打开较旧的成员会话时,面板**不会**隐藏团队:仍从 `.agent-team-web/`
+展示 durable 的团队、任务与归档摘要,并给出简短诊断横幅——说明原因,以及可复制
+且已脱敏的诊断信息(不含文件路径、token 或原始会话内容)。成员行保持可点击,
+临时失败可直接重试;打开成功后横幅自动清除。插件**绝不**读取、改写或迁移原始
+会话日志,恢复交由 DSH 自身处理。
+
 ## 并发模型
 
 AgentTeams 假设**单个 harness 进程**独占一个 workspace 的团队状态目录(`.agent-team-web/`)。同一团队的所有变更由**进程内**按团队的 promise-chain 锁(`withTeamLock`,`src/state.ts`)串行化,因此 `team.json`、邮箱、best-practices 与 retired-members 索引的读-改-写循环在该进程内保持串行。
@@ -73,7 +82,7 @@ AgentTeams 假设**单个 harness 进程**独占一个 workspace 的团队状态
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.11.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.12.tgz
 ```
 
 开发者/协作者也可用 git 或本地路径安装——仓库已提交 `lib/` 构建产物,无需构建:
@@ -118,4 +127,4 @@ tarball,无需改 URL。(若上面文件名仍带旧版本号,到
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.11.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.12.tgz`

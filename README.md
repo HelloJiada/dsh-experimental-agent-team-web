@@ -8,7 +8,7 @@
 
 ## DSH 0.1.3 compatibility
 
-Version 0.1.11 uses the package's self-contained AgentTeams kernel and is tested
+Version 0.1.12 uses the package's self-contained AgentTeams kernel and is tested
 against the public DSH `0.1.3-alpha.2` package line. It does **not** require the
 unpublished official experimental Agent Teams package or a local DSH checkout.
 Team state remains workspace-local under `.agent-team-web/<teamId>/`, while the
@@ -71,6 +71,17 @@ visibility and lets the framework learn from every task:
 
 The kernel keeps the team state on disk; session events are informational only, and teams are archived (not deleted) so the panel can restore history.
 
+## Historical session diagnostics
+
+Member transcripts live in DSH sessions, whose on-disk format can change between
+harness versions. When the current reader cannot open an older member session,
+the panel does **not** hide the team: it keeps showing the durable team, task and
+archive summary from `.agent-team-web/`, and shows a short diagnostic banner with
+the reason and a copyable, redacted reference (no file paths, tokens or raw
+session contents). Member rows stay clickable so a transient failure can simply
+be retried; a successful open clears the banner. The plugin never reads, rewrites
+or migrates the original session logs — recovery is left to DSH itself.
+
 ## Concurrency model
 
 AgentTeams assumes that **one harness process** owns a workspace's team-state
@@ -105,7 +116,7 @@ The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.11.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.12.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -154,4 +165,4 @@ page for the current asset name.)
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.11.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.12.tgz`

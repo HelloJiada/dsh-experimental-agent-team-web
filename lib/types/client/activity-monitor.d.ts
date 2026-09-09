@@ -1,5 +1,6 @@
 /** Shared, demand-driven state for the AgentTeams browser monitor. */
 import type { TeamIntelligence } from '../intelligence.ts';
+import type { TeamHistoryDiagnostic } from './session-diagnostics.ts';
 /** One member row of a host snapshot. */
 export interface ActivityMember {
     readonly id: string;
@@ -163,6 +164,10 @@ export interface ActivitySnapshots {
     readonly connectionRevision: number;
     readonly lastSuccessAt?: number;
 }
+export declare function subscribeHistoryDiagnostics(listener: () => void): () => void;
+export declare function getHistoryDiagnosticsSnapshot(): ReadonlyMap<string, TeamHistoryDiagnostic>;
+export declare function recordHistoryDiagnostic(sessionId: string, diagnostic: TeamHistoryDiagnostic): void;
+export declare function clearHistoryDiagnostic(sessionId: string): void;
 /** Subscribe to the active monitor-target list (React external-store shape). */
 export declare function subscribeActivityMonitorTargets(listener: () => void): () => void;
 /** Read the stable active-target snapshot. */

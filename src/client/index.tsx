@@ -24,6 +24,8 @@ import {
   AGENT_TEAMS_LOCALE_NAMESPACE, en, zh, type AgentTeamsLocaleKey,
 } from './locales.ts'
 import { openAgentTeamMember } from './session-navigation.ts'
+import { clearHistoryDiagnostic, recordHistoryDiagnostic } from './activity-monitor.ts'
+import { classifySessionFailure } from './session-diagnostics.ts'
 import {
   ProviderGrantsSection,
   PROVIDER_GRANTS_NAMESPACE,
@@ -63,10 +65,16 @@ export function apply(ctx: ClientContext): void {
     () => ctx.locale.register(AGENT_TEAMS_LOCALE_NAMESPACE, { zh, en }),
     'agent-team-web: dictionaries',
   )
-  const openMember = (parentId: SessionId, childId: SessionId): void => {
-    void openAgentTeamMember(ctx.sessions, parentId, childId).catch((error: unknown) => {
-      console.warn(`agent-team-web: failed to open member transcript ${childId}: ${String(error)}`)
-    })
+  const openMember = async (parentId: SessionId, childId: SessionId): Promise<boolean> => {
+    try {
+      await openAgentTeamMember(ctx.sessions, parentId, childId)
+      clearHistoryDiagnostic(String(childId))
+      return true
+    } catch (error: unknown) {
+      recordHistoryDiagnostic(String(childId), classifySessionFailure(error, { sessionId: String(childId) }))
+      console.warn('agent-team-web: failed to open member transcript', error instanceof Error ? error.name : 'unknown error')
+      return false
+    }
   }
   const Panel = ({ t }: PropsLocale<'agentTeamWeb'>) => (
     <ActivityPanel

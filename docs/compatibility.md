@@ -24,6 +24,8 @@ local DeepSeek Harness checkout.
 
 | Plugin version | DSH version | Notes |
 |---|---|---|
+| 0.1.12 | 0.1.3-alpha.2 | Historical-session diagnostics: visible, redacted degradation without touching session logs |
+| 0.1.11 | 0.1.3-alpha.2 | Portable member routes: authorization and adapter validation before spawn, no silent fallback |
 | 0.1.10 | 0.1.3-alpha.2 | Self-contained kernel; canonical workspace identity; objective budget facts separate from attribution |
 | 0.1.9 | 0.1.3-alpha.2 | Self-contained kernel; public npm dependencies only |
 | 0.1.0 – 0.1.5 | 0.1.1-rc.2 | Historical releases |

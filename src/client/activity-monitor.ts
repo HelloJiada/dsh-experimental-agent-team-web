@@ -2,6 +2,7 @@
 
 import type { TeamIntelligence } from '../intelligence.ts'
 import { STATE_PATH, TOKEN_GLOBAL, TOKEN_HEADER } from '../web-auth-constants.ts'
+import type { TeamHistoryDiagnostic } from './session-diagnostics.ts'
 
 /** One member row of a host snapshot. */
 export interface ActivityMember {
@@ -181,6 +182,36 @@ interface RegisteredTarget extends ActivityMonitorTarget {
 const targets = new Map<string, RegisteredTarget>()
 const targetListeners = new Set<() => void>()
 const snapshotListeners = new Set<() => void>()
+const historyDiagnostics = new Map<string, TeamHistoryDiagnostic>()
+const diagnosticListeners = new Set<() => void>()
+let diagnosticSnapshot: ReadonlyMap<string, TeamHistoryDiagnostic> = new Map()
+
+export function subscribeHistoryDiagnostics(listener: () => void): () => void {
+  diagnosticListeners.add(listener)
+  return () => { diagnosticListeners.delete(listener) }
+}
+
+export function getHistoryDiagnosticsSnapshot(): ReadonlyMap<string, TeamHistoryDiagnostic> {
+  return diagnosticSnapshot
+}
+
+function publishHistoryDiagnostics(): void {
+  diagnosticSnapshot = new Map(historyDiagnostics)
+  for (const listener of diagnosticListeners) listener()
+}
+
+export function recordHistoryDiagnostic(sessionId: string, diagnostic: TeamHistoryDiagnostic): void {
+  const id = sessionId.trim()
+  if (id === '') return
+  historyDiagnostics.set(id, diagnostic)
+  publishHistoryDiagnostics()
+}
+
+export function clearHistoryDiagnostic(sessionId: string): void {
+  const id = sessionId.trim()
+  if (!historyDiagnostics.delete(id)) return
+  publishHistoryDiagnostics()
+}
 let targetSnapshot: readonly ActivityMonitorTarget[] = []
 let activitySnapshots: ActivitySnapshots = { teams: [], archivedTeams: [], connection: 'loading', connectionRevision: 0 }
 

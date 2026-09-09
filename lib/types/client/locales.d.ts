@@ -34,6 +34,13 @@ export declare const zh: {
     'task.detail.copy': string;
     'task.detail.copied': string;
     'task.detail.copyFailed': string;
+    'history.diagnostic.legacy': string;
+    'history.diagnostic.unavailable': string;
+    'history.diagnostic.copy': string;
+    'history.diagnostic.retry': string;
+    'history.diagnostic.copyOk': string;
+    'history.diagnostic.copyFail': string;
+    'history.diagnostic.disabledReason': string;
     'format.listSeparator': string;
     'task.status.pending': string;
     'task.status.claimed': string;
@@ -255,6 +262,13 @@ export declare const en: {
     'task.detail.copy': string;
     'task.detail.copied': string;
     'task.detail.copyFailed': string;
+    'history.diagnostic.legacy': string;
+    'history.diagnostic.unavailable': string;
+    'history.diagnostic.copy': string;
+    'history.diagnostic.retry': string;
+    'history.diagnostic.copyOk': string;
+    'history.diagnostic.copyFail': string;
+    'history.diagnostic.disabledReason': string;
     'format.listSeparator': string;
     'task.status.pending': string;
     'task.status.claimed': string;
