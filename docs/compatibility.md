@@ -24,7 +24,7 @@ local DeepSeek Harness checkout.
 
 | Plugin version | DSH version | Notes |
 |---|---|---|
-| 0.1.8 | 0.1.3-alpha.2 | Self-contained kernel; public npm dependencies only |
+| 0.1.9 | 0.1.3-alpha.2 | Self-contained kernel; public npm dependencies only |
 | 0.1.0 – 0.1.5 | 0.1.1-rc.2 | Historical releases |
 
 If DeepSeek Harness changes Team event shapes, session projection contracts, or

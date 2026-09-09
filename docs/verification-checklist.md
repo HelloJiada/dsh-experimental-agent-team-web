@@ -18,7 +18,7 @@ Session committed event log 是否出现插件事件作为通过条件。
 
 ```bash
 # 在 profile 目录（如 ~/.dsh/profiles/web）；agent-team-web runtime 已内置于本 bundle
-pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.8.tgz
+pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.9.tgz
 ```
 
 在 profile patch 中按需启用本 bundle（与包内 `cordis.patch.yml` 一致）：

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-agent-team-web",
   "description": "External Agent Teams web bundle for DeepSeek Harness",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
@@ -63,6 +63,7 @@
     "test": "vitest run --configLoader runner"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-experimental-agent-team-web": "file:/tmp/atw019/deepseek-ai-dsh-experimental-agent-team-web-0.1.9.tgz",
     "zod": "^4.4.3"
   },
   "peerDependencies": {

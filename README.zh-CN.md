@@ -62,7 +62,7 @@ AgentTeams 假设**单个 harness 进程**独占一个 workspace 的团队状态
 
 ## DSH 0.1.3 适配说明
 
-0.1.8 使用本包自带的 AgentTeams 内核，并基于公开发布的 DSH
+0.1.9 使用本包自带的 AgentTeams 内核，并基于公开发布的 DSH
 `0.1.3-alpha.2` 包线验证：不依赖尚未公开发布的官方实验性 Agent Teams 包，也不要求
 本地 DSH checkout。团队状态继续存储于工作区
 `.agent-team-web/<teamId>/`；兼容工具、活动面板、设置/角色预设、政委门禁、复盘和归档
@@ -77,7 +77,7 @@ AgentTeams 假设**单个 harness 进程**独占一个 workspace 的团队状态
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.8.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.9.tgz
 ```
 
 开发者/协作者也可用 git 或本地路径安装——仓库已提交 `lib/` 构建产物,无需构建:
@@ -122,4 +122,4 @@ tarball,无需改 URL。(若上面文件名仍带旧版本号,到
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.8.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.9.tgz`

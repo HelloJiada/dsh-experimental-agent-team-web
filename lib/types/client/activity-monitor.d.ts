@@ -199,6 +199,7 @@ export declare function agentTeamsFetchInit(signal: AbortSignal): {
 };
 interface ActivityFetchResponse {
     readonly ok: boolean;
+    readonly status?: number;
     json(): Promise<unknown>;
 }
 /** Injectable browser primitives used by the poll controller and its tests. */

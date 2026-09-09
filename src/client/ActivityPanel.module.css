@@ -1743,7 +1743,7 @@
 }
 
 /* ---- 融合智能层:健康/优先级/里程碑/负载条/风险 ---- */
-.healthChip{box-sizing:border-box;flex:none;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;font-size:10px;line-height:15px;display:inline-flex;background:color-mix(in srgb,var(--dsw-alias-bg-fill-neutral) 70%,var(--dsw-alias-bg-module));border:1px solid var(--dsw-alias-line-normal)}
+.healthChip{box-sizing:border-box;flex:none;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;font-size:11px;line-height:16px;display:inline-flex;background:var(--dsw-alias-bg-module);border:1px solid var(--dsw-alias-line-normal)}
 .healthChip strong{font-size:11px;font-weight:700;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
 .healthChip em{font-style:normal;color:var(--dsw-alias-label-secondary)}
 .healthChip[data-level=ok] strong{color:var(--dsw-alias-state-success)}
@@ -1754,16 +1754,16 @@
 .priorityCard{box-sizing:border-box;border:1px solid var(--dsw-alias-line-normal);background:var(--dsw-alias-bg-module);border-radius:8px;align-items:flex-start;gap:8px;padding:6px 8px;display:flex}
 .priorityCard[data-severity=high]{border-color:color-mix(in srgb,var(--dsw-alias-state-danger) 45%,var(--dsw-alias-line-normal))}
 .priorityCard[data-severity=medium]{border-color:color-mix(in srgb,var(--dsw-alias-state-warning) 40%,var(--dsw-alias-line-normal))}
-.priorityBadge{flex:none;min-width:22px;height:18px;align-items:center;justify-content:center;border-radius:6px;background:var(--dsw-alias-bg-fill-business);color:var(--dsw-alias-label-on-fill);font-size:10px;font-weight:700;display:inline-flex}
+.priorityBadge{flex:none;min-width:22px;height:18px;align-items:center;justify-content:center;border-radius:6px;background:var(--dsw-alias-bg-fill-business);color:var(--dsw-alias-label-on-fill);font-size:11px;font-weight:700;display:inline-flex}
 .priorityBody{flex-direction:column;gap:3px;min-width:0;flex:1;display:flex}
 .priorityTitle{flex-wrap:wrap;align-items:center;gap:5px;min-width:0;display:flex}
 .priorityTitle strong{min-width:0;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:600;line-height:16px;overflow:hidden}
-.chip{border-radius:999px;padding:0 6px;font-style:normal;font-size:8.5px;font-weight:600;line-height:14px;display:inline-flex}
-.chip[data-readiness=blocked],.chip[data-readiness=orphaned],.chip[data-readiness=stalled],.chip[data-readiness=failed],.chip[data-severity=high]{background:color-mix(in srgb,var(--dsw-alias-state-danger) 14%,var(--dsw-alias-bg-module));color:var(--dsw-alias-state-danger)}
-.chip[data-severity=medium],.chip[data-readiness=ready]{background:color-mix(in srgb,var(--dsw-alias-state-warning) 14%,var(--dsw-alias-bg-module));color:var(--dsw-alias-state-warning)}
+.chip{border-radius:999px;padding:0 6px;font-style:normal;font-size:11px;font-weight:600;line-height:16px;display:inline-flex;background:var(--dsw-alias-bg-module);border:1px solid var(--dsw-alias-line-normal)}
+.chip[data-readiness=blocked],.chip[data-readiness=orphaned],.chip[data-readiness=stalled],.chip[data-readiness=failed],.chip[data-severity=high]{border-color:var(--dsw-alias-state-danger);color:var(--dsw-alias-state-danger)}
+.chip[data-severity=medium],.chip[data-readiness=ready]{border-color:var(--dsw-alias-state-warning);color:var(--dsw-alias-state-warning)}
 .chip[data-severity=low],.chip[data-readiness=cancelled]{background:var(--dsw-alias-bg-fill-neutral);color:var(--dsw-alias-label-tertiary)}
-.priorityReasons{min-width:0;color:var(--dsw-alias-label-tertiary);font-size:9px;line-height:14px}
-.milestoneRow{min-width:0;align-items:center;gap:6px;font-size:10px;line-height:15px;color:var(--dsw-alias-label-secondary);display:flex}
+.priorityReasons{min-width:0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+.milestoneRow{min-width:0;align-items:center;gap:6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);display:flex}
 .milestoneRow strong{min-width:0;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;font-weight:600;overflow:hidden}
 .loadBar{flex:none;width:44px;height:6px;min-width:0;overflow:hidden;border-radius:999px;background:var(--dsw-alias-line-strong);align-items:stretch;display:inline-flex}
 .loadBar>span{display:block}

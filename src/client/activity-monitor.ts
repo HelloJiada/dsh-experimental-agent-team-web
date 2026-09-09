@@ -308,6 +308,7 @@ export function agentTeamsFetchInit(signal: AbortSignal): { cache: 'no-store'; s
 
 interface ActivityFetchResponse {
   readonly ok: boolean
+  readonly status?: number
   json(): Promise<unknown>
 }
 

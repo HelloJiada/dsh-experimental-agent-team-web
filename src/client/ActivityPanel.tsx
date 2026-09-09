@@ -359,6 +359,32 @@ export function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate): string 
   return t('task.summary.waitingSchedule')
 }
 
+/** Pick the task requiring the clearest next captain decision. */
+export function primaryTask(team: ActivityTeam): ActivityTask | null {
+  return team.tasks.find((task) => task.state === 'running')
+    ?? team.tasks.find((task) => task.state === 'blocked' && task.status !== 'completed')
+    ?? team.tasks.find((task) => task.state === 'open' && task.status !== 'completed')
+    ?? null
+}
+
+function NowAction({ team, t }: { readonly team: ActivityTeam; readonly t: AgentTeamsTranslate }) {
+  const task = primaryTask(team)
+  if (task === null) return (
+    <section className={css.nowAction} data-now-action data-state="empty" aria-label={t('deck.nowAria')}>
+      <span className={css.deckEyebrow}>{t('deck.now')}</span>
+      <strong className={css.nowEmpty}>{t('deck.nowEmpty')}</strong>
+    </section>
+  )
+  const owner = task.assignee === '' ? t('deck.nowReady') : t('deck.nowOwner', { member: task.assignee })
+  return (
+    <section className={css.nowAction} data-now-action data-state={taskTone(task.state, task.status)} data-task-id={task.id} aria-label={t('deck.nowAria')}>
+      <span className={css.deckEyebrow}>{t('deck.now')}</span>
+      <span className={css.nowBody}><strong title={task.subject}>{t('deck.nowTask', { taskId: task.id, subject: task.subject })}</strong><span>{owner}</span></span>
+      <span className={css.nowStatus}>{taskStatusLabel(task.status, t)}</span>
+    </section>
+  )
+}
+
 function ProgressOverview({ team, t }: { readonly team: ActivityTeam; readonly t: AgentTeamsTranslate }) {
   const running = team.tasks.filter((task) => task.state === 'running').length
   const blocked = team.tasks.filter((task) => task.state === 'blocked').length
@@ -391,7 +417,7 @@ function DependencyMap({ tasks, t, compact = false }: {
   /** compact≤960:隐藏预估/信号/复盘细节,只保留耗时相关(方向决策 5)。 */
   readonly compact?: boolean
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(() => tasks.some((task) => task.state === 'blocked'))
   const [hoverTaskId, setHoverTaskId] = useState<string | null>(null)
   const [keyboardTaskId, setKeyboardTaskId] = useState<string | null>(null)
   const [pinnedTaskId, setPinnedTaskId] = useState<string | null>(null)
@@ -430,6 +456,11 @@ function DependencyMap({ tasks, t, compact = false }: {
     window.addEventListener('keydown', onKeyDown)
     return () => { window.removeEventListener('keydown', onKeyDown) }
   }, [])
+  useEffect(() => {
+    setDetailExpanded(false)
+    setDetailCopied(false)
+    setDetailCopyFailed(false)
+  }, [focusedTaskId])
   if (tasks.length === 0) return null
   const fallbackTask = tasks.find((task) => task.state === 'blocked')
     ?? tasks.find((task) => task.state === 'running')
@@ -623,7 +654,7 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
   /** compact≤960:只显示耗时,隐藏预估/信号/复盘细节(方向决策 5)。 */
   readonly compact?: boolean
 }) {
-  const [membersOpen, setMembersOpen] = useState(true)
+  const [membersOpen, setMembersOpen] = useState(() => team.members.some((member) => member.activity === 'working' || member.unread > 0))
   // The commissar is a supervisor, not a dispatched executor: busy state,
   // summary dispatch counts, the members toggle and the delegation tree all
   // cover executing members only.
@@ -655,6 +686,8 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
       </header>
 
       <section className={css.delegationSection} aria-label={t('delegation.aria')} data-delegation-map>
+        <NowAction team={team} t={t} />
+        <ProgressOverview team={team} t={t} />
         <div className={css.commandLayer} data-leadership={commissar === undefined ? 'solo' : 'pair'}>
           <div className={css.captainNode}>
             <span className={css.captainAvatar}>
@@ -705,8 +738,6 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false }:
             </div>
           )}
         </div>
-
-        <ProgressOverview team={team} t={t} />
 
         {team.intelligence !== undefined && team.intelligence.priorities.length > 0 && (
           <section className={css.prioritySection} aria-label={t('priority.aria')} data-priority-map>
@@ -1056,6 +1087,7 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
   // 改进方向 5:归档查询 —— 历史归档区按 团队/时间/复盘状态 筛选。
   // 纯函数计算,只影响展示层;筛选状态为面板本地 UI 状态。
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilterState>(ARCHIVE_DEFAULT_FILTER)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const filteredArchived = useMemo(
     () => filterArchivedTeams(visibleArchived, archiveFilter),
     [visibleArchived, archiveFilter],
@@ -1157,6 +1189,7 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     setClosing(true)
     setCloseError(null)
     try {
+      setArchiveConfirm(false)
       // R-17/H-1: the /close route is token-gated; the panel echoes the boot
       // token injected into the served HTML.
       const token = agentTeamsWebToken()
@@ -1434,6 +1467,11 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
                     <TeamSection key={team.teamId} team={team} onNavigate={navigateToSession} t={t} compact={compact} />
                   ))}
                   {visibleArchived.length > 0 && (
+                    <button type="button" className={css.historyToggle} data-history-toggle aria-expanded={historyOpen} onClick={() => { setHistoryOpen((open) => !open) }}>
+                      <span>{t('archive.label')}</span><span>{historyOpen ? '⌄' : '›'}</span>
+                    </button>
+                  )}
+                  {historyOpen && visibleArchived.length > 0 && (
                     <div className={css.archiveFilterBar} data-archive-filter>
                       <label className={css.archiveFilterField}>
                         <span className={css.archiveFilterCaption}>{t('archive.filterTeam')}</span>
@@ -1480,16 +1518,16 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
                       </span>
                     </div>
                   )}
-                  {visibleArchived.length > 0 && filteredArchived.length === 0 && (
+                  {historyOpen && visibleArchived.length > 0 && filteredArchived.length === 0 && (
                     <span className={css.archiveEmpty}>{t('archive.filterEmpty')}</span>
                   )}
-                  {filteredArchived.map((team) => (
+                  {historyOpen && filteredArchived.map((team) => (
                     <div key={`${team.captainSessionId}:${team.teamId}`} data-team-id={team.teamId} data-historic>
                       <span className={css.archiveLabel}>{t('archive.label')}</span>
                       <TeamSection team={team} onNavigate={navigateToSession} t={t} historic compact={compact} />
                     </div>
                   ))}
-                  {visibleHistoric.map(({ data: team, owner }) => {
+                  {historyOpen && visibleHistoric.map(({ data: team, owner }) => {
                     const teamKey = `${owner}:${team.teamId}`
                     return (
                       <TeamSection key={teamKey} team={historicCardTeam(team, owner)} onNavigate={navigateToSession} t={t} historic compact={compact} />

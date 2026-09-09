@@ -22,6 +22,13 @@ export declare const zh: {
     'activity.closing': string;
     'activity.closeError': string;
     'activity.empty': string;
+    'deck.now': string;
+    'deck.nowAria': string;
+    'deck.nowEmpty': string;
+    'deck.nowTask': string;
+    'deck.nowOwner': string;
+    'deck.nowReady': string;
+    'deck.taskFlow': string;
     'task.detail.expand': string;
     'task.detail.collapse': string;
     'task.detail.copy': string;
@@ -229,6 +236,13 @@ export declare const en: {
     'activity.closing': string;
     'activity.closeError': string;
     'activity.empty': string;
+    'deck.now': string;
+    'deck.nowAria': string;
+    'deck.nowEmpty': string;
+    'deck.nowTask': string;
+    'deck.nowOwner': string;
+    'deck.nowReady': string;
+    'deck.taskFlow': string;
     'task.detail.expand': string;
     'task.detail.collapse': string;
     'task.detail.copy': string;

@@ -61,6 +61,8 @@ export declare function taskTone(state: ActivityTask['state'], status: string): 
 export declare function timingData(task: ActivityTask): 'ok' | 'warn' | 'over';
 export declare function compactTaskLabel(subject: string): string;
 export declare function taskSummary(team: ActivityTeam, t: AgentTeamsTranslate): string;
+/** Pick the task requiring the clearest next captain decision. */
+export declare function primaryTask(team: ActivityTeam): ActivityTask | null;
 /** 健康档位:0-49 需要立即干预,50-79 存在风险,80+ 运行平稳。 */
 export declare function healthLevel(score: number): 'critical' | 'warn' | 'ok';
 /** 高风险消息计数(融合分析层)。 */
