@@ -7,8 +7,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
  *
  * Deterministic replay fixture for the whole pipeline (events → projection →
  * view → insights → commands) so it can be verified without a live DSH
- * profile. The expected view state is documented in
- * `docs/verification-checklist.md`.
+ * profile. Tests in this repository assert the expected view state directly.
  */
 export const teamLifecycleEvents: SessionEvent[] = [
   // Open the team.

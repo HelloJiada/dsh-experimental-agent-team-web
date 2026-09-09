@@ -9,7 +9,7 @@
 3. `.agent-team-web/` 磁盘状态与 `/plugins/agent-team-web/state` 快照可读取；
 4. Captain 侧的 current-session 活动入口与轻量监视器能准确反映这些真实数据。
 
-完整核对表见 [verification-checklist.md](verification-checklist.md)。本文件只保留最短路径。
+本文件只保留最短路径；完整发布前验证流程见 [releasing.md](releasing.md)。
 
 ## 0. 安装
 
@@ -76,10 +76,10 @@ Use AgentTeams to review the last 20 commits from performance, security, and pro
 
 1. **活动入口**：当前 session 存在 active 或 blocked 工作时，活动徽标与 transcript 轻量摘要出现；
 2. **打开方式**：点击任一入口都能打开非模态监视器，conversation 保持可见；
-3. **监视器摘要**：健康度 / 成员数 / active/blocked 任务数不是空值；若存在 blocked/stalled 工作，Top Interventions 不为空；
+3. **监视器摘要**：Now / Progress / Command 与成员、任务状态不是空值；存在 blocked/stalled 工作时，任务流可展开查看依赖；
 4. **布局**：宽屏默认停靠，可切换为可拖动、可缩放的悬浮面板；在 ≤960px 下为紧凑安全边距 overlay；
 5. **成员导航**：点击成员会打开其已有 session；
-6. **内容边界**：默认面板不显示完整 timeline、筛选器、DAG 或 command explorer；这些与 `commandPlan` envelope 仍可作为 projection/detail DTO 供宿主消费。
+6. **内容边界**：归档历史默认折叠，需要时展开查看筛选器、任务依赖和完整详情。
 
 ## 5. 若 Team 视图为空，先排查这三个问题
 

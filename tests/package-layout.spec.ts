@@ -69,11 +69,12 @@ describe('package layout', () => {
       files: readonly string[]
     }
     expect(packageJson.files).toContain('examples')
-    expect(packageJson.files).toContain('docs/verification-checklist.md')
+    expect(packageJson.files).toContain('docs/compatibility.md')
+    expect(packageJson.files).toContain('docs/releasing.md')
     expect(packageJson.files).toContain('docs/real-profile-smoke-check.md')
-    expect(packageJson.files).toContain('docs/command-bridge-execution.md')
     await expect(access(resolve(root, 'examples/profile-patch.agent-team-web.yml'))).resolves.toBeUndefined()
+    await expect(access(resolve(root, 'docs/compatibility.md'))).resolves.toBeUndefined()
+    await expect(access(resolve(root, 'docs/releasing.md'))).resolves.toBeUndefined()
     await expect(access(resolve(root, 'docs/real-profile-smoke-check.md'))).resolves.toBeUndefined()
-    await expect(access(resolve(root, 'docs/command-bridge-execution.md'))).resolves.toBeUndefined()
   })
 })

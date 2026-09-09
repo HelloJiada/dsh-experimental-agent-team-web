@@ -10,14 +10,14 @@ describe('real-profile integration skeleton', () => {
     expect(patch).toContain('@deepseek-ai/dsh-experimental-agent-team-web')
     expect(patch).toContain('sessionProjections')
     expect(patch).toContain('agent-team-web/*')
-    expect(patch).toContain('commandPlan JSON payload')
+    expect(patch).toContain('/plugins/agent-team-web/state')
   })
 
-  it('ships a smoke-check guide that references the private bundle and plan envelope', async () => {
+  it('ships a smoke-check guide for the bundle and live state route', async () => {
     const guide = await readFile(resolve(root, 'docs/real-profile-smoke-check.md'), 'utf8')
     expect(guide).toContain('@deepseek-ai/dsh-experimental-agent-team-web')
-    expect(guide).toContain('commandPlan')
-    expect(guide).toContain('verification-checklist.md')
+    expect(guide).toContain('/plugins/agent-team-web/state')
+    expect(guide).toContain('releasing.md')
     expect(guide).toContain('dsh --profile web --dump-config')
   })
 })

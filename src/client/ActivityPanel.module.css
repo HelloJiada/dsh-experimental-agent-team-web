@@ -131,6 +131,7 @@
 .memberRow:focus-visible,
 .membersToggle:focus-visible,
 .sectionToggleTitle:focus-visible,
+.historyToggle:focus-visible,
 .dagNode:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
@@ -796,6 +797,36 @@
 }
 
 .membersToggle > span:last-child {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* Historical archive disclosure uses the panel surface itself as its base.
+   Keep the neutral hover state and shared focus ring for light and dark themes
+   without introducing the raised/platform fill used by member controls. */
+.historyToggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-module);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.historyToggle:hover {
+  background: var(--dsw-alias-bg-fill-neutral);
+}
+
+.historyToggle > span:last-child {
   color: var(--dsw-alias-state-business-primary);
 }
 

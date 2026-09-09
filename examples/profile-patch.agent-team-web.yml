@@ -18,10 +18,10 @@
 # Then ask for a real team directly, for example:
 #   /agent-teams review the last 20 commits from performance, security, and product perspectives
 #
-# Open the conversation, switch to the Team view, and verify:
-# - Captain Briefing / Top Interventions
-# - timeline summary + milestone windows
-# - commandPlan JSON payload in Command Bridge
+# Open the captain conversation and verify:
+# - the AgentTeams activity badge and panel
+# - the Now / Progress / Command summary
+# - activity data from /plugins/agent-team-web/state
 
 - insert:
     - id: agent-team-web
