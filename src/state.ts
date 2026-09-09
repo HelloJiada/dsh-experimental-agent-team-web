@@ -17,12 +17,17 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { TaskStatus, TeamMember, TeamMessage, TeamState, TeamTask } from './types.ts'
+import type { TaskStatus, TeamMember, TeamMessage, TeamMode, TeamState, TeamTask } from './types.ts'
 import { TERMINAL_TASK_STATUSES } from './types.ts'
 import { resolveTaskTiming } from './retro.ts'
 
 /** Mailbox key of the captain. */
 export const CAPTAIN_KEY = 'captain'
+
+/** Effective collaboration mode; legacy team files default to standard. */
+export function teamMode(team: Pick<TeamState, 'mode'>): TeamMode {
+  return team.mode ?? 'standard'
+}
 /** A crashed live-delivery attempt becomes retryable after this interval. */
 const MAILBOX_DELIVERY_LEASE_MS = 60_000
 /** Durable deny-list for AgentTeams members that must never be resumed. */

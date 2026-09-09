@@ -8,7 +8,7 @@
 
 ## DSH 0.1.3 compatibility
 
-Version 0.1.12 uses the package's self-contained AgentTeams kernel and is tested
+Version 0.1.13 uses the package's self-contained AgentTeams kernel and is tested
 against the public DSH `0.1.3-alpha.2` package line. It does **not** require the
 unpublished official experimental Agent Teams package or a local DSH checkout.
 Team state remains workspace-local under `.agent-team-web/<teamId>/`, while the
@@ -82,6 +82,23 @@ session contents). Member rows stay clickable so a transient failure can simply
 be retried; a successful open clears the banner. The plugin never reads, rewrites
 or migrates the original session logs — recovery is left to DSH itself.
 
+## Collaboration modes
+
+`agent_teams_create` accepts an optional `mode`:
+
+- **`light`** — no commissar is created, and gated tasks (`risk=high|critical` or
+  `milestone=true`) are refused. Use it for small, low-risk goals where a single
+  executor is enough.
+- **`standard`** (default, and what existing teams already do) — a commissar is
+  created with the team, and gated tasks need its `pass` verdict before they can
+  be completed.
+- **`governed`** — the same review gate, and the commissar cannot be removed.
+
+Modes only ever tighten: `agent_teams_set_mode` upgrades `light → standard` or
+`light → governed` (creating the commissar when it is missing) and refuses every
+downgrade. A gated task always requires a living commissar, so no mode can accept
+work that could never be reviewed.
+
 ## Concurrency model
 
 AgentTeams assumes that **one harness process** owns a workspace's team-state
@@ -116,7 +133,7 @@ The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.12.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.13.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -165,4 +182,4 @@ page for the current asset name.)
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.12.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.13.tgz`

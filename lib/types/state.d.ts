@@ -12,9 +12,11 @@
  * `fs` service offers no directory deletion.
  * @module dsh-agent-team-web/state
  */
-import type { TaskStatus, TeamMessage, TeamState, TeamTask } from './types.ts';
+import type { TaskStatus, TeamMessage, TeamMode, TeamState, TeamTask } from './types.ts';
 /** Mailbox key of the captain. */
 export declare const CAPTAIN_KEY = "captain";
+/** Effective collaboration mode; legacy team files default to standard. */
+export declare function teamMode(team: Pick<TeamState, 'mode'>): TeamMode;
 /**
  * Serialize mutations of one team across the whole process.
  * @param key - the team id (or any mutation scope).

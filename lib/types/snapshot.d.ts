@@ -106,6 +106,8 @@ export interface TeamActivitySnapshot {
     readonly teamId: string;
     readonly name: string;
     readonly description?: string;
+    /** Collaboration mode; absent means standard (legacy teams). */
+    readonly mode?: 'light' | 'standard' | 'governed';
     readonly captainSessionId: string;
     readonly members: readonly TeamActivityMember[];
     readonly tasks: readonly TeamActivityTask[];

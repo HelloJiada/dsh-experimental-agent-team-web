@@ -167,6 +167,8 @@ export interface TeamActivitySnapshot {
   readonly teamId: string
   readonly name: string
   readonly description?: string
+  /** Collaboration mode; absent means standard (legacy teams). */
+  readonly mode?: 'light' | 'standard' | 'governed'
   readonly captainSessionId: string
   readonly members: readonly TeamActivityMember[]
   readonly tasks: readonly TeamActivityTask[]
@@ -368,6 +370,7 @@ export async function assembleTeamSnapshot(
     teamId: state.id,
     name: state.name,
     ...state.description !== undefined ? { description: state.description } : {},
+    ...state.mode !== undefined ? { mode: state.mode } : {},
     captainSessionId: state.captainSessionId,
     members,
     tasks: tasks.map((task) => {

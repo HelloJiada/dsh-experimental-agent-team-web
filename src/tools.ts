@@ -55,6 +55,7 @@ import {
   sanitizeKey,
   taskAwaitingInput,
   taskBlockedByReview,
+  teamMode,
   transitionError,
   unsatisfiedDependencies,
   withTeamLock,
@@ -72,7 +73,7 @@ import {
   type MemberLlmSelectionCandidate,
   type MemberRuntimeConfig,
 } from './members.ts'
-import { TERMINAL_TASK_STATUSES, TASK_RETRO_CAUSES, ESTIMATE_LEVEL_RANGES, type TeamMember, type TeamState, type TeamTask, type TaskRetroCause } from './types.ts'
+import { TERMINAL_TASK_STATUSES, TASK_RETRO_CAUSES, ESTIMATE_LEVEL_RANGES, type TeamMember, type TeamMode, type TeamState, type TeamTask, type TaskRetroCause } from './types.ts'
 import { installMemberStateGuard } from './member-state-guard.ts'
 import { installTeamScheduler } from './scheduler.ts'
 import {
@@ -386,6 +387,9 @@ export function steerCaptainReport(captain: Pick<Agent, 'steer'>, from: string, 
  * @param ctx - the plugin context (injects `tools`).
  * @param config - resolved tool config.
  */
+/** Tightening order of collaboration modes; set_mode never moves backwards. */
+const MODE_RANK: Readonly<Record<TeamMode, number>> = { light: 0, standard: 1, governed: 2 }
+
 export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void {
   installRetiredMemberGuard(ctx, config.stateDir)
   const memberSelections = installMemberSelectionRuntime(ctx, config.stateDir)
@@ -414,6 +418,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
     parameters: {
       name: { type: 'string', required: true, description: 'Name for the new team (used as its stable id).' },
       description: { type: 'string', description: 'Team purpose / the goal the team will work on.' },
+      mode: { type: 'string', enum: ['light', 'standard', 'governed'], description: 'Collaboration mode; light omits the automatic commissar and disallows gated tasks.' },
     },
     output: {
       schema: {
@@ -424,11 +429,12 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           team_name: { type: 'string', required: true },
           state_dir: { type: 'string', required: true },
           captain_session_id: { type: 'string', required: true },
+          mode: { type: 'string', required: true },
         },
       },
       render: (args, value) => [{
         type: 'text',
-        text: `Team "${value.team_name}" created (id ${value.team_id}) under ${value.state_dir}. You are the captain.`,
+        text: `Team "${value.team_name}" created (id ${value.team_id}) under ${value.state_dir} in ${value.mode} mode. You are the captain.`,
       }],
     },
     async execute(args, exec) {
@@ -437,6 +443,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const stateRoot = stateRootOf(workspace, config)
       const teamName = args.name.trim()
       if (teamName === '') throw new Error('team name must not be empty')
+      const mode: TeamMode = args.mode === 'light' || args.mode === 'governed' ? args.mode : 'standard'
       // New teams use an opaque UUID id so Unicode/display names cannot collide
       // or be re-derived differently by clients. Existing slug directories remain
       // readable through the durable state id and all lookup APIs.
@@ -456,58 +463,64 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             name: teamName,
             id: teamId,
             description: args.description,
+            mode,
             captainSessionId: captain.id,
             createdAt: Date.now(),
             members: [],
             tasks: [],
             taskSeq: 0,
           }
-          // Every team is born with its commissar: a deterministic oversight
-          // member (independent monitoring, risk/quality gate, disagreement
-          // escalation — docs/team-roles-and-responsibilities.md §5). It rides
-          // the exact same spawn path as agent_teams_add_member, so its fields
-          // and lifecycle match a manually added member. The usage prompt tells
-          // the captain not to add a second one, and add_member guards it too.
-          const captainRoute = captain.session.requestHeader()?.config
-          const grant = (provider: string, model: string): boolean => {
-            if (config.modelGrantedFor !== undefined) return config.modelGrantedFor(provider, model)
-            return provider === 'deepseek-official'
-              || (provider === (captainRoute?.provider ?? captain.options.provider)
-                && model === (captainRoute?.model ?? captain.options.model))
+          // Every standard/governed team is born with its commissar: a
+          // deterministic oversight member (independent monitoring,
+          // risk/quality gate, disagreement escalation —
+          // docs/team-roles-and-responsibilities.md §5). It rides the exact
+          // same spawn path as agent_teams_add_member, so its fields and
+          // lifecycle match a manually added member. `light` teams omit the
+          // commissar and therefore refuse gated tasks (see create_task), so
+          // the fail-closed review rule can never be silently bypassed.
+          let commissar: TeamMember | undefined
+          if (mode !== 'light') {
+            const captainRoute = captain.session.requestHeader()?.config
+            const grant = (provider: string, model: string): boolean => {
+              if (config.modelGrantedFor !== undefined) return config.modelGrantedFor(provider, model)
+              return provider === 'deepseek-official'
+                || (provider === (captainRoute?.provider ?? captain.options.provider)
+                  && model === (captainRoute?.model ?? captain.options.model))
+            }
+            const commissarSelection = await resolveMemberLlmCandidates(
+              ctx,
+              captain,
+              memberRouteCandidates(config, 'commissar', {}),
+              grant,
+              exec.signal,
+            )
+            commissar = {
+              id: '',
+              name: '政委',
+              role: 'commissar',
+              provider: commissarSelection.provider,
+              model: commissarSelection.model,
+              reasoningEffort: commissarSelection.reasoningEffort,
+              joinedAt: Date.now(),
+              status: 'idle',
+            }
+            // 与 add_member 同一记忆注入路径:按角色取全局 best-practices 经验,
+            // 冷启动守卫触发时为空(不注入)。
+            const commissarMemories = await roleMemoriesFor(stateRoot, commissar.role)
+            await spawnMember(
+              ctx,
+              memberRuntime(config),
+              memberSelections,
+              commissarSelection,
+              captain,
+              state,
+              commissar,
+              config.stateDir,
+              exec.signal,
+              commissarMemories,
+            )
+            state.members.push(commissar)
           }
-          const commissarSelection = await resolveMemberLlmCandidates(
-            ctx,
-            captain,
-            memberRouteCandidates(config, 'commissar', {}),
-            grant,
-            exec.signal,
-          )
-          const commissar: TeamMember = {
-            id: '',
-            name: '政委',
-            role: 'commissar',
-            provider: commissarSelection.provider,
-            model: commissarSelection.model,
-            reasoningEffort: commissarSelection.reasoningEffort,
-            joinedAt: Date.now(),
-            status: 'idle',
-          }
-          // 与 add_member 同一记忆注入路径:按角色取全局 best-practices 经验,
-          // 冷启动守卫触发时为空(不注入)。
-          const commissarMemories = await roleMemoriesFor(stateRoot, commissar.role)
-          await spawnMember(
-            ctx,
-            memberRuntime(config),
-            memberSelections,
-            commissarSelection,
-            captain,
-            state,
-            commissar,
-            config.stateDir,
-            exec.signal,
-            commissarMemories,
-          )
-          state.members.push(commissar)
           try {
             await createTeamDir(stateRoot, state)
           } catch (error: unknown) {
@@ -515,7 +528,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             // record never saw it. Retire the orphan so it disappears from
             // subagent listings and cannot be resumed, then surface the
             // write failure (mirrors add_member's rollback).
-            if (commissar.id !== '') {
+            if (commissar !== undefined && commissar.id !== '') {
               await recordRetiredMemberIds(stateRoot, [commissar.id]).catch(() => undefined)
               interruptMember(ctx, captain, commissar.id)
             }
@@ -527,17 +540,20 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             name: state.name,
             ...state.description !== undefined ? { description: state.description } : {},
           })
-          appendTeamEvent(ctx, captain.session, 'agent-team-web/member-added', {
-            teamId: state.id,
-            memberId: commissar.id,
-            name: commissar.name,
-            role: commissar.role,
-          })
+          if (commissar !== undefined) {
+            appendTeamEvent(ctx, captain.session, 'agent-team-web/member-added', {
+              teamId: state.id,
+              memberId: commissar.id,
+              name: commissar.name,
+              role: commissar.role,
+            })
+          }
           return {
             team_id: state.id,
             team_name: state.name,
             state_dir: join(stateRoot, state.id),
             captain_session_id: captain.id,
+            mode,
           }
         })
       })
@@ -757,6 +773,15 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const revoked = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
         const member = requireMember(fresh, args.name)
+        // Governed teams keep their commissar: it is the review authority the
+        // mode exists to guarantee, so removing it would silently downgrade
+        // the team's safety policy.
+        if (teamMode(fresh) === 'governed' && isActiveCommissar(member)) {
+          throw new Error(
+            `team "${fresh.name}" is in governed mode: the commissar provides the required independent review and cannot be removed. `
+            + 'Keep the commissar, or start a new team in light/standard mode if oversight is not needed.',
+          )
+        }
         const requeued: string[] = []
         for (const task of fresh.tasks) {
           if (task.assignee !== member.name || task.status === 'completed') continue
@@ -787,6 +812,154 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         status: revoked.member.status,
         requeued_tasks: revoked.requeued,
       }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'agent_teams_set_mode',
+    description: 'Change the team collaboration mode. Upgrade only: light → standard or governed. A light team has no commissar and refuses gated tasks; upgrading to standard/governed creates the commissar if it is missing so review can proceed. Downgrading to light is refused because it would silently drop an active review authority.',
+    parameters: {
+      mode: { type: 'string', required: true, enum: ['light', 'standard', 'governed'], description: 'Target mode; only standard or governed may be requested (downgrade to light is refused).' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          team_id: { type: 'string', required: true },
+          mode: { type: 'string', required: true },
+          changed: { type: 'boolean', required: true },
+          commissar_created: { type: 'boolean', required: true },
+        },
+      },
+      render: (args, value) => [{
+        type: 'text',
+        text: value.changed
+          ? `Team ${value.team_id} switched to ${value.mode} mode${value.commissar_created ? ' (commissar created)' : ''}.`
+          : `Team ${value.team_id} already runs in ${value.mode} mode.`,
+      }],
+    },
+    async execute(args, exec) {
+      const captain = requireCaptain(exec)
+      const workspace = workspaceOf(captain)
+      const stateRoot = stateRootOf(workspace, config)
+      const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
+      const target: TeamMode = args.mode === 'governed' ? 'governed' : args.mode === 'light' ? 'light' : 'standard'
+      if (target === 'light') {
+        throw new Error(
+          `team "${team.name}" cannot be downgraded to light mode: an active commissar and any gated task would lose their review authority. `
+          + 'Start a new light team instead if lighter coordination is what you need.',
+        )
+      }
+      const prepared = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
+        const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
+        const current = teamMode(fresh)
+        // Modes only ever tighten. governed → standard would re-enable
+        // removing the commissar, which is exactly the guarantee governed
+        // exists to provide, so every downgrade is refused.
+        if (MODE_RANK[target] < MODE_RANK[current]) {
+          throw new Error(
+            `team "${fresh.name}" cannot switch from ${current} to ${target} mode: modes only ever tighten `
+            + '(light → standard → governed). Start a new team if a weaker policy is really required.',
+          )
+        }
+        const hasCommissar = fresh.members.some(member => isActiveCommissar(member))
+        if (current === target && hasCommissar) return { fresh, needsCommissar: false, changed: false, modeWritten: false }
+        if (hasCommissar) {
+          // The commissar already exists: the mode change alone is atomic.
+          fresh.mode = target
+          await writeTeam(stateRoot, fresh)
+          return { fresh: { ...fresh }, needsCommissar: false, changed: true, modeWritten: true }
+        }
+        // No commissar yet: do NOT persist the stronger mode first. Writing it
+        // before the member exists would leave a governed/standard team that
+        // can accept gated tasks with nobody able to review them.
+        return { fresh: { ...fresh }, needsCommissar: true, changed: true, modeWritten: false }
+      })
+      let commissarCreated = false
+      if (prepared.needsCommissar) {
+        // Spawn outside the team lock (mirrors add_member): the lock only
+        // guarded the mode write; a second locked pass attaches the member.
+        const captainRoute = captain.session.requestHeader()?.config
+        const grant = (provider: string, model: string): boolean => {
+          if (config.modelGrantedFor !== undefined) return config.modelGrantedFor(provider, model)
+          return provider === 'deepseek-official'
+            || (provider === (captainRoute?.provider ?? captain.options.provider)
+              && model === (captainRoute?.model ?? captain.options.model))
+        }
+        const selection = await resolveMemberLlmCandidates(
+          ctx,
+          captain,
+          memberRouteCandidates(config, 'commissar', {}),
+          grant,
+          exec.signal,
+        )
+        const draft: TeamMember = {
+          id: '',
+          name: '政委',
+          role: 'commissar',
+          provider: selection.provider,
+          model: selection.model,
+          reasoningEffort: selection.reasoningEffort,
+          joinedAt: Date.now(),
+          status: 'idle',
+        }
+        const memories = await roleMemoriesFor(stateRoot, draft.role)
+        await spawnMember(
+          ctx,
+          memberRuntime(config),
+          memberSelections,
+          selection,
+          captain,
+          prepared.fresh,
+          draft,
+          config.stateDir,
+          exec.signal,
+          memories,
+        )
+        let attached = false
+        try {
+          attached = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
+            const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
+            if (fresh.members.some(member => isActiveCommissar(member))) {
+              // A concurrent upgrade already attached a commissar: persist the
+              // target mode (never weaker than what we validated) and let the
+              // caller retire this redundant child.
+              if (MODE_RANK[target] > MODE_RANK[teamMode(fresh)]) {
+                fresh.mode = target
+                await writeTeam(stateRoot, fresh)
+              }
+              return false
+            }
+            // Mode and commissar land in one durable write, so no observer can
+            // see a standard/governed team without its review authority.
+            fresh.members.push(draft)
+            fresh.mode = target
+            await writeTeam(stateRoot, fresh)
+            appendTeamEvent(ctx, captainSessionOf(ctx, fresh.captainSessionId, captain.session), 'agent-team-web/member-added', {
+              teamId: fresh.id,
+              memberId: draft.id,
+              name: draft.name,
+              role: draft.role,
+            })
+            return true
+          })
+        } catch (error: unknown) {
+          // The child is already live: whatever failed in the attach phase
+          // (re-read, write, event) must not leave it running off the books.
+          if (draft.id !== '') {
+            await recordRetiredMemberIds(stateRoot, [draft.id]).catch(() => undefined)
+            interruptMember(ctx, captain, draft.id)
+          }
+          throw error
+        }
+        commissarCreated = attached
+        if (!attached && draft.id !== '') {
+          await recordRetiredMemberIds(stateRoot, [draft.id]).catch(() => undefined)
+          interruptMember(ctx, captain, draft.id)
+        }
+      }
+      return { team_id: team.id, mode: target, changed: prepared.changed, commissar_created: commissarCreated }
     },
   }))
 
@@ -866,6 +1039,27 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
         // Derived gate flag persisted here so snapshots and the completion
         // gate share one source of truth: high/critical risk or a milestone.
         const reviewRequired = args.risk === 'high' || args.risk === 'critical' || milestone
+        // Fail-closed in light mode: a gated task needs a commissar verdict to
+        // ever complete, and a light team has no commissar. Refusing the task
+        // up front is the only honest option — creating it would strand it.
+        if (reviewRequired && teamMode(fresh) === 'light') {
+          throw new Error(
+            `team "${fresh.name}" is in light mode and cannot create a task that needs commissar review `
+            + `(risk=${args.risk ?? '-'}${milestone ? ', milestone' : ''}). `
+            + 'Upgrade the team with agent_teams_set_mode(mode="standard"|"governed") first, '
+            + 'or create the task without risk=high/critical and milestone=true.',
+          )
+        }
+        // The gate needs a living reviewer in every mode: a standard/governed
+        // team whose commissar was removed (or is still being created) must not
+        // accept a task that could never be completed.
+        if (reviewRequired && !fresh.members.some(member => isActiveCommissar(member))) {
+          throw new Error(
+            `team "${fresh.name}" has no active commissar, so a task that needs review cannot be created `
+            + `(risk=${args.risk ?? '-'}${milestone ? ', milestone' : ''}). `
+            + 'Add the commissar back (agent_teams_set_mode) or create the task without risk=high/critical and milestone=true.',
+          )
+        }
         const task: TeamTask = {
           id: `t${fresh.taskSeq + 1}`,
           subject: args.subject,

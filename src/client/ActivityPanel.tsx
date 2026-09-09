@@ -80,6 +80,7 @@ import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
 import { copyTaskDetail, taskDetailClipboardText } from './task-detail-copy.ts'
 import { copyDiagnosticText } from './diagnostic-copy.ts'
 import { diagnosticBannerText, diagnosticClipboardText, memberNavigationDisabled, navigationPanelEffect, relevantDiagnostic } from './session-diagnostics.ts'
+import { effectiveTeamMode, teamModeHintKey, teamModeLabelKey } from './team-mode.ts'
 import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
 import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts'
 import {
@@ -679,6 +680,15 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false, d
     <section className={css.team} data-team-id={team.teamId}>
       <header className={css.teamHead}>
         <span className={css.teamName} title={team.name}>{team.name}</span>
+        {(() => {
+          const mode = effectiveTeamMode(team.mode)
+          const label = t(teamModeLabelKey(mode))
+          return (
+            <span className={css.modeBadge} data-mode={mode} title={t(teamModeHintKey(mode))} aria-label={t('team.mode.aria', { mode: label })}>
+              {label}
+            </span>
+          )
+        })()}
         {historic && <span className={css.historicPill}>{t('team.ended')}</span>}
         <span className={css.teamStats}>
           <span data-stat="members">{t('team.stats.members', { count: team.members.length })}</span>
@@ -695,6 +705,9 @@ function TeamSection({ team, onNavigate, t, historic = false, compact = false, d
           </span>
         )}
       </header>
+      {effectiveTeamMode(team.mode) === 'light' && (
+        <span className={css.modeHint} data-mode="light">{t('team.mode.hint.light')}</span>
+      )}
 
       <section className={css.delegationSection} aria-label={t('delegation.aria')} data-delegation-map>
         <NowAction team={team} t={t} />

@@ -64,10 +64,5 @@ export declare function memberOpenTask(team: TeamState, memberName: string, exce
  * captain's entire orchestration turn.
  */
 export declare function steerCaptainReport(captain: Pick<Agent, 'steer'>, from: string, content: string): boolean;
-/**
- * Register every `agent_teams_*` tool into the shared tools registry.
- * @param ctx - the plugin context (injects `tools`).
- * @param config - resolved tool config.
- */
 export declare function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void;
 //# sourceMappingURL=tools.d.ts.map

@@ -268,6 +268,9 @@ export interface TeamMessage {
   readAt?: number
 }
 
+/** Collaboration policy for a team. */
+export type TeamMode = 'light' | 'standard' | 'governed'
+
 /** The full durable team record. */
 export interface TeamState {
   /** Original team name. */
@@ -278,6 +281,8 @@ export interface TeamState {
   id: string
   /** Team purpose/goal. */
   description?: string
+  /** Collaboration policy; absent legacy records are standard. */
+  mode?: TeamMode
   /** Session id of the captain agent that owns this team. */
   captainSessionId: string
   createdAt: number

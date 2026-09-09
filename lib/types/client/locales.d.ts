@@ -171,6 +171,13 @@ export declare const zh: {
     'task.detail.noDownstream': string;
     'task.detail.unlocks': string;
     'team.ended': string;
+    'team.mode.light': string;
+    'team.mode.standard': string;
+    'team.mode.governed': string;
+    'team.mode.aria': string;
+    'team.mode.hint.light': string;
+    'team.mode.hint.standard': string;
+    'team.mode.hint.governed': string;
     'team.stats.members': string;
     'team.stats.completed': string;
     'team.stats.messages': string;
@@ -363,6 +370,13 @@ export declare const en: {
     'task.detail.noDownstream': string;
     'task.detail.unlocks': string;
     'team.ended': string;
+    'team.mode.light': string;
+    'team.mode.standard': string;
+    'team.mode.governed': string;
+    'team.mode.aria': string;
+    'team.mode.hint.light': string;
+    'team.mode.hint.standard': string;
+    'team.mode.hint.governed': string;
     'team.stats.members': string;
     'team.stats.completed': string;
     'team.stats.messages': string;
