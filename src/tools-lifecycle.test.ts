@@ -182,7 +182,7 @@ describe('agent_teams_create — 建队 + 政委自动创建', () => {
       { name: '生命周期测试团队', description: 'R-13 集成测试' },
       execOf(agent(workspace, CAPTAIN_ID)),
     ) as { team_id: string; team_name: string; state_dir: string }
-    expect(result.team_id).toBe('生命周期测试团队')
+    expect(result.team_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     expect(result.team_name).toBe('生命周期测试团队')
 
     const persisted = await readTeam(stateRoot, result.team_id)
@@ -198,6 +198,18 @@ describe('agent_teams_create — 建队 + 政委自动创建', () => {
     // inbox 目录已建(空邮箱文件在首条消息时才创建)。
     const { readdir } = await import('node:fs/promises')
     expect(await readdir(join(stateRoot, result.team_id, 'inbox'))).toEqual([])
+  })
+
+  it('兼容旧 slug 目录且新建同名团队使用唯一 UUID', async () => {
+    const legacy = {
+      name: '兼容团队', id: '兼容团队', captainSessionId: CAPTAIN_ID,
+      createdAt: Date.now(), members: [], tasks: [], taskSeq: 0,
+    }
+    await writeFile(join(stateRoot, '兼容团队', 'team.json'), JSON.stringify(legacy)).catch(async () => {
+      await mkdir(join(stateRoot, '兼容团队'), { recursive: true })
+      await writeFile(join(stateRoot, '兼容团队', 'team.json'), JSON.stringify(legacy))
+    })
+    await expect(readTeam(stateRoot, '兼容团队')).resolves.toMatchObject({ id: '兼容团队' })
   })
 
   it('错误分支:队长已带领团队时再建队被拒', async () => {

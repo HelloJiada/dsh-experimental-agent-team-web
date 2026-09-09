@@ -148,10 +148,16 @@ export interface ActivityMonitorTarget {
     readonly sessionId: string;
     readonly teamId: string;
 }
+export type ActivityConnection = 'loading' | 'ready' | 'stale' | 'offline' | 'auth-failed';
 /** Latest shared response data for both the floater and conversation cards. */
 export interface ActivitySnapshots {
     readonly teams: readonly ActivityTeam[];
     readonly archivedTeams: readonly ActivityTeam[];
+    /** Client-observed poll lifecycle; last good snapshots survive failures. */
+    readonly connection: ActivityConnection;
+    /** Incremented on status-only changes so external-store subscribers rerender. */
+    readonly connectionRevision: number;
+    readonly lastSuccessAt?: number;
 }
 /** Subscribe to the active monitor-target list (React external-store shape). */
 export declare function subscribeActivityMonitorTargets(listener: () => void): () => void;
@@ -208,6 +214,8 @@ export interface ActivityPollingRuntime {
     readonly cancel?: (timer: unknown) => void;
     readonly publishSnapshots?: (update: Partial<ActivitySnapshots>) => void;
     readonly settleTargets?: (keys: ReadonlySet<string>) => void;
+    /** Injectable clock makes freshness/error transitions deterministic in tests. */
+    readonly now?: () => number;
 }
 /** Handle returned by one current-session polling loop. */
 export interface ActivityPollingController {

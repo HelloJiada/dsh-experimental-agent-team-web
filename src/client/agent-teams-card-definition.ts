@@ -42,7 +42,42 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
 export interface AgentTeamsNodeState {
   readonly teamId: string
   readonly name: string
+  /** Exact captain id from the successful create result; empty means unbound. */
+  readonly captainSessionId: string
   readonly accepted: boolean
+}
+
+/** Read the exact team reference returned by the successful create tool. */
+export function parseAgentTeamsCreateResult(value: unknown): { teamId: string; name: string; captainSessionId: string } | undefined {
+  const visit = (candidate: unknown): { teamId: string; name: string; captainSessionId: string } | undefined => {
+    if (typeof candidate === 'string') {
+      try { return visit(JSON.parse(candidate)) } catch { return undefined }
+    }
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        const found = visit(item)
+        if (found !== undefined) return found
+      }
+      return undefined
+    }
+    if (typeof candidate !== 'object' || candidate === null) return undefined
+    const record = candidate as Record<string, unknown>
+    if (typeof record['team_id'] === 'string' && record['team_id'].trim() !== ''
+      && typeof record['team_name'] === 'string' && record['team_name'].trim() !== ''
+      && typeof record['captain_session_id'] === 'string' && record['captain_session_id'].trim() !== '') {
+      return {
+        teamId: record['team_id'].trim(),
+        name: record['team_name'].trim(),
+        captainSessionId: record['captain_session_id'].trim(),
+      }
+    }
+    for (const nested of Object.values(record)) {
+      const found = visit(nested)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  return visit(value)
 }
 
 /** Parse the only create-call fields the historic card owns. */
@@ -82,14 +117,38 @@ export const agentTeamsCardDefinition: ConversationNodeDefinition<AgentTeamsNode
     }
     const parsed = parseAgentTeamsCreateArgs(match.event.data.arguments)
     if (parsed === undefined) throw new Error('agent-teams card start requires valid create arguments')
-    return { ...parsed, accepted: false }
+    return { teamId: '', name: parsed.name, captainSessionId: '', accepted: false }
   },
   update: (context, match) => {
     if (match.event.type !== 'tool/result') return context.state
     const failed = match.event.data.error !== undefined
       || match.event.data.message.content.some((block) => block.type === 'tool-result' && block.isError === true)
     if (failed) return context.state
-    return { ...context.state, accepted: true }
+    for (const block of match.event.data.message.content) {
+      const parsed = parseAgentTeamsCreateResult(block)
+      if (parsed !== undefined) {
+        return {
+          ...context.state,
+          teamId: parsed.teamId,
+          ...(parsed.name === undefined ? {} : { name: parsed.name }),
+          ...(parsed.captainSessionId === undefined ? {} : { captainSessionId: parsed.captainSessionId }),
+          accepted: true,
+        }
+      }
+      if (block.type === 'tool-result') {
+        const nested = parseAgentTeamsCreateResult(block.content)
+        if (nested !== undefined) {
+          return {
+            ...context.state,
+            teamId: nested.teamId,
+            ...(nested.name === undefined ? {} : { name: nested.name }),
+            ...(nested.captainSessionId === undefined ? {} : { captainSessionId: nested.captainSessionId }),
+            accepted: true,
+          }
+        }
+      }
+    }
+    return context.state
   },
   buildViewNode: (context): ChatConversationViewNode | null => {
     if (context.start === undefined) return null
@@ -105,7 +164,7 @@ export const agentTeamsCardDefinition: ConversationNodeDefinition<AgentTeamsNode
       visibility: 'visible',
       data: {
         teamId: state.teamId,
-        captainSessionId: '',
+        captainSessionId: state.captainSessionId,
         teamName: state.name,
         members: [],
       },

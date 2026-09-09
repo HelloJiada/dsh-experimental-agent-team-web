@@ -33,8 +33,16 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
 export interface AgentTeamsNodeState {
     readonly teamId: string;
     readonly name: string;
+    /** Exact captain id from the successful create result; empty means unbound. */
+    readonly captainSessionId: string;
     readonly accepted: boolean;
 }
+/** Read the exact team reference returned by the successful create tool. */
+export declare function parseAgentTeamsCreateResult(value: unknown): {
+    teamId: string;
+    name: string;
+    captainSessionId: string;
+} | undefined;
 /** Parse the only create-call fields the historic card owns. */
 export declare function parseAgentTeamsCreateArgs(value: string): {
     teamId: string;

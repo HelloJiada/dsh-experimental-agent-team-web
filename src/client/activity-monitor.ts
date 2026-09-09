@@ -156,10 +156,17 @@ export interface ActivityMonitorTarget {
   readonly teamId: string
 }
 
+export type ActivityConnection = 'loading' | 'ready' | 'stale' | 'offline' | 'auth-failed'
+
 /** Latest shared response data for both the floater and conversation cards. */
 export interface ActivitySnapshots {
   readonly teams: readonly ActivityTeam[]
   readonly archivedTeams: readonly ActivityTeam[]
+  /** Client-observed poll lifecycle; last good snapshots survive failures. */
+  readonly connection: ActivityConnection
+  /** Incremented on status-only changes so external-store subscribers rerender. */
+  readonly connectionRevision: number
+  readonly lastSuccessAt?: number
 }
 
 interface RegisteredTarget extends ActivityMonitorTarget {
@@ -171,7 +178,7 @@ const targets = new Map<string, RegisteredTarget>()
 const targetListeners = new Set<() => void>()
 const snapshotListeners = new Set<() => void>()
 let targetSnapshot: readonly ActivityMonitorTarget[] = []
-let activitySnapshots: ActivitySnapshots = { teams: [], archivedTeams: [] }
+let activitySnapshots: ActivitySnapshots = { teams: [], archivedTeams: [], connection: 'loading', connectionRevision: 0 }
 
 function targetKey(sessionId: string, teamId: string): string {
   return `${sessionId}\u0000${teamId}`
@@ -259,8 +266,14 @@ export function updateActivitySnapshots(update: Partial<ActivitySnapshots>): voi
   const next = {
     teams: update.teams ?? activitySnapshots.teams,
     archivedTeams: update.archivedTeams ?? activitySnapshots.archivedTeams,
+    connection: update.connection ?? activitySnapshots.connection,
+    lastSuccessAt: update.lastSuccessAt ?? activitySnapshots.lastSuccessAt,
+    connectionRevision: activitySnapshots.connectionRevision + 1,
   }
-  if (next.teams === activitySnapshots.teams && next.archivedTeams === activitySnapshots.archivedTeams) return
+  if (next.teams === activitySnapshots.teams
+    && next.archivedTeams === activitySnapshots.archivedTeams
+    && next.connection === activitySnapshots.connection
+    && next.lastSuccessAt === activitySnapshots.lastSuccessAt) return
   activitySnapshots = next
   for (const listener of snapshotListeners) listener()
 }
@@ -314,6 +327,8 @@ export interface ActivityPollingRuntime {
   readonly cancel?: (timer: unknown) => void
   readonly publishSnapshots?: (update: Partial<ActivitySnapshots>) => void
   readonly settleTargets?: (keys: ReadonlySet<string>) => void
+  /** Injectable clock makes freshness/error transitions deterministic in tests. */
+  readonly now?: () => number
 }
 
 /** Handle returned by one current-session polling loop. */
@@ -353,6 +368,8 @@ export function startActivityPolling(
   const cancel = runtime.cancel ?? ((timer) => { clearInterval(timer as ReturnType<typeof setInterval>) })
   const publishSnapshots = runtime.publishSnapshots ?? updateActivitySnapshots
   const settleTargets = runtime.settleTargets ?? settleActivityMonitorTargets
+  const now = runtime.now ?? (() => Date.now())
+  publishSnapshots({ connection: 'loading' })
   let cancelled = false
   let inFlight = false
   // Explicit card targets are demanded work: start at the live cadence. A
@@ -373,11 +390,17 @@ export function startActivityPolling(
     controller = new AbortController()
     try {
       const liveResponse = await fetchState(ACTIVITY_STATE_URL, agentTeamsFetchInit(controller.signal))
-      if (!liveResponse.ok) return
+      if (!liveResponse.ok) {
+        publishSnapshots({ connection: 'auth-failed' })
+        return
+      }
       const body = (await liveResponse.json()) as { teams?: unknown }
-      if (cancelled || !Array.isArray(body.teams)) return
+      if (cancelled || !Array.isArray(body.teams)) {
+        if (!cancelled) publishSnapshots({ connection: 'stale' })
+        return
+      }
       const liveTeams = body.teams as readonly ActivityTeam[]
-      publishSnapshots({ teams: liveTeams })
+      publishSnapshots({ teams: liveTeams, connection: 'ready', lastSuccessAt: now() })
       const previousDiscoveredKeys = discoveredLiveKeys
       discoveredLiveKeys = new Set(discoverySessionId === undefined || discoverySessionId === ''
         ? []
@@ -406,15 +429,23 @@ export function startActivityPolling(
       // upgraded keeps polling, and a still-probing one keeps probing, so a
       // team created later in the same session stays discoverable.
       const archivedResponse = await fetchState(`${ACTIVITY_STATE_URL}?archived=1`, agentTeamsFetchInit(controller.signal))
-      if (!archivedResponse.ok) return
+      if (!archivedResponse.ok) {
+        publishSnapshots({ connection: 'stale' })
+        return
+      }
       const archivedBody = (await archivedResponse.json()) as { teams?: unknown }
-      if (cancelled || !Array.isArray(archivedBody.teams)) return
-      publishSnapshots({ archivedTeams: archivedBody.teams as readonly ActivityTeam[] })
+      if (cancelled || !Array.isArray(archivedBody.teams)) {
+        if (!cancelled) publishSnapshots({ connection: 'stale' })
+        return
+      }
+      publishSnapshots({ archivedTeams: archivedBody.teams as readonly ActivityTeam[], connection: 'ready', lastSuccessAt: now() })
       discoveryComplete = true
       settleTargets(new Set(missing.map((target) => target.key)))
     } catch (error: unknown) {
       if ((error as { name?: unknown })?.name === 'AbortError') return
-      // Host restarting; keep the last snapshot and retry on the next tick.
+      // Host restarting/network failed: retain the last good snapshots but mark
+      // the data stale so the panel never mistakes a cached view for live truth.
+      publishSnapshots({ connection: 'stale' })
     } finally {
       inFlight = false
     }

@@ -74,6 +74,7 @@ import {
   taskTimingText,
 } from './task-timing.ts'
 import { OPEN_PANEL_EVENT } from './AgentTeamsCard.tsx'
+import { copyTaskDetail, taskDetailClipboardText } from './task-detail-copy.ts'
 import type { AgentTeamsCardData } from './agent-teams-card-definition.ts'
 import type { AgentTeamsLocaleKey, AgentTeamsTranslate } from './locales.ts'
 import {
@@ -394,6 +395,9 @@ function DependencyMap({ tasks, t, compact = false }: {
   const [hoverTaskId, setHoverTaskId] = useState<string | null>(null)
   const [keyboardTaskId, setKeyboardTaskId] = useState<string | null>(null)
   const [pinnedTaskId, setPinnedTaskId] = useState<string | null>(null)
+  const [detailExpanded, setDetailExpanded] = useState(false)
+  const [detailCopied, setDetailCopied] = useState(false)
+  const [detailCopyFailed, setDetailCopyFailed] = useState(false)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const focusedTaskId = dependencyFocusTaskId(pinnedTaskId, keyboardTaskId, hoverTaskId)
   const layout = useMemo(() => compactDagLayout(tasks), [tasks])
@@ -431,6 +435,15 @@ function DependencyMap({ tasks, t, compact = false }: {
     ?? tasks.find((task) => task.state === 'running')
     ?? tasks[0]!
   const detailTask = tasks.find((task) => task.id === focusedTaskId) ?? fallbackTask
+  const detailText = taskDetailClipboardText(detailTask, t)
+  const copyDetail = (): void => {
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard
+    void copyTaskDetail(detailText, clipboard).then((result) => {
+      setDetailCopied(result === 'copied')
+      setDetailCopyFailed(result === 'failed')
+      if (result === 'copied') setTimeout(() => setDetailCopied(false), 1500)
+    })
+  }
   const waitingOn = detailTask.dependencies.filter((dependency) => (
     tasks.find((task) => task.id === dependency)?.status !== 'completed'
   ))
@@ -493,7 +506,7 @@ function DependencyMap({ tasks, t, compact = false }: {
               ))}
             </div>
           </div>
-          <section className={css.taskDetail} data-task-detail={detailTask.id}>
+          <section id={`task-detail-${detailTask.id}`} className={css.taskDetail} data-task-detail={detailTask.id} data-expanded={detailExpanded || undefined}>
             <span className={css.taskDetailHead}>
               <span className={css.taskDetailId}>{detailTask.id}</span>
               <span className={css.taskDetailSubject} title={detailTask.subject}>{detailTask.subject.replace(/^开发\s*/u, '')}</span>
@@ -513,16 +526,23 @@ function DependencyMap({ tasks, t, compact = false }: {
                 {taskTimingText(detailTask, t)}
               </span>
             )}
-            {taskSignalsText(detailTask, t) !== null && !compact && (
+            {(detailExpanded || !compact) && taskSignalsText(detailTask, t) !== null && (
               <span className={css.taskDetailSignals} data-timing={timingData(detailTask)}>
                 {taskSignalsText(detailTask, t)}
               </span>
             )}
-            {retroDetailText(detailTask, t) !== null && !compact && (
+            {(detailExpanded || !compact) && retroDetailText(detailTask, t) !== null && (
               <span className={css.taskDetailRetro} data-cause={detailTask.retro?.cause}>
                 {retroDetailText(detailTask, t)}
               </span>
             )}
+            <span className={css.taskDetailActions}>
+              <button type="button" aria-expanded={detailExpanded} aria-controls={`task-detail-${detailTask.id}`} onClick={() => { setDetailExpanded((open) => !open) }}>
+                {t(detailExpanded ? 'task.detail.collapse' : 'task.detail.expand')}
+              </button>
+              <button type="button" onClick={copyDetail}>{detailCopied ? t('task.detail.copied') : t('task.detail.copy')}</button>
+              <span role="status" aria-live="polite">{detailCopied ? t('task.detail.copied') : detailCopyFailed ? t('task.detail.copyFailed') : ''}</span>
+            </span>
             {taskPendingCalibration(detailTask) && !compact && (
               <span className={css.taskDetailCalibration} data-calibration="pending">
                 {t('task.calibration.detail')}
@@ -854,6 +874,7 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
   const [bounds, setBounds] = useState<PanelBounds>(initialPanelBounds)
   const [interaction, setInteraction] = useState<'dragging' | 'resizing' | null>(null)
   const [closing, setClosing] = useState(false)
+  const [archiveConfirm, setArchiveConfirm] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const boundsRef = useRef(bounds)
@@ -868,7 +889,7 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     subscribeActivityMonitorTargets,
     getActivityMonitorTargetsSnapshot,
   )
-  const { teams, archivedTeams } = useSyncExternalStore(
+  const { teams, archivedTeams, connection, lastSuccessAt } = useSyncExternalStore(
     subscribeActivitySnapshots,
     getActivitySnapshotsSnapshot,
   )
@@ -1114,6 +1135,13 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
     [visibleTeams],
   )
   const hasTeams = visibleCount > 0
+  const connectionText = connection === 'loading'
+    ? t('activity.connection.loading')
+    : connection === 'auth-failed'
+      ? t('activity.connection.authFailed')
+      : connection === 'stale' || connection === 'offline'
+        ? t('activity.connection.disconnected')
+        : t('activity.connection.ready', { time: lastSuccessAt === undefined ? '—' : new Date(lastSuccessAt).toLocaleTimeString() })
 
   // Close (end & archive) control: only the current session's single live
   // team can be closed, and only when it has no unfinished work. The host
@@ -1148,11 +1176,10 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
         setCloseError(t('activity.closeError'))
         return
       }
-      // t24:删除成功 → 立即完全消失(不等轮询 ~1s 的归档发现,减少残留闪烁)。
-      // t27:同步释放全局 dock 宽度让步——组件随即 return null,useLayoutEffect
-      // 清理可能不跑,必须在此主动清理,否则会话列宽度残留(用户症状)。
+      // Archiving ends the team but does not hide the monitor: polling can
+      // immediately surface its archived history and the badge stays recoverable.
       applyDockLayout(false)
-      setDismissal({ hadLive: true, dismissed: true })
+      setArchiveConfirm(false)
     } catch (error) {
       console.warn('agent-team-web: close request failed', error)
       setCloseError(t('activity.closeError'))
@@ -1338,6 +1365,7 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
             <span className={css.panelTitle}>
               {t('activity.title')}
               <span className={css.panelDot} data-busy={busy} aria-hidden />
+              <span className={css.connectionStatus} data-connection={connection} role="status">{connectionText}</span>
             </span>
             <span className={css.panelControls}>
               {!compact && (
@@ -1373,22 +1401,29 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
               {liveTeam !== undefined && (
                 <button
                   type="button"
-                  className={css.iconButton}
-                  data-control="close"
+                  className={css.archiveAction}
+                  data-control="archive"
                   disabled={!closeable || closing}
-                  onClick={() => { void closeTeam() }}
+                  onClick={() => { setArchiveConfirm(true) }}
                   aria-label={t(closeable ? 'activity.close' : 'activity.closeDisabled')}
-                  title={!closeable
-                    ? t('activity.closeDisabled')
-                    : closing ? t('activity.closing') : t('activity.close')}
+                  title={!closeable ? t('activity.closeDisabled') : t('activity.close')}
                 >
-                  <IconCloseOutline16 />
+                  {t('activity.close')}
                 </button>
               )}
             </span>
           </header>
           {closeError !== null && (
             <div className={css.closeError} role="alert">{closeError}</div>
+          )}
+          {archiveConfirm && liveTeam !== undefined && (
+            <div className={css.archiveConfirm} role="alertdialog" aria-label={t('activity.close')}>
+              <span>{t('activity.closeConfirm')}</span>
+              <span className={css.archiveConfirmActions}>
+                <button type="button" onClick={() => { setArchiveConfirm(false) }}>取消</button>
+                <button type="button" disabled={closing} onClick={() => { void closeTeam() }}>{t('activity.close')}</button>
+              </span>
+            </div>
           )}
           <div className={css.teams}>
             {visibleCount === 0

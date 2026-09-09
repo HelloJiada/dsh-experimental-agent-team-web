@@ -62,10 +62,13 @@ export function AgentTeamsCard({ node, openMember, t }: AgentTeamsCardProps) {
     getActivitySnapshotsSnapshot,
   )
   useEffect(() => {
-    return monitorAgentTeam(owner, data.teamId)
+    // No durable owner means no exact monitor target; avoid wildcard matches.
+    return owner === '' ? undefined : monitorAgentTeam(owner, data.teamId)
   }, [data.teamId, owner])
-  const snapshot = teams.find((team) => team.teamId === data.teamId && (owner === '' || team.captainSessionId === owner))
-    ?? archivedTeams.find((team) => team.teamId === data.teamId && (owner === '' || team.captainSessionId === owner))
+  const snapshot = owner === ''
+    ? undefined
+    : teams.find((team) => team.teamId === data.teamId && team.captainSessionId === owner)
+      ?? archivedTeams.find((team) => team.teamId === data.teamId && team.captainSessionId === owner)
   const resolved = useMemo<AgentTeamsCardData>(() => ({
     ...data,
     captainSessionId: snapshot?.captainSessionId ?? owner,

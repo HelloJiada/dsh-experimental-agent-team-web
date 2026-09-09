@@ -1444,6 +1444,59 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.archiveAction {
+  border: 0;
+  border-radius: 5px;
+  padding: 3px 6px;
+  color: var(--dsw-alias-state-danger);
+  background: color-mix(in srgb, var(--dsw-alias-state-danger) 12%, transparent);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.archiveAction:disabled { opacity: .55; cursor: not-allowed; }
+
+.archiveConfirm {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-danger) 10%, var(--dsw-alias-background-base));
+  font-size: 10px;
+}
+
+.archiveConfirmActions { display: flex; gap: 5px; }
+.archiveConfirmActions button { border: 0; border-radius: 4px; padding: 3px 6px; cursor: pointer; }
+
+.connectionStatus {
+  margin-left: 5px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 9px;
+  font-weight: 400;
+}
+
+.connectionStatus[data-connection='stale'],
+.connectionStatus[data-connection='offline'],
+.connectionStatus[data-connection='auth-failed'] {
+  color: var(--dsw-alias-state-warning);
+}
+
+.taskDetailActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.taskDetailActions button {
+  border: 0;
+  padding: 1px 4px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  font-size: 9px;
+  cursor: pointer;
+}
+
 /* 自成长:任务详情"预估 vs 实际/已用"行,按档位着色。 */
 .taskDetailTiming {
   color: var(--dsw-alias-label-secondary);
@@ -1469,6 +1522,33 @@
   line-height: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The collapsed DAG detail remains compact; an explicit disclosure makes long
+   reports readable instead of merely changing state without changing layout. */
+.taskDetail[data-expanded] .taskDetailSignals,
+.taskDetail[data-expanded] .taskDetailRetro {
+  overflow: visible;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.taskDetail[data-expanded] .taskDetailActions {
+  margin-top: 7px;
+}
+
+.taskDetailActions button {
+  min-height: 32px;
+}
+
+.taskDetailActions button:focus-visible,
+.archiveAction:focus-visible,
+.archiveConfirmActions button:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-primary);
+  outline-offset: 2px;
 }
 
 .taskDetailRetro[data-cause='underestimated'],

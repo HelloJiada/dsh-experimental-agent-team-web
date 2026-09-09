@@ -16,6 +16,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { appendTeamEvent, captainSessionOf } from './events.ts'
 import { renderBestPractices, renderStatus, serializeRetro, serializeSignals } from './render.ts'
 import {
@@ -390,6 +391,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
           team_id: { type: 'string', required: true },
           team_name: { type: 'string', required: true },
           state_dir: { type: 'string', required: true },
+          captain_session_id: { type: 'string', required: true },
         },
       },
       render: (args, value) => [{
@@ -403,7 +405,10 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
       const stateRoot = stateRootOf(workspace, config)
       const teamName = args.name.trim()
       if (teamName === '') throw new Error('team name must not be empty')
-      const teamId = sanitizeKey(teamName)
+      // New teams use an opaque UUID id so Unicode/display names cannot collide
+      // or be re-derived differently by clients. Existing slug directories remain
+      // readable through the durable state id and all lookup APIs.
+      const teamId = randomUUID()
       return withTeamLock(captainLockKey(stateRoot, captain.id), async () => {
         const current = await findTeamByParticipant(stateRoot, captain.id, warnSkippedTeamDir(ctx))
         if (current !== undefined) {
@@ -486,7 +491,12 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
             name: commissar.name,
             role: commissar.role,
           })
-          return { team_id: state.id, team_name: state.name, state_dir: join(stateRoot, state.id) }
+          return {
+            team_id: state.id,
+            team_name: state.name,
+            state_dir: join(stateRoot, state.id),
+            captain_session_id: captain.id,
+          }
         })
       })
     },
