@@ -16,8 +16,8 @@
 
 提供能力:
 
-- `/agent-teams` 斜杠命令(含 pre-step 手势边界)激活队长协议;
-- 完整 `agent_teams_*` 工具集(建队/加成员/建任务/认领/更新/转派/移除/发消息/状态/删除,以及 `agent_teams_retro_review`、`agent_teams_best_practices`);
+- **按需加载**:默认只注册一个 `agent_teams_activate` 工具和一段两行提示,14 个团队工具与队长协议在激活时才装进**当前会话自己的作用域**(实测把未激活会话的每次请求开销从约 4,900 tokens 降到约 270 tokens)。三种激活入口等价且幂等:自然语言(「用 AgentTeams 做 X」→ 模型调 `agent_teams_activate`)、`/agent-teams <目标>` 斜杠命令(含 pre-step 手势边界,无命令裁决的 headless 面同样可用);
+- 完整 `agent_teams_*` 工具集(建队/加成员/建任务/认领/更新/转派/移除/发消息/状态/模式切换/删除,以及 `agent_teams_retro_review`、`agent_teams_best_practices`),激活后对队长**及其成员**可见(成员子作用域继承队长的注册);
 - 磁盘为唯一真源的团队内核 — `.agent-team-web/<teamId>/team.json` + 邮箱 inbox,原子写入 + 按团队加锁;
 - 事件驱动的共享任务调度器,自动把就绪任务派给空闲成员并响应 `agent/status`;
 - 信息性 `agent-team-web/*` 会话事件写入队长会话;
@@ -48,7 +48,7 @@ DSH 设置页内置 **AgentTeam** section(`settings.section` 槽位,含导航专
 
 ## 架构
 
-- **宿主包**(`src/index.ts`):注册工具、系统提示协议段、`/agent-teams` 命令 + 手势边界、快照与图集 HTTP 路由,并装配调度器。
+- **宿主包**(`src/index.ts`):装配一次进程级运行时(调度器、成员档位/状态守卫、退休成员守卫),并注册常驻的激活入口(提示段 + `agent_teams_activate`);14 个工具与队长协议段由 `src/activation.ts` 在激活时装进调用方 agent 的 `agent.ctx`,`/agent-teams` 命令 + 手势边界、快照与图集 HTTP 路由在根层注册。
 - **浏览器包**(`src/client/index.tsx`):在 `shell.overlay` 槽注册活动面板、在 `conversation.chat.node` 注册团队卡片、注册隐藏命令视图;面板轮询快照路由(无长连接)。
 
 内核以磁盘为真源;会话事件仅信息性;团队删除即归档(而非物理删除),面板可恢复历史。
@@ -122,13 +122,21 @@ pnpm add /path/to/dsh-experimental-agent-team-web
 
 ### 3. 重启 DSH
 
-重启 DSH Web 进程(GUI),然后激活队长协议:
+重启 DSH Web 进程(GUI),然后激活队长协议——两种方式等价:
 
 ```
 /agent-teams <目标>
 ```
 
+或直接用自然语言(模型会先调 `agent_teams_activate`,该工具返回协议并装好工具面):
+
+```
+用 AgentTeams 帮我 <目标>
+```
+
 示例:`/agent-teams review the last 20 commits from performance, security, and product perspectives`
+
+激活是按会话的、幂等的:激活前 `agent_teams_*` 工具不存在,激活后从下一个 step 起可见(队长与成员都可见);未激活的会话只付提示的约 270 tokens/请求。
 
 右上角会浮出**活动面板**:成员状态、任务进度、**每个成员当前任务已耗时**、预估 vs 实际与超时徽标,点击任务详情可下钻查看复盘与最佳实践经验。
 

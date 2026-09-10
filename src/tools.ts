@@ -72,6 +72,7 @@ import {
   spawnMember,
   type MemberLlmSelectionCandidate,
   type MemberRuntimeConfig,
+  type MemberSelectionRuntime,
 } from './members.ts'
 import { TERMINAL_TASK_STATUSES, TASK_RETRO_CAUSES, ESTIMATE_LEVEL_RANGES, type TeamMember, type TeamMode, type TeamState, type TeamTask, type TaskRetroCause } from './types.ts'
 import { installMemberStateGuard } from './member-state-guard.ts'
@@ -382,15 +383,35 @@ export function steerCaptainReport(captain: Pick<Agent, 'steer'>, from: string, 
   }
 }
 
-/**
- * Register every `agent_teams_*` tool into the shared tools registry.
- * @param ctx - the plugin context (injects `tools`).
- * @param config - resolved tool config.
- */
 /** Tightening order of collaboration modes; set_mode never moves backwards. */
 const MODE_RANK: Readonly<Record<TeamMode, number>> = { light: 0, standard: 1, governed: 2 }
 
-export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void {
+/** Process-wide AgentTeams runtime handles shared by every tool body. */
+export interface AgentTeamsRuntime {
+  /** Member model/effort selection runtime (see members.ts). */
+  readonly memberSelections: MemberSelectionRuntime
+  /** Fire-and-forget team dispatch (never blocks a tool result). */
+  readonly kickTeamAsync: (workspace: string, teamId: string, captain?: Agent) => void
+  /** Fire-and-forget member dispatch. */
+  readonly kickMemberAsync: (workspace: string, teamId: string, memberName: string, captain?: Agent) => void
+}
+
+/**
+ * Install the process-wide AgentTeams runtime: the retired-member guard, the
+ * member selection runtime, the member state-dir guard and the team
+ * scheduler.
+ *
+ * These are runtime hooks with no model-visible cost, so a profile installs
+ * them exactly once when the plugin mounts — deliberately NOT per activation:
+ * the scheduler and the guards must outlive any single captain session, and a
+ * second installation would double-wrap the subagent `followup` patch and
+ * start a second scheduler.
+ *
+ * @param ctx - the installing context; pass the plugin root, not a session scope.
+ * @param config - resolved tool config (state dir + stall threshold).
+ * @returns the handles every tool body shares.
+ */
+export function installAgentTeamsRuntime(ctx: Context, config: ToolsConfig): AgentTeamsRuntime {
   installRetiredMemberGuard(ctx, config.stateDir)
   const memberSelections = installMemberSelectionRuntime(ctx, config.stateDir)
   // R-18/H-2: dispatch-time state-dir guard for member file tools.
@@ -401,16 +422,45 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): void
   // 队内串行化(serializeMember)本就保证成员级顺序,工具无需等待全队
   // 派发/实时唤醒完成;失败只 warn(不影响已落盘的工具结果)。status 等
   // 只读工具的 kick 副作用也由此与主响应解耦。
-  const kickTeamAsync = (workspace: string, teamId: string, captain?: Agent): void => {
-    void scheduler.kickTeam(workspace, teamId, captain).catch((error: unknown) => {
-      ctx.logger.warn(`agent-team-web: scheduler kickTeam failed for team "${teamId}": ${String(error)}`)
-    })
+  return {
+    memberSelections,
+    kickTeamAsync: (workspace: string, teamId: string, captain?: Agent): void => {
+      void scheduler.kickTeam(workspace, teamId, captain).catch((error: unknown) => {
+        ctx.logger.warn(`agent-team-web: scheduler kickTeam failed for team "${teamId}": ${String(error)}`)
+      })
+    },
+    kickMemberAsync: (workspace: string, teamId: string, memberName: string, captain?: Agent): void => {
+      void scheduler.kickMember(workspace, teamId, memberName, captain).catch((error: unknown) => {
+        ctx.logger.warn(`agent-team-web: scheduler kickMember failed for "${memberName}" in team "${teamId}": ${String(error)}`)
+      })
+    },
   }
-  const kickMemberAsync = (workspace: string, teamId: string, memberName: string, captain?: Agent): void => {
-    void scheduler.kickMember(workspace, teamId, memberName, captain).catch((error: unknown) => {
-      ctx.logger.warn(`agent-team-web: scheduler kickMember failed for "${memberName}" in team "${teamId}": ${String(error)}`)
-    })
-  }
+}
+
+/**
+ * Register every `agent_teams_*` tool into the given context's tool layer.
+ *
+ * The 14 schemas are the token-expensive half of this plugin (measured at
+ * ~12.4k characters, about 3.1k tokens on every request that carries them),
+ * so production activation calls this with the CALLING AGENT'S context
+ * (`agent.ctx`): an agent-scoped registration shadows nothing globally,
+ * unwinds when that agent is disposed, and is inherited by the agent's child
+ * scopes — where the team members live, so members keep their team tools
+ * (`packages/core/tools/tests/scoped.spec.ts` pins ancestor-scope
+ * inheritance: "no model-facing row in the global layer, all of them
+ * contributed by an ancestor scope the child joined").
+ *
+ * Passing the plugin root registers globally instead — the shape a profile
+ * that wants the surface in every session uses, and what the tool-level
+ * tests exercise.
+ *
+ * @param ctx - the context whose tool layer receives the schemas.
+ * @param config - resolved tool config.
+ * @param runtime - process-wide runtime from {@link installAgentTeamsRuntime};
+ *   omitted, this call installs (and owns) its own.
+ */
+export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runtime?: AgentTeamsRuntime): void {
+  const { memberSelections, kickTeamAsync, kickMemberAsync } = runtime ?? installAgentTeamsRuntime(ctx, config)
 
   ctx.tools.register(defineTool({
     name: 'agent_teams_create',

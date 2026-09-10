@@ -21,8 +21,8 @@ An external DeepSeek Harness (DSH) bundle that turns the current session into th
 
 It provides:
 
-- the `/agent-teams` slash command (plus a pre-step gesture boundary) that activates the captain protocol;
-- the full `agent_teams_*` tool suite (create/add-member/create-task/claim/update/reassign/remove/send-message/status/delete, plus `agent_teams_retro_review` and `agent_teams_best_practices`);
+- **loaded on demand**: by default it registers only one `agent_teams_activate` tool plus a two-line hint; the 14 team tools and the captain protocol are installed into the **activating session's own scope** only when activation happens (measured: an inactive session pays ~270 tokens/request instead of ~4,900). Three equivalent, idempotent activation entries: natural language ("use AgentTeams to do X" → the model calls `agent_teams_activate`), the `/agent-teams <goal>` slash command, and its pre-step gesture boundary for surfaces without command adjudication (headless);
+- the full `agent_teams_*` tool suite (create/add-member/create-task/claim/update/reassign/remove/send-message/status/set-mode/delete, plus `agent_teams_retro_review` and `agent_teams_best_practices`), visible after activation to the captain **and its members** (member child scopes inherit the captain's registrations);
 - a disk-backed team kernel — `.agent-team-web/<teamId>/team.json` + mailbox inboxes are the single source of truth, with atomic writes and per-team locking;
 - an event-driven shared-task scheduler that auto-assigns ready work to idle members and reacts to `agent/status`;
 - informational `agent-team-web/*` session events appended to the captain's session;
@@ -66,7 +66,7 @@ visibility and lets the framework learn from every task:
 
 ## Architecture
 
-- **Host bundle** (`src/index.ts`): registers tools, the system-prompt protocol section, the `/agent-teams` command + gesture boundary, the snapshot and artwork HTTP routes, and wires the scheduler.
+- **Host bundle** (`src/index.ts`): installs the process-wide runtime once (scheduler, member selection/state guards, retired-member guard) and registers the always-on activation entry (hint section + `agent_teams_activate`); `src/activation.ts` installs the 14 tools and the captain protocol section into the calling agent's `agent.ctx` on activation; the `/agent-teams` command + gesture boundary, the snapshot and artwork HTTP routes register on the root.
 - **Browser bundle** (`src/client/index.tsx`): registers the activity panel in the `shell.overlay` slot, the team card in `conversation.chat.node`, and the hidden command view; the panel polls the snapshot route (no long-lived connection).
 
 The kernel keeps the team state on disk; session events are informational only, and teams are archived (not deleted) so the panel can restore history.
@@ -160,13 +160,21 @@ Add this row to your profile patch (e.g. `cordis.patch.yml`; see
 
 ### 3. Restart DSH
 
-Restart the DSH web process (the GUI), then activate the captain protocol:
+Restart the DSH web process (the GUI), then activate the captain protocol — two equivalent ways:
 
 ```
 /agent-teams <goal>
 ```
 
+or just ask in natural language (the model calls `agent_teams_activate` first, which loads the tool surface and the protocol):
+
+```
+use AgentTeams to <goal>
+```
+
 Example: `/agent-teams review the last 20 commits from performance, security, and product perspectives`
+
+Activation is per session and idempotent: before it, no `agent_teams_*` tool exists; after it, they are visible from the next step (to the captain and to its members). Sessions that never activate pay only the ~270-token hint per request.
 
 A floating **activity panel** appears at the top right: member status, task
 progress, **each member's current-task elapsed time**, estimate-vs-actual with

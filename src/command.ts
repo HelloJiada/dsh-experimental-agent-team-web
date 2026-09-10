@@ -23,12 +23,20 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
+import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 
 /** The slash command name (without the leading slash). */
 export const AGENT_TEAMS_COMMAND = 'agent-teams'
+
+/**
+ * Installs the AgentTeams surface for one agent, idempotently. Supplied by the
+ * root composition (`index.ts` → `activation.ts`); the plugin still works
+ * without it — the surfaces then only inject the directive and the surface
+ * must be loaded by other means.
+ */
+export type AgentTeamsActivation = (agent: Agent) => void
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -52,8 +60,10 @@ declare module '@deepseek-ai/dsh-llm' {
 const GESTURE = /^\/agent-teams(?=$|[\t\n\r ])/u
 
 /**
- * The deterministic activation text. The system-prompt usage section owns
- * the full protocol; this message only switches it on for one concrete goal.
+ * The deterministic activation text. The full protocol arrives with the
+ * activated surface (the agent-scoped `agent-teams:usage` section that
+ * shadows the always-on hint); this message names the concrete goal and tells
+ * the model the surface is already loaded.
  * @param goal - the user-supplied goal, or `''` for a bare invocation.
  */
 export function buildActivationDirective(goal: string): string {
@@ -61,7 +71,7 @@ export function buildActivationDirective(goal: string): string {
     ? 'The goal was not given — ask the user what the team should accomplish.'
     : `Goal: ${goal}`
   return [
-    'The user invoked the `/agent-teams` command. Activate the AgentTeams protocol from your instructions now: you are the captain of a multi-agent team.',
+    'The user invoked the `/agent-teams` command. The AgentTeams tools and the full captain protocol are now loaded for this session: you are the captain of a multi-agent team.',
     goalLine,
   ].join('\n')
 }
@@ -88,14 +98,17 @@ export function invokedAgentTeamsGoal(messages: readonly UserMessage[]): string 
 
 /**
  * Register the closed-namespace `/agent-teams` host command. The handler
- * preserves the exact submitted slash line as an ordinary user follow-up;
- * the pre-step gesture boundary injects the activation directive and wakes
- * the captain deterministically. The registration rides the calling
- * context's fiber, so a disposed scope (HMR, plugin removal) unregisters the
- * command.
+ * activates the AgentTeams surface for the invoking agent and then preserves
+ * the exact submitted slash line as an ordinary user follow-up; the pre-step
+ * gesture boundary injects the activation directive and wakes the captain
+ * deterministically. Activation happens BEFORE the follow-up turn is
+ * assembled, so the captain's next step already carries the team tools and
+ * the full protocol. The registration rides the calling context's fiber, so a
+ * disposed scope (HMR, plugin removal) unregisters the command.
  * @param ctx - host context providing the `commands` registry.
+ * @param onActivate - installs the team surface for the invoking agent.
  */
-export function registerAgentTeamsCommand(ctx: Context): void {
+export function registerAgentTeamsCommand(ctx: Context, onActivate?: AgentTeamsActivation): void {
   ctx.effect(() => ctx.commands.register({
     name: AGENT_TEAMS_COMMAND,
     description: 'run a goal with a multi-agent team (you become the captain)',
@@ -108,6 +121,7 @@ export function registerAgentTeamsCommand(ctx: Context): void {
           text: `Usage: /${AGENT_TEAMS_COMMAND} <goal — what the team should accomplish>`,
         }
       }
+      onActivate?.(invocation.agent)
       invocation.agent.followup(createUserMessage({
         content: [{ type: 'text', text: `/${AGENT_TEAMS_COMMAND}${invocation.rawInput}` }],
         source: { kind: 'user' },
@@ -122,13 +136,18 @@ export function registerAgentTeamsCommand(ctx: Context): void {
 
 /**
  * Install the `agent/pre-step` gesture boundary: a claimed user message
- * starting with `/agent-teams` gains the deterministic activation message
- * appended after every other injection, closest to the model's answer.
+ * starting with `/agent-teams` activates the surface for that agent and gains
+ * the deterministic activation message appended after every other injection,
+ * closest to the model's answer. The activation runs inside the waterfall,
+ * i.e. before this step's request is assembled, so a bare `/agent-teams goal`
+ * typed into a surface without command adjudication (headless CLI, pasted
+ * text) works exactly like the host command.
  * @param ctx - host context providing the `agent/pre-step` waterfall.
+ * @param onActivate - installs the team surface for the stepping agent.
  */
-export function installAgentTeamsGestureBoundary(ctx: Context): void {
+export function installAgentTeamsGestureBoundary(ctx: Context, onActivate?: AgentTeamsActivation): void {
   ctx.on('agent/pre-step', async (
-    { messages, signal },
+    { agent, messages, signal },
     next,
   ): Promise<PreStepDecision> => {
     const decision = await next()
@@ -136,6 +155,7 @@ export function installAgentTeamsGestureBoundary(ctx: Context): void {
     const goal = invokedAgentTeamsGoal(messages)
     if (goal === undefined) return decision
     signal.throwIfAborted()
+    onActivate?.(agent)
     const activation = createUserMessage({
       content: [{ type: 'text', text: buildActivationDirective(goal) }],
       source: {

@@ -22,9 +22,17 @@
  * @module dsh-agent-team-web/command
  */
 import type { Context } from '@deepseek-ai/cordis';
+import type { Agent } from '@deepseek-ai/dsh-agent';
 import { type UserMessage } from '@deepseek-ai/dsh-llm';
 /** The slash command name (without the leading slash). */
 export declare const AGENT_TEAMS_COMMAND = "agent-teams";
+/**
+ * Installs the AgentTeams surface for one agent, idempotently. Supplied by the
+ * root composition (`index.ts` → `activation.ts`); the plugin still works
+ * without it — the surfaces then only inject the directive and the surface
+ * must be loaded by other means.
+ */
+export type AgentTeamsActivation = (agent: Agent) => void;
 declare module '@deepseek-ai/dsh-llm' {
     interface MessageSourceMap {
         /**
@@ -39,8 +47,10 @@ declare module '@deepseek-ai/dsh-llm' {
     }
 }
 /**
- * The deterministic activation text. The system-prompt usage section owns
- * the full protocol; this message only switches it on for one concrete goal.
+ * The deterministic activation text. The full protocol arrives with the
+ * activated surface (the agent-scoped `agent-teams:usage` section that
+ * shadows the always-on hint); this message names the concrete goal and tells
+ * the model the surface is already loaded.
  * @param goal - the user-supplied goal, or `''` for a bare invocation.
  */
 export declare function buildActivationDirective(goal: string): string;
@@ -53,19 +63,27 @@ export declare function buildActivationDirective(goal: string): string;
 export declare function invokedAgentTeamsGoal(messages: readonly UserMessage[]): string | undefined;
 /**
  * Register the closed-namespace `/agent-teams` host command. The handler
- * preserves the exact submitted slash line as an ordinary user follow-up;
- * the pre-step gesture boundary injects the activation directive and wakes
- * the captain deterministically. The registration rides the calling
- * context's fiber, so a disposed scope (HMR, plugin removal) unregisters the
- * command.
+ * activates the AgentTeams surface for the invoking agent and then preserves
+ * the exact submitted slash line as an ordinary user follow-up; the pre-step
+ * gesture boundary injects the activation directive and wakes the captain
+ * deterministically. Activation happens BEFORE the follow-up turn is
+ * assembled, so the captain's next step already carries the team tools and
+ * the full protocol. The registration rides the calling context's fiber, so a
+ * disposed scope (HMR, plugin removal) unregisters the command.
  * @param ctx - host context providing the `commands` registry.
+ * @param onActivate - installs the team surface for the invoking agent.
  */
-export declare function registerAgentTeamsCommand(ctx: Context): void;
+export declare function registerAgentTeamsCommand(ctx: Context, onActivate?: AgentTeamsActivation): void;
 /**
  * Install the `agent/pre-step` gesture boundary: a claimed user message
- * starting with `/agent-teams` gains the deterministic activation message
- * appended after every other injection, closest to the model's answer.
+ * starting with `/agent-teams` activates the surface for that agent and gains
+ * the deterministic activation message appended after every other injection,
+ * closest to the model's answer. The activation runs inside the waterfall,
+ * i.e. before this step's request is assembled, so a bare `/agent-teams goal`
+ * typed into a surface without command adjudication (headless CLI, pasted
+ * text) works exactly like the host command.
  * @param ctx - host context providing the `agent/pre-step` waterfall.
+ * @param onActivate - installs the team surface for the stepping agent.
  */
-export declare function installAgentTeamsGestureBoundary(ctx: Context): void;
+export declare function installAgentTeamsGestureBoundary(ctx: Context, onActivate?: AgentTeamsActivation): void;
 //# sourceMappingURL=command.d.ts.map

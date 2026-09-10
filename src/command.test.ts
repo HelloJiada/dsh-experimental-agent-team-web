@@ -38,9 +38,12 @@ function systemMessage(text: string): UserMessage {
 }
 
 describe('buildActivationDirective — 激活指令文本', () => {
-  it('带 goal:指令含 Goal 行', () => {
+  it('带 goal:指令声明按需装载已完成,并含 Goal 行', () => {
     const directive = buildActivationDirective('验证自成长闭环')
-    expect(directive).toContain('Activate the AgentTeams protocol')
+    // 按需加载后措辞变了:协议不再「在你现有指令里等着被激活」,而是这次
+    // 激活已经把它和工具一起装好(见 activation.ts),指令必须如实说明。
+    expect(directive).toContain('now loaded for this session')
+    expect(directive).toContain('you are the captain of a multi-agent team')
     expect(directive).toContain('Goal: 验证自成长闭环')
   })
 

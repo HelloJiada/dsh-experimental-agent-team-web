@@ -25,8 +25,10 @@ import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
+import { installAgentTeamsRuntime, type ToolsConfig } from './tools.ts'
 import { DEFAULT_ROLE_LLM } from './members.ts'
+import { activateAgentTeams, registerAgentTeamsActivation } from './activation.ts'
+import type { AgentTeamsActivation } from './command.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
 import { handleProviderGrant } from './provider-grant-route.ts'
@@ -145,20 +147,6 @@ export const Config: z<Config> = z.object({
   trustedHosts: z.array(z.string()).default([]),
 })
 
-/** The model-facing usage policy: when and how to drive AgentTeams. */
-function usageSectionText(toolNames: string): string {
-  return `When the user asks to run something with AgentTeams (e.g. "use AgentTeams to do X"), or an activation message from the /agent-teams slash command arrives, you are the captain of a multi-agent team. Follow this protocol:
-1. Reuse the current active team by default for follow-up work in the same session. If you already lead an active team, keep using it and create new tasks inside it; call agent_teams_create only when no active team exists yet, the current team is clearly unsuitable for the new goal, or the user explicitly asks for a new team. When you do create one, you become the captain and may lead one team at a time. Choose the collaboration mode deliberately: "light" for a small, low-risk goal where one executor suffices (no commissar is created and gated tasks are refused), "standard" (default) for normal work, or "governed" when independent oversight must be guaranteed (the commissar cannot be removed). A light team can be upgraded later with agent_teams_set_mode; downgrading to light is refused.
-2. Call agent_teams_add_member for each executing role the goal needs — 7 preset behavioral roles, one member each by default: 侦察参谋 researcher (想清楚: read code/docs first → root cause + plan → self-check → hand off), 技术员 engineer (做出来: implement per plan → self-test → diff summary), 质检员 qa (验明白: checklist first → verify → pass/reject with evidence), 文宣干事 designer (好看: visual plan with concrete values), 情报分析员 data (算清楚: define metrics → collect → reviewable report), 文书 docs (写明白: structure first → write with spec → sync-check against reality), 警卫员 security (护边界: map the trust perimeter → probe exposure → grade with exploit scenarios → verify the positive side); a reviewer (审查员) is a task-level dynamic role — add one when dedicated review is needed. operator 后勤保障员 is not preset — pass it as a custom role string only when the goal really needs it. A commissar (政委) member for independent oversight is auto-created with the team; do not add a second one. The captain is fixed at 1 and the commissar at 1; each executing role may have up to 1 member by default (每角色默认 1 人，上限可配置), and the team total is capped at 18 members (队长 1 + 政委 1 + 执行成员) — exceeding either cap is rejected. The recommended handoff path is researcher → engineer → qa (docs 文书 joins when the deliverable needs formal documentation), but only when each step truly depends on the previous one — there is no forced pipeline: independent work stays parallel, and tasks become sequential only through explicit dependencies. Members are durable subagents: they wait for your messages, then work a full turn. By default a member on your current provider/model snapshots your current reasoning effort; a member routed to a different provider or model automatically uses that target model's default effort. Never ask the user to choose these per member; only pass provider/model when the user explicitly requests a different route for that role, and reasoning_effort only when the user explicitly requests a particular effort ("default" explicitly selects the target model's default).
-3. Break the goal into tasks with agent_teams_create_task and wire dependencies. Assign role-specific work when useful; unassigned ready work belongs to the shared pool. agent_teams_create_task and agent_teams_status surface keyword-based role suggestions (调研→researcher、实现→engineer、验收→qa、视觉→designer、数据→data、文档→docs) as advisory hints only — confirm or override them via the existing assignee flow, they never auto-dispatch. The scheduler automatically claims one ready task for each truly idle member and wakes it, including across later rounds. Tasks marked risk=high/critical or milestone=true fall under the commissar gate: they can only be marked completed after the commissar passes them with agent_teams_review_task (verdict=pass); a rejected completion notifies the commissar automatically. In light mode such tasks are refused at creation instead, so raise the mode first (agent_teams_set_mode) rather than weakening the risk level to make the task fit.
-4. Lead by delegation: monitor with agent_teams_status, send guidance with agent_teams_send_message, and let idle teammates execute ready work. Do not duplicate a teammate's work merely because its turn is slow. If the user requires every member to contribute or report, create one task per required contribution (or message each member directly); never wait for an unassigned member to produce work it was never given.
-5. If the user explicitly asks to pause a running member, its open attempt remains parked after interruption; after answering the user, send that same member guidance with agent_teams_send_message so it continues the same attempt. Do not interrupt members for an ordinary user question that did not request a pause. If work must change owner, restart from scratch, or be taken over, call agent_teams_reassign_task first. Reassign to another idle member, retry with the same member, or use assignee=captain before doing it yourself. Reassignment revokes the old attempt and waits for that member to quiesce, preventing late results from overwriting the new attempt.
-6. Tasks carry attempt_id capabilities. Members must use the current attempt_id for updates; stale-attempt errors mean ownership changed. Check status after progress notifications until every required task is terminal and every member is idle/ready; do not busy-poll or require reports from members with no assigned work.
-7. Present the team's results to the user and keep the team alive by default for follow-up work in the same session. Do not call agent_teams_delete just because the current tasks finished. Only close/archive the team when the user explicitly asks to close it, archive it, end it, or clearly abandons that team.
-
-Tools: ${toolNames}`
-}
-
 /**
  * 自成长数据汇总(t10,设置页第三张卡)——跨 workspace 合并全局经验库:
  * 返回总条数 + 校准计数(useful/revised 视为已校准,pending 待校准)+ 最近
@@ -228,27 +216,6 @@ export function apply(ctx: Context, config: Config): void {
   // member spawn (`spawnMember`), the earliest point the provider list is
   // settled, rather than here.
 
-  const toolNames = [
-    'agent_teams_create',
-    'agent_teams_add_member',
-    'agent_teams_remove_member',
-    'agent_teams_create_task',
-    'agent_teams_reassign_task',
-    'agent_teams_claim_task',
-    'agent_teams_update_task',
-    'agent_teams_review_task',
-    'agent_teams_send_message',
-    'agent_teams_status',
-    'agent_teams_retro_review',
-    'agent_teams_best_practices',
-    'agent_teams_delete',
-  ].join(', ')
-  ctx.systemPrompt.section({
-    name: 'agent-teams:usage',
-    order: config.promptSectionOrder ?? 117,
-    text: usageSectionText(toolNames),
-  })
-
   // AgentTeam 设置中心（t13:命名空间 agent-team-web,模型粒度授权 + 角色档位
   // 覆盖）。t6 接线延续：在 inject 作用域内捕获 register() 返回的
   // SettingsScope,经闭包写入 settingsAccess(判定/快照/写面);工具 execute
@@ -260,21 +227,40 @@ export function apply(ctx: Context, config: Config): void {
     wireAgentTeamSettings(settingsCtx, settingsAccess)
   })
 
-  registerAgentTeamsTools(ctx, {
+  // t13 接线:模型授权 + 角色档位覆盖经 settingsAccess(apply 期捕获
+  // settings scope 的闭包)延迟读取——注入回调在 apply 之后才执行,
+  // 此处只需稳定引用。这份配置既交给激活期(每次激活装一套工具 schema),
+  // 也交给运行时安装,必须是同一份。
+  const toolsConfig: ToolsConfig = {
     ...resolved,
-    // t13 接线:模型授权 + 角色档位覆盖经 settingsAccess(apply 期捕获
-    // settings scope 的闭包)延迟读取——注入回调在 apply 之后才执行,
-    // 此处只需稳定引用。
     modelGrantedFor: (provider, model) => settingsAccess.modelGrantedFor?.(provider, model)
       ?? (provider === 'deepseek-official'),
     roleDefaultsFor: (roleKey) => settingsAccess.roleDefaultsFor?.(roleKey),
-  })
+  }
+
+  // 两半分开装——这是本插件 token 成本的关键分界:
+  //
+  // 1. 运行时(调度器、退休成员守卫、成员档位/状态守卫)是进程级 hook,零
+  //    模型可见成本,必须活过单个队长会话,因此在这里装一次。放到激活期会
+  //    导致第二次激活重复包装 subagent followup、起第二个调度器,并且在队长
+  //    作用域释放时连带拆掉别的会话要用的调度器。
+  // 2. 14 个 agent_teams_* 工具的 schema + 队长协议(实测约 4.5k tokens/请求)
+  //    按会话装,只在这里留一条提示段 + 一个激活工具(见 activation.ts)。
+  //    未使用 AgentTeams 的会话因此只付提示的钱。
+  const runtime = installAgentTeamsRuntime(ctx, toolsConfig)
+  const sectionOrder = config.promptSectionOrder ?? 117
+  registerAgentTeamsActivation(ctx, toolsConfig, sectionOrder, runtime)
+  const activateAgent: AgentTeamsActivation = (agent) => {
+    activateAgentTeams(agent, toolsConfig, sectionOrder, runtime)
+  }
 
   // Deterministic activation surfaces: the closed-namespace `/agent-teams`
   // host command (surfaces in the Web GUI slash menu via the Harness
   // ui-commands client) and the plain-text gesture boundary for surfaces
   // without command adjudication (headless CLI). Both default on; a profile
-  // can disable them to keep the natural-language trigger exclusive.
+  // can disable them to keep the natural-language trigger exclusive. Both
+  // also ACTIVATE: the surface must exist before the step that will read it
+  // is assembled.
   //
   // `commands` is registered lazily (not a required inject): it ships in the
   // base bundle of every standard profile, but a minimal composition that
@@ -282,9 +268,9 @@ export function apply(ctx: Context, config: Config): void {
   // never pends on it and simply never gains the slash command.
   if (config.slashCommand ?? true) {
     ctx.inject(['commands'], (commandCtx) => {
-      registerAgentTeamsCommand(commandCtx)
+      registerAgentTeamsCommand(commandCtx, activateAgent)
     })
-    installAgentTeamsGestureBoundary(ctx)
+    installAgentTeamsGestureBoundary(ctx, activateAgent)
   }
 
   // The activity panel data/artwork routes need the Web server and the
