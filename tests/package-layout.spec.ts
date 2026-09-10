@@ -64,6 +64,22 @@ describe('package layout', () => {
     expect(chinese).toContain(tarball)
   })
 
+  it('never depends on itself or on a local file path', async () => {
+    // Regression guard: a stray `pnpm add <tarball>` run inside this repo once
+    // wrote a self file: dependency into package.json, which made every
+    // published tarball uninstallable for consumers.
+    const packageJson = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')) as {
+      name: string
+      dependencies?: Record<string, string>
+    }
+    const dependencies = packageJson.dependencies ?? {}
+    expect(Object.keys(dependencies)).not.toContain(packageJson.name)
+    for (const [name, specifier] of Object.entries(dependencies)) {
+      expect(specifier, `${name} must not use a local file/link specifier`).not.toMatch(/^(file|link):/)
+      expect(specifier, `${name} must not use an absolute path`).not.toMatch(/^\//)
+    }
+  })
+
   it('ships real-profile integration examples and smoke-check docs with the tarball', async () => {
     const packageJson = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')) as {
       files: readonly string[]
