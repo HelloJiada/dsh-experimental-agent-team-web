@@ -5,7 +5,7 @@
 #    agent-team-web runtime (team kernel, scheduler, event emitter) is built
 #    into this bundle — no separate runtime package is needed:
 #    cd ~/.dsh/profiles/web
-#    pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.15.tgz
+#    pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.16.tgz
 #
 # 2) The runtime uses `.agent-team-web/` disk state as truth; it intentionally
 #    does not persist external `agent-team-web/*` Session events on DSH 0.1.3.
@@ -28,3 +28,11 @@
       name: "@deepseek-ai/dsh-experimental-agent-team-web"
       inject:
         - sessionProjections
+
+# DSH 0.1.5-rc.2 及同类 harness(子 agent 加入父 preset,不继承父 agent scope):
+# 按需加载交付不到成员,需在行 config 里加 registration: eager。
+- id: agent-team-web
+  inject:
+    - sessionProjections
+  config:
+    registration: eager

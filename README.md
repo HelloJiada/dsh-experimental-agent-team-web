@@ -6,11 +6,19 @@
 
 **Experimental.** This package is intended for experimental and internal use. It follows DSH interfaces that may evolve.
 
-## DSH 0.1.3 compatibility
+## DSH compatibility
 
-Version 0.1.15 uses the package's self-contained AgentTeams kernel and is tested
-against the public DSH `0.1.3-alpha.2` package line. It does **not** require the
+Version 0.1.16 uses the package's self-contained AgentTeams kernel and is tested
+against the public DSH `0.1.3-alpha.2` package line, and against a DSH
+`0.1.5-rc.2` checkout running `pnpm dsh web`. It does **not** require the
 unpublished official experimental Agent Teams package or a local DSH checkout.
+
+On `0.1.5-rc.2` set `registration: eager` (see `docs/compatibility.md`): that
+harness joins a subagent child to its parent **preset** instead of inheriting
+the parent **agent scope**, so on-demand activation cannot deliver the team
+tools to members. `eager` installs the whole surface in the global layer (the
+v0.1.14 shape) and costs the full ~4.9k tokens/request in every session.
+
 Team state remains workspace-local under `.agent-team-web/<teamId>/`, while the
 plugin provides the compatibility tools, activity panel, settings/presets,
 commissar gate, retrospectives, and archive view.
@@ -133,7 +141,7 @@ The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.15.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.16.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -190,4 +198,4 @@ page for the current asset name.)
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.15.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.16.tgz`

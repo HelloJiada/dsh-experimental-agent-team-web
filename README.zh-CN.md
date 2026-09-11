@@ -6,9 +6,11 @@
 
 **实验性。** 本包用于实验与内部使用,遵循可能演进的 DSH 接口。
 
-## DSH 0.1.3 兼容性
+## DSH 兼容性
 
-版本 0.1.15 使用本包自包含的 AgentTeams 内核，并针对公开 DSH `0.1.3-alpha.2` 包线验证；不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
+版本 0.1.16 使用本包自包含的 AgentTeams 内核，已针对公开 DSH `0.1.3-alpha.2` 包线，以及以源码方式运行 `pnpm dsh web` 的 DSH `0.1.5-rc.2` 实测验证；不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
+
+在 `0.1.5-rc.2` 上请设置 `registration: eager`（详见 `docs/compatibility.md`）：该 harness 让子 agent 加入**父的 preset**、而不是继承**父 agent 的 scope**，按需加载无法把团队工具交付给成员。`eager` 把整面注册进全局层（v0.1.14 形态），代价是每个会话约 4.9k tokens/请求。
 
 ## 概览
 
@@ -96,7 +98,7 @@ AgentTeams 假设**单个 harness 进程**独占一个 workspace 的团队状态
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.15.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.16.tgz
 ```
 
 开发者/协作者也可用 git 或本地路径安装——仓库已提交 `lib/` 构建产物,无需构建:
@@ -149,4 +151,4 @@ tarball,无需改 URL。(若上面文件名仍带旧版本号,到
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.15.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.16.tgz`

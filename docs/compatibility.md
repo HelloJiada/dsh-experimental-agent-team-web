@@ -24,6 +24,7 @@ local DeepSeek Harness checkout.
 
 | Plugin version | DSH version | Notes |
 |---|---|---|
+| 0.1.16 | 0.1.3-alpha.2 / 0.1.5-rc.2 | Root service context: tool bodies take injected services from the plugin root instead of the session scope. New `registration: 'lazy' | 'eager'` — `eager` installs the whole surface globally for harnesses that join a subagent child to its parent preset instead of inheriting the parent agent scope (required on 0.1.5-rc.2) |
 | 0.1.15 | 0.1.3-alpha.2 | On-demand loading: the 14 team tools and the captain protocol are installed into the activating session's own scope instead of every session (measured 4.9k -> 0.27k tokens per request for inactive sessions) |
 | 0.1.14 | 0.1.3-alpha.2 | Packaging hotfix: remove a stray self file: dependency that made the published tarball uninstallable |
 | 0.1.13 | 0.1.3-alpha.2 | Collaboration modes: light/standard/governed with an upgrade-only mode switch and fail-closed gated tasks |

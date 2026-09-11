@@ -18,7 +18,7 @@
 ```bash
 # 安装本 bundle（示例：release tarball）
 cd ~/.dsh/profiles/web
-pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.10.tgz
+pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.16.tgz
 ```
 
 Profile patch 可直接复用：
