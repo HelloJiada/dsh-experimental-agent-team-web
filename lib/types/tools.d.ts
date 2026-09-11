@@ -67,6 +67,20 @@ export declare function memberOpenTask(team: TeamState, memberName: string, exce
 export declare function steerCaptainReport(captain: Pick<Agent, 'steer'>, from: string, content: string): boolean;
 /** Process-wide AgentTeams runtime handles shared by every tool body. */
 export interface AgentTeamsRuntime {
+    /**
+     * Service-access context for every tool body: the plugin ROOT context.
+     *
+     * Tool *registration* is per captain session (`agent.ctx`, see
+     * {@link registerAgentTeamsTools}), but the injected services this plugin
+     * declares (`tools`, `llm`, `subagents`, `systemPrompt`, `agents`) resolve
+     * only on the plugin root's fiber: reading `subagents` from a session scope
+     * throws `cannot get property "subagents" without inject` (observed on DSH
+     * 0.1.5-rc.2 with the row's own `inject: [sessionProjections]`, which the
+     * loader MERGES into — never replaces — the plugin's static `inject`). Tool
+     * bodies therefore take services from this context while the schemas still
+     * ride the session scope, so the token split is unchanged.
+     */
+    readonly serviceCtx: Context;
     /** Member model/effort selection runtime (see members.ts). */
     readonly memberSelections: MemberSelectionRuntime;
     /** Fire-and-forget team dispatch (never blocks a tool result). */
@@ -107,10 +121,19 @@ export declare function installAgentTeamsRuntime(ctx: Context, config: ToolsConf
  * that wants the surface in every session uses, and what the tool-level
  * tests exercise.
  *
- * @param ctx - the context whose tool layer receives the schemas.
+ * REGISTRATION vs SERVICE ACCESS — two different contexts on purpose:
+ * `scopeCtx` only ever receives `tools.register` (that is what makes the
+ * per-session token split work), while every service read inside the bodies
+ * goes through {@link AgentTeamsRuntime.serviceCtx} (the plugin root). Using
+ * `scopeCtx` for services breaks the surface: a session scope does not
+ * resolve this plugin's injected `subagents`/`agents`, so the first member
+ * spawn would throw `cannot get property "subagents" without inject`.
+ *
+ * @param scopeCtx - the context whose tool layer receives the schemas.
  * @param config - resolved tool config.
  * @param runtime - process-wide runtime from {@link installAgentTeamsRuntime};
- *   omitted, this call installs (and owns) its own.
+ *   omitted, this call installs (and owns) its own — then the installing
+ *   context doubles as the service context.
  */
-export declare function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runtime?: AgentTeamsRuntime): void;
+export declare function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, runtime?: AgentTeamsRuntime): void;
 //# sourceMappingURL=tools.d.ts.map

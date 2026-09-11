@@ -388,6 +388,20 @@ const MODE_RANK: Readonly<Record<TeamMode, number>> = { light: 0, standard: 1, g
 
 /** Process-wide AgentTeams runtime handles shared by every tool body. */
 export interface AgentTeamsRuntime {
+  /**
+   * Service-access context for every tool body: the plugin ROOT context.
+   *
+   * Tool *registration* is per captain session (`agent.ctx`, see
+   * {@link registerAgentTeamsTools}), but the injected services this plugin
+   * declares (`tools`, `llm`, `subagents`, `systemPrompt`, `agents`) resolve
+   * only on the plugin root's fiber: reading `subagents` from a session scope
+   * throws `cannot get property "subagents" without inject` (observed on DSH
+   * 0.1.5-rc.2 with the row's own `inject: [sessionProjections]`, which the
+   * loader MERGES into — never replaces — the plugin's static `inject`). Tool
+   * bodies therefore take services from this context while the schemas still
+   * ride the session scope, so the token split is unchanged.
+   */
+  readonly serviceCtx: Context
   /** Member model/effort selection runtime (see members.ts). */
   readonly memberSelections: MemberSelectionRuntime
   /** Fire-and-forget team dispatch (never blocks a tool result). */
@@ -423,6 +437,7 @@ export function installAgentTeamsRuntime(ctx: Context, config: ToolsConfig): Age
   // 派发/实时唤醒完成;失败只 warn(不影响已落盘的工具结果)。status 等
   // 只读工具的 kick 副作用也由此与主响应解耦。
   return {
+    serviceCtx: ctx,
     memberSelections,
     kickTeamAsync: (workspace: string, teamId: string, captain?: Agent): void => {
       void scheduler.kickTeam(workspace, teamId, captain).catch((error: unknown) => {
@@ -454,15 +469,28 @@ export function installAgentTeamsRuntime(ctx: Context, config: ToolsConfig): Age
  * that wants the surface in every session uses, and what the tool-level
  * tests exercise.
  *
- * @param ctx - the context whose tool layer receives the schemas.
+ * REGISTRATION vs SERVICE ACCESS — two different contexts on purpose:
+ * `scopeCtx` only ever receives `tools.register` (that is what makes the
+ * per-session token split work), while every service read inside the bodies
+ * goes through {@link AgentTeamsRuntime.serviceCtx} (the plugin root). Using
+ * `scopeCtx` for services breaks the surface: a session scope does not
+ * resolve this plugin's injected `subagents`/`agents`, so the first member
+ * spawn would throw `cannot get property "subagents" without inject`.
+ *
+ * @param scopeCtx - the context whose tool layer receives the schemas.
  * @param config - resolved tool config.
  * @param runtime - process-wide runtime from {@link installAgentTeamsRuntime};
- *   omitted, this call installs (and owns) its own.
+ *   omitted, this call installs (and owns) its own — then the installing
+ *   context doubles as the service context.
  */
-export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runtime?: AgentTeamsRuntime): void {
-  const { memberSelections, kickTeamAsync, kickMemberAsync } = runtime ?? installAgentTeamsRuntime(ctx, config)
+export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, runtime?: AgentTeamsRuntime): void {
+  const effective = runtime ?? installAgentTeamsRuntime(scopeCtx, config)
+  const { memberSelections, kickTeamAsync, kickMemberAsync } = effective
+  // Bodies below keep the name `ctx` for readability, but it is the ROOT
+  // context: services live there, schemas live in `scopeCtx`.
+  const ctx = effective.serviceCtx
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_create',
     description: 'Create a new AgentTeams team: you (the calling agent) become the captain. A commissar (政委) member for independent oversight is auto-created with the team; do not add a second one. A captain leads one team at a time; create tasks and additional members afterwards with agent_teams_add_member and agent_teams_create_task.',
     parameters: {
@@ -610,7 +638,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_add_member',
     description: 'Add a durable continuable member. When name is omitted (or given as just the role), the member is named after the role title itself (技术员, 侦察参谋, …); only a second member of the same role gets a numbered suffix (技术员 二号). By default it snapshots the captain\'s current LLM route and effort. Supply provider/model only for an explicitly requested role-specific route; a changed provider or model automatically uses the target model\'s default effort. Set reasoning_effort only to request one of the target model\'s supported ids explicitly (or "default" to force its default). The member waits for messages, works on assigned tasks, and can message the team.',
     parameters: {
@@ -794,7 +822,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_remove_member',
     description: 'Remove a member safely: revoke its current attempts, return all unfinished owned tasks to the shared pending pool, interrupt its live turn, and mark it removed.',
     parameters: {
@@ -865,7 +893,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_set_mode',
     description: 'Change the team collaboration mode. Upgrade only: light → standard or governed. A light team has no commissar and refuses gated tasks; upgrading to standard/governed creates the commissar if it is missing so review can proceed. Downgrading to light is refused because it would silently drop an active review authority.',
     parameters: {
@@ -1013,7 +1041,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_create_task',
     description: 'Create a task in your team\'s task list. Tasks can depend on other tasks (dependencies): a task is only claimable once every dependency is completed. Optionally assign it to a member, who still claims it before working. Mark risk=high/critical or milestone=true to put the task under the commissar gate: it can only be marked completed after the commissar passes it with agent_teams_review_task. When no assignee is given, the result carries a suggested_role/assignee (keyword-based, purely advisory) for your confirmation — you keep the assignee decision.',
     parameters: {
@@ -1172,7 +1200,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_reassign_task',
     description: 'Atomically retry, reassign, or let the captain take over any unfinished/failed task. The old attempt is revoked before its member is interrupted, so late updates cannot overwrite the new owner. Use assignee="captain" for captain takeover.',
     parameters: {
@@ -1276,7 +1304,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_claim_task',
     description: 'Claim one ready task for a member (or yourself). A member cannot own a second unfinished task. The returned attempt_id is required for that member\'s updates and becomes stale after retry/reassignment.',
     parameters: {
@@ -1385,7 +1413,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_update_task',
     description: 'Update a task status/output. Members must supply the current attempt_id returned by claim_task; stale attempts are rejected after takeover/reassignment. Terminal results are immutable. A captain must use reassign_task(assignee="captain") before updating member-owned work.',
     parameters: {
@@ -1661,7 +1689,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_review_task',
     description: 'Commissar gate review: only an active commissar (role=commissar) member may call this — the captain cannot review (independent oversight). Records a pass/reject verdict on a task; a task under review can only be marked completed after a pass verdict. Pass releases the completion gate; reject keeps the task in progress for rework.',
     parameters: {
@@ -1744,7 +1772,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_send_message',
     description: 'Send a message to the captain or to a teammate. Messages go straight into the recipient\'s mailbox; when the captain agent is online the plugin also schedules live delivery (member recipients get the message as their next turn; a running captain sees it at the nearest model step). No relay is involved: teammates talk to each other directly, exactly like the Claude Code AgentTeams mailbox model.',
     parameters: {
@@ -1857,7 +1885,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_status',
     description: 'Team snapshot: members with live activity and tasks with status/assignee/dependencies/output. Captains also see every team mailbox; members see only their own inbox. Poll this to watch progress. Non-terminal tasks may carry a suggested_role/assignee (keyword-based, advisory only) so the captain can confirm or override before assigning. R-31: as a captain caller this also triggers a best-effort scheduler kick (wake idle members to claim ready work) — fire-and-forget, never blocks the snapshot response.',
     parameters: {},
@@ -2009,7 +2037,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_retro_review',
     description: 'Captain calibration of a task retrospective (复盘三层之第三层): mark it useful (confirmed into the best-practices library), useless (remove from the library), or revised (re-attribute the cause and re-distill). Updates both the task retro and the global best-practices entry.',
     parameters: {
@@ -2106,7 +2134,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_best_practices',
     description: 'Read the global best-practices library (L3, cross-team) with optional role/level filtering, plus per-(role × level) calibration of this team\'s completed tasks (average actual duration, overrun ratio) to calibrate future estimate_level. Cold start: with fewer than 2 settled samples the calibration concludes "insufficient samples" instead of guessing.',
     parameters: {
@@ -2226,7 +2254,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig, runti
     },
   }))
 
-  ctx.tools.register(defineTool({
+  scopeCtx.tools.register(defineTool({
     name: 'agent_teams_delete',
     description: 'End your team: interrupts all members (best effort) and archives the team\'s state directory (team file, tasks, mailboxes) under <stateRoot>/archive/ for later review and dependency rebuilds. Use when the team\'s work is done or abandoned.',
     parameters: {},

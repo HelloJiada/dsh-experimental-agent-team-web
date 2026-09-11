@@ -27,7 +27,11 @@ import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { installAgentTeamsRuntime, type ToolsConfig } from './tools.ts'
 import { DEFAULT_ROLE_LLM } from './members.ts'
-import { activateAgentTeams, registerAgentTeamsActivation } from './activation.ts'
+import {
+  activateAgentTeams,
+  registerAgentTeamsActivation,
+  registerAgentTeamsSurface,
+} from './activation.ts'
 import type { AgentTeamsActivation } from './command.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
@@ -126,6 +130,28 @@ export interface Config {
    * caller even though the served HTML exposes the boot token.
    */
   trustedHosts?: string[]
+  /**
+   * How the 14 `agent_teams_*` tools reach the model.
+   *
+   * `lazy` (default): only a hint section plus `agent_teams_activate` are
+   * always on, and the real surface is installed into the activating session's
+   * own scope. Cheapest for sessions that never use AgentTeams, but it
+   * requires the harness to let a subagent child inherit its parent AGENT
+   * scope's registrations. DSH `0.1.5-rc.2` does not: a child joins its
+   * parent's PRESET (`@deepseek-ai/dsh-subagent`,
+   * `applyChildComposition` → `agentPresets.composeFrom(childCtx, parent.ctx)`),
+   * so members see none of the team tools and the member deny-filter cannot
+   * even name them — `tools.restrict()` accepts only global or ancestor-scope
+   * names, and it throws `unknown global tool "agent_teams_create"…` before
+   * the first member exists.
+   *
+   * `eager`: register the whole surface in the global layer at mount — the
+   * v0.1.14 shape. Every session pays the full ~4.9k tokens/request, and
+   * members get the tools by global inheritance while the captain-only ones
+   * are denied per child scope. Required on harnesses where child scopes join
+   * the parent preset instead of inheriting the parent agent scope.
+   */
+  registration?: 'lazy' | 'eager'
 }
 
 export const Config: z<Config> = z.object({
@@ -145,6 +171,7 @@ export const Config: z<Config> = z.object({
   promptSectionOrder: z.natural().default(117),
   slashCommand: z.boolean().default(true),
   trustedHosts: z.array(z.string()).default([]),
+  registration: z.union(['lazy', 'eager'] as const).default('lazy'),
 })
 
 /**
@@ -249,10 +276,23 @@ export function apply(ctx: Context, config: Config): void {
   //    未使用 AgentTeams 的会话因此只付提示的钱。
   const runtime = installAgentTeamsRuntime(ctx, toolsConfig)
   const sectionOrder = config.promptSectionOrder ?? 117
-  registerAgentTeamsActivation(ctx, toolsConfig, sectionOrder, runtime)
-  const activateAgent: AgentTeamsActivation = (agent) => {
-    activateAgentTeams(agent, toolsConfig, sectionOrder, runtime)
+  // 注册方式见 Config.registration:
+  // - lazy(默认):这里只装提示段 + 激活工具,真面在激活时装进调用方 agent 的 scope。
+  // - eager:整面装进全局层(v0.1.14 形态)。当 harness 让子 agent 加入「父的
+  //   preset」而不是继承「父 agent 的 scope」时(DSH 0.1.5-rc.2 即如此),lazy
+  //   的成员既拿不到工具,成员 deny 过滤也无法命名这些工具,只能走 eager。
+  const eager = (config.registration ?? 'lazy') === 'eager'
+  if (eager) {
+    registerAgentTeamsSurface(ctx, toolsConfig, sectionOrder, runtime)
+  } else {
+    registerAgentTeamsActivation(ctx, toolsConfig, sectionOrder, runtime)
   }
+  const activateAgent: AgentTeamsActivation = eager
+    // 全局层已经装好整面,激活无事可做(斜杠命令仍照常注入目标文本)。
+    ? () => undefined
+    : (agent) => {
+        activateAgentTeams(agent, toolsConfig, sectionOrder, runtime)
+      }
 
   // Deterministic activation surfaces: the closed-namespace `/agent-teams`
   // host command (surfaces in the Web GUI slash menu via the Harness

@@ -81,6 +81,28 @@ export interface Config {
      * caller even though the served HTML exposes the boot token.
      */
     trustedHosts?: string[];
+    /**
+     * How the 14 `agent_teams_*` tools reach the model.
+     *
+     * `lazy` (default): only a hint section plus `agent_teams_activate` are
+     * always on, and the real surface is installed into the activating session's
+     * own scope. Cheapest for sessions that never use AgentTeams, but it
+     * requires the harness to let a subagent child inherit its parent AGENT
+     * scope's registrations. DSH `0.1.5-rc.2` does not: a child joins its
+     * parent's PRESET (`@deepseek-ai/dsh-subagent`,
+     * `applyChildComposition` → `agentPresets.composeFrom(childCtx, parent.ctx)`),
+     * so members see none of the team tools and the member deny-filter cannot
+     * even name them — `tools.restrict()` accepts only global or ancestor-scope
+     * names, and it throws `unknown global tool "agent_teams_create"…` before
+     * the first member exists.
+     *
+     * `eager`: register the whole surface in the global layer at mount — the
+     * v0.1.14 shape. Every session pays the full ~4.9k tokens/request, and
+     * members get the tools by global inheritance while the captain-only ones
+     * are denied per child scope. Required on harnesses where child scopes join
+     * the parent preset instead of inheriting the parent agent scope.
+     */
+    registration?: 'lazy' | 'eager';
 }
 export declare const Config: z<Config>;
 export declare function apply(ctx: Context, config: Config): void;

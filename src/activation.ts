@@ -146,6 +146,39 @@ export function activateAgentTeams(
 }
 
 /**
+ * Register the always-on pieces for `registration: 'eager'`: the full 14-tool
+ * surface plus the captain protocol in the PLUGIN ROOT (the global layer),
+ * with no activation step at all.
+ *
+ * This is the v0.1.14 shape, kept because on-demand activation cannot deliver
+ * on every harness: a harness that joins a subagent child to its parent's
+ * PRESET instead of inheriting the parent AGENT scope (DSH `0.1.5-rc.2`, see
+ * `@deepseek-ai/dsh-subagent` `applyChildComposition`) leaves members with
+ * none of the team tools — and the member deny-filter cannot even name them,
+ * because `tools.restrict()` accepts only global or ancestor-scope names.
+ * Global registration reaches every agent, so members get the tools and the
+ * per-child deny filter compiles.
+ *
+ * @param ctx - the plugin root context.
+ * @param config - resolved tool config.
+ * @param sectionOrder - prompt-section order for the protocol.
+ * @param runtime - process-wide runtime from {@link installAgentTeamsRuntime}.
+ */
+export function registerAgentTeamsSurface(
+  ctx: Context,
+  config: ToolsConfig,
+  sectionOrder: number,
+  runtime?: AgentTeamsRuntime,
+): void {
+  registerAgentTeamsTools(ctx, config, runtime)
+  ctx.systemPrompt.section({
+    name: AGENT_TEAMS_USAGE_SECTION,
+    order: sectionOrder,
+    text: usageSectionText(TEAM_TOOL_NAMES.join(', ')),
+  })
+}
+
+/**
  * Register the two always-on pieces on the plugin root: the hint section and
  * the activation tool. Everything else in this plugin stays unloaded until
  * an agent activates.
