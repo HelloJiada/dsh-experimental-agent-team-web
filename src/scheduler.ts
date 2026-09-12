@@ -378,6 +378,14 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           if (fresh === undefined) return undefined
           const currentMember = fresh.members.find(candidate => candidate.name === memberName && candidate.status !== 'removed')
           if (currentMember === undefined || currentMember.id === '' || !isMemberAvailable(ctx, currentMember)) return undefined
+          // Review independence: the commissar gates task completion, so it must
+          // never be handed task work — dispatching here would make it execute
+          // (and own) the very task it later reviews. This blocks fresh dispatch
+          // AND recovery of a legacy commissar-owned task; such a task must be
+          // moved off the commissar with reassign_task instead. Mailbox delivery
+          // above is deliberately unaffected, so gate notices still reach an
+          // idle commissar.
+          if (isCommissarRole(currentMember.role)) return undefined
           const owned = ownedOpenTask(fresh.tasks, currentMember.name)
           // A resident idle member can intentionally leave an attempt open
           // while waiting for guidance, or because the user paused its turn.

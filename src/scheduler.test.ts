@@ -446,3 +446,104 @@ describe('kickMember 延迟重试 — t3 成员暂不可用不卡 pending', () =
     expect(fresh.members.find((m: { name: string }) => m.name === 'A')?.status).not.toBe('working')
   })
 })
+
+describe('政委排除 — 调度器不得把任务派给政委（P1 回归）', () => {
+  let workspace: string
+  let stateRoot: string
+  const config: SchedulerConfig = { stateDir: '.agent-team-web', stallThresholdMs: STALL }
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-commissar-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(join(stateRoot, 'team-sched', 'inbox'), { recursive: true })
+  })
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true })
+  })
+
+  async function writeState(state: TeamState): Promise<void> {
+    await writeFile(join(stateRoot, 'team-sched', 'team.json'), JSON.stringify(state, null, 2))
+  }
+
+  async function readState(): Promise<TeamState> {
+    return JSON.parse(await readFile(join(stateRoot, 'team-sched', 'team.json'), 'utf8')) as TeamState
+  }
+
+  /** A context recording every live follow-up (i.e. every real dispatch). */
+  function recordingContext(calls: string[]): Context {
+    return {
+      agents: { get: (id: string) => (id === 'session-captain' ? { status: 'idle' } : undefined) },
+      subagents: {
+        followup: async (_captain: unknown, childId: string) => { calls.push(childId) },
+      },
+      logger: { warn: () => undefined, debug: () => undefined },
+      on: (): void => undefined,
+    } as unknown as Context
+  }
+
+  it('空闲政委不会被派到未指派 ready 任务；同队执行成员仍正常派单', async () => {
+    // 缺陷复现条件：任务无人认领(pending + assignee undefined)。修复前
+    // nextReadyTask 会把它派给任何空闲成员，包括政委——政委于是执行并
+    // 拥有它随后要门禁复核的工作，独立监督被静默破坏。
+    await writeState(team({
+      members: [member('A'), member('政委', { role: 'commissar' })],
+      tasks: [task('t1', { assignee: undefined, status: 'pending', attempt: 0, attemptId: undefined })],
+    }))
+    const calls: string[] = []
+    const scheduler = installTeamScheduler(recordingContext(calls), config)
+
+    await scheduler.kickMember(workspace, 'team-sched', '政委')
+
+    let fresh = await readState()
+    expect(fresh.tasks.find(t => t.id === 't1')?.status).toBe('pending')
+    expect(fresh.tasks.find(t => t.id === 't1')?.assignee).toBeUndefined()
+    expect(fresh.members.find(m => m.name === '政委')?.status).toBe('idle')
+    expect(calls).toEqual([]) // 完全没有真实派单投递
+
+    // 对照组：同一状态下的执行成员仍应被正常派单（修复未误伤正常调度）。
+    await scheduler.kickMember(workspace, 'team-sched', 'A')
+
+    fresh = await readState()
+    expect(fresh.tasks.find(t => t.id === 't1')?.status).toBe('claimed')
+    expect(fresh.tasks.find(t => t.id === 't1')?.assignee).toBe('A')
+    expect(fresh.members.find(m => m.name === 'A')?.status).toBe('working')
+    expect(calls).toEqual(['session-A'])
+  })
+
+  it('政委名下的遗留任务不被恢复执行（须由队长 reassign 移走）', async () => {
+    // 修复前已产生的脏状态：任务 owner 是政委。调度器不得再为它续 attempt。
+    await writeState(team({
+      members: [member('A'), member('政委', { role: 'commissar' })],
+      tasks: [task('t1', { assignee: '政委', attemptId: undefined })],
+    }))
+    const calls: string[] = []
+    const scheduler = installTeamScheduler(recordingContext(calls), config)
+
+    await scheduler.kickMember(workspace, 'team-sched', '政委')
+
+    const fresh = await readState()
+    expect(fresh.tasks.find(t => t.id === 't1')?.attempt).toBe(1) // 未续代
+    expect(fresh.tasks.find(t => t.id === 't1')?.attemptId).toBeUndefined()
+    expect(fresh.members.find(m => m.name === '政委')?.status).toBe('idle')
+    expect(calls).toEqual([])
+  })
+
+  it('政委仍能收到邮箱兜底派发（门禁通知不被误伤）', async () => {
+    // 排除只针对任务派单；邮箱兜底必须保留，否则离线政委收不到门禁通知。
+    await writeState(team({
+      members: [member('A'), member('政委', { role: 'commissar' })],
+      tasks: [],
+    }))
+    await writeFile(
+      join(stateRoot, 'team-sched', 'inbox', '政委.jsonl'),
+      `${JSON.stringify({ id: 'm1', from: 'captain', to: '政委', content: '门禁通知：t9 等待复核', ts: 1 })}\n`,
+    )
+    const calls: string[] = []
+    const scheduler = installTeamScheduler(recordingContext(calls), config)
+
+    await scheduler.kickMember(workspace, 'team-sched', '政委')
+
+    expect(calls).toEqual(['session-政委'])
+  })
+})

@@ -330,6 +330,49 @@ function requireMember(team: TeamState, name: string): TeamMember {
   return member
 }
 
+/** Look up a live member record by display name; `undefined` when absent. */
+function liveMemberByName(team: TeamState, name: string): TeamMember | undefined {
+  return team.members.find((candidate) => candidate.name === name && candidate.status !== 'removed')
+}
+
+/**
+ * Review independence: the commissar gates task completion, so it must never
+ * own the work it later reviews. Refusing the assignment at the source keeps a
+ * commissar-owned task from ever being created, which would otherwise strand:
+ * the scheduler never dispatches to the commissar and the commissar may not
+ * claim.
+ * @param team - fresh team state.
+ * @param assignee - intended task owner; `undefined` when unassigned.
+ * @param action - the tool action being refused, for the error message.
+ */
+function assertAssigneeIsNotCommissar(team: TeamState, assignee: string | undefined, action: string): void {
+  if (assignee === undefined || assignee === CAPTAIN_KEY) return
+  const target = liveMemberByName(team, assignee)
+  if (target !== undefined && isCommissarRole(target.role)) {
+    throw new Error(
+      `${action}: "${target.name}" is the commissar and cannot own task work — `
+      + 'the commissar gates task completion, so executing the same task would destroy review independence',
+    )
+  }
+}
+
+/**
+ * Refuse an execution call made by the commissar itself. The commissar reviews
+ * work through `agent_teams_review_task`; it must not claim or drive task state.
+ * @param team - fresh team state.
+ * @param identity - the caller's freshly derived identity.
+ * @param action - the tool action being refused, for the error message.
+ */
+function assertCallerIsNotCommissar(team: TeamState, identity: ParticipantIdentity, action: string): void {
+  if (identity.kind !== 'member') return
+  const caller = liveMemberByName(team, identity.name)
+  if (caller !== undefined && isCommissarRole(caller.role)) {
+    throw new Error(
+      `the commissar cannot ${action} — independent oversight must not execute the work it reviews`,
+    )
+  }
+}
+
 /** Look up one task by id. */
 function requireTask(team: TeamState, taskId: string): TeamTask {
   const task = team.tasks.find((candidate) => candidate.id === taskId)
@@ -1135,6 +1178,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           }
         }
         if (args.assignee !== undefined && args.assignee !== CAPTAIN_KEY) requireMember(fresh, args.assignee)
+        assertAssigneeIsNotCommissar(fresh, args.assignee, 'creating a task')
         const impact = args.impact === 'changes-decision' || args.impact === 'blocks-execution' || args.impact === 'evidence-quality' || args.impact === 'maintenance'
           ? args.impact
           : 'blocks-execution'
@@ -1303,6 +1347,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         if (task.status === 'completed') throw new Error(`completed task ${task.id} is immutable and cannot be reassigned`)
         if (task.reassigning === true) throw new Error(`task ${task.id} is already being reassigned`)
         const targetMember = target === CAPTAIN_KEY ? undefined : requireMember(fresh, target)
+        assertAssigneeIsNotCommissar(fresh, target, 'reassigning a task')
         if (targetMember !== undefined) {
           const busy = memberOpenTask(fresh, targetMember.name, task.id)
           if (busy !== undefined) {
@@ -1406,6 +1451,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       const team = await requireParticipantTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       return withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const { team: fresh, identity } = await requireFreshParticipant(stateRoot, team.id, caller.id)
+        assertCallerIsNotCommissar(fresh, identity, 'claim tasks')
         const task = requireTask(fresh, args.task_id)
         if (task.reassigning === true) {
           throw new Error(`task ${task.id} is being reassigned; wait for the handoff to finish`)
@@ -1427,6 +1473,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           }
           assignee = identity.name
         }
+        assertAssigneeIsNotCommissar(fresh, assignee, 'claiming a task')
         // Authorization must happen before the idempotent return: another
         // member must not receive a false success for somebody else's task.
         if (task.status === 'claimed' || task.status === 'in_progress') {
@@ -1579,6 +1626,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       const team = await requireParticipantTeam(workspace, config, caller, warnSkippedTeamDir(ctx))
       const updated = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const { team: fresh, identity } = await requireFreshParticipant(stateRoot, team.id, caller.id)
+        assertCallerIsNotCommissar(fresh, identity, 'update task state')
         const task = requireTask(fresh, args.task_id)
         if (identity.kind === 'captain'
           && task.assignee !== undefined

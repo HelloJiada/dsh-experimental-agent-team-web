@@ -164,3 +164,98 @@ describe('workflow guardrails — tool integration', () => {
     expect(updated?.verification).toEqual({ checked: ['fixture'], unchecked: ['network'] })
   })
 })
+
+describe('政委排除 — 政委不得拥有或执行任务（P1 回归）', () => {
+  let workspace = ''
+  let stateRoot = ''
+  const tool = harness()
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-commissar-tools-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(stateRoot, { recursive: true })
+  })
+  afterEach(async () => { await rm(workspace, { recursive: true, force: true }) })
+
+  it('create_task 不得把任务指派给政委', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    await expect(tool('agent_teams_create_task').execute(
+      { subject: 'becomes commissar work', description: 'should be refused', assignee: '政委' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    )).rejects.toThrow(/is the commissar and cannot own task work/)
+    // 拒绝不落盘
+    const persisted = await readTeam(stateRoot, 'workflow-team')
+    expect(persisted?.tasks).toHaveLength(0)
+  })
+
+  it('reassign_task 不得把任务转派给政委', async () => {
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', { status: 'pending', assignee: '技术员' })], taskSeq: 1,
+    }))
+    await expect(tool('agent_teams_reassign_task').execute(
+      { task_id: 't1', assignee: '政委', reason: 'move to commissar' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    )).rejects.toThrow(/is the commissar and cannot own task work/)
+  })
+
+  it('政委不能 claim 任务（含无人认领的 ready 任务）', async () => {
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', { status: 'pending' })], taskSeq: 1,
+    }))
+    await expect(tool('agent_teams_claim_task').execute(
+      { task_id: 't1' },
+      execOf(agent(workspace, COMMISSAR_ID)),
+    )).rejects.toThrow(/the commissar cannot claim tasks/)
+    const persisted = await readTeam(stateRoot, 'workflow-team')
+    expect(persisted?.tasks[0]?.status).toBe('pending')
+    expect(persisted?.tasks[0]?.assignee).toBeUndefined()
+  })
+
+  it('队长也不能代政委认领任务', async () => {
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', { status: 'pending' })], taskSeq: 1,
+    }))
+    await expect(tool('agent_teams_claim_task').execute(
+      { task_id: 't1', assignee: '政委' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    )).rejects.toThrow(/is the commissar and cannot own task work/)
+  })
+
+  it('政委不能 update 任务状态（即使该任务仍登记在其名下）', async () => {
+    // 修复前已产生的脏状态：任务 owner 是政委。政委也不得自行驱动它，
+    // 必须由队长 reassign 移走，避免"执行自己稍后要批次复核的工作"。
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', {
+        status: 'in_progress', assignee: '政委', attempt: 1, attemptId: 'att-1',
+      })], taskSeq: 1,
+    }))
+    await expect(tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: 'att-1', output: 'done by commissar' },
+      execOf(agent(workspace, COMMISSAR_ID)),
+    )).rejects.toThrow(/the commissar cannot update task state/)
+  })
+
+  it('对照：执行成员仍可正常 claim 与 update（未误伤）', async () => {
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', { status: 'pending', assignee: '技术员' })], taskSeq: 1,
+    }))
+    const claimed = await tool('agent_teams_claim_task').execute(
+      { task_id: 't1' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    ) as { status: string; assignee: string; attempt_id?: string }
+    expect(claimed.status).toBe('claimed')
+    expect(claimed.assignee).toBe('技术员')
+    expect(claimed.attempt_id).toBeTypeOf('string')
+
+    const started = await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'in_progress', attempt_id: claimed.attempt_id, output: 'engineer working' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    ) as { status: string }
+    expect(started.status).toBe('in_progress')
+
+    const updated = await tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: claimed.attempt_id, output: 'engineer done' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    ) as { status: string }
+    expect(updated.status).toBe('completed')
+  })
+})
