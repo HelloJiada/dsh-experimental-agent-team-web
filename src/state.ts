@@ -17,7 +17,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { TaskStatus, TeamMember, TeamMessage, TeamMode, TeamState, TeamTask } from './types.ts'
+import type { TaskImpact, TaskStatus, TeamMember, TeamMessage, TeamMode, TeamState, TeamTask } from './types.ts'
 import { TERMINAL_TASK_STATUSES } from './types.ts'
 import { resolveTaskTiming } from './retro.ts'
 
@@ -27,6 +27,70 @@ export const CAPTAIN_KEY = 'captain'
 /** Effective collaboration mode; legacy team files default to standard. */
 export function teamMode(team: Pick<TeamState, 'mode'>): TeamMode {
   return team.mode ?? 'standard'
+}
+
+/** Effective workflow mode; legacy records default to a decision workflow. */
+export function workflowMode(team: Pick<TeamState, 'workflowMode'>): 'decision' | 'governance-maintenance' {
+  return team.workflowMode ?? 'decision'
+}
+
+/** Effective user goal; legacy records retain their description/name behavior. */
+export function teamGoal(team: Pick<TeamState, 'goal' | 'description' | 'name'>): string {
+  return team.goal?.trim() || team.description?.trim() || team.name
+}
+
+/** Effective main-chain budget; legacy teams retain a compact bounded default. */
+export function mainChainTaskBudget(team: Pick<TeamState, 'mainChainTaskBudget'>): number {
+  return Number.isSafeInteger(team.mainChainTaskBudget) && (team.mainChainTaskBudget ?? 0) > 0
+    ? team.mainChainTaskBudget!
+    : 3
+}
+
+/** Effective impact class; legacy tasks remain execution-blocking main-chain work. */
+export function taskImpact(task: Pick<TeamTask, 'impact'>): TaskImpact {
+  return task.impact === 'changes-decision' || task.impact === 'blocks-execution' || task.impact === 'evidence-quality' || task.impact === 'maintenance'
+    ? task.impact
+    : 'blocks-execution'
+}
+
+/** Whether a task is maintenance-only and must not block decision work. */
+export function isMaintenanceTask(task: Pick<TeamTask, 'impact'>): boolean {
+  return taskImpact(task) === 'maintenance'
+}
+
+/** Whether a task consumes the bounded decision/workflow main chain. */
+export function isMainChainTask(task: Pick<TeamTask, 'impact'>): boolean {
+  return !isMaintenanceTask(task)
+}
+
+/** Normalize an exact task deliverable key for process-local single-writer checks. */
+export function deliverableKey(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replaceAll('\\', '/').replace(/^\.\//u, '')
+  if (normalized === undefined || normalized === '' || normalized.startsWith('/') || normalized.split('/').some(part => part === '' || part === '.' || part === '..')) return undefined
+  return normalized.toLowerCase()
+}
+
+/** Reject a main task when any transitive dependency is maintenance-only. */
+export function maintenanceDependencyPath(tasks: readonly TeamTask[], dependencies: readonly string[]): string[] | undefined {
+  const byId = new Map(tasks.map(task => [task.id, task]))
+  const visit = (id: string, path: string[], seen: Set<string>): string[] | undefined => {
+    if (seen.has(id)) return undefined
+    seen.add(id)
+    const task = byId.get(id)
+    if (task === undefined) return undefined
+    const nextPath = [...path, id]
+    if (isMaintenanceTask(task)) return nextPath
+    for (const dependency of task.dependencies) {
+      const found = visit(dependency, nextPath, seen)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  for (const dependency of dependencies) {
+    const found = visit(dependency, [], new Set())
+    if (found !== undefined) return found
+  }
+  return undefined
 }
 /** A crashed live-delivery attempt becomes retryable after this interval. */
 const MAILBOX_DELIVERY_LEASE_MS = 60_000
@@ -157,8 +221,18 @@ export function transitionError(current: TaskStatus, next: TaskStatus): string |
   return undefined
 }
 
+/** Move the prior review to an audit history and clear the active gate record. */
+function archiveAndClearReview(task: TeamTask): void {
+  if (task.review !== undefined) {
+    task.reviewHistory = [...(task.reviewHistory ?? []), task.review]
+    task.review = undefined
+  }
+  task.blockedByReview = undefined
+}
+
 /** Activate the task's current generation for one owner and return its capability id. */
 export function activateTaskAttempt(task: TeamTask, assignee: string): string {
+  archiveAndClearReview(task)
   const attemptId = randomUUID()
   task.status = 'claimed'
   task.assignee = assignee
@@ -211,6 +285,7 @@ export function invalidateTaskAttempt(
   nextAssignee?: string,
   reassigning = false,
 ): void {
+  archiveAndClearReview(task)
   task.attemptId = undefined
   task.handoffId = randomUUID()
   task.status = 'pending'
@@ -772,7 +847,19 @@ function isTeamTask(value: unknown): value is TeamTask {
     && (review['verdict'] === 'pass' || review['verdict'] === 'reject')
     && (review['comment'] === undefined || typeof review['comment'] === 'string')
     && isFiniteNumber(review['reviewedAt'])
+    && (review['attempt'] === undefined || Number.isSafeInteger(review['attempt']))
+    && (review['contractRevision'] === undefined || Number.isSafeInteger(review['contractRevision']))
   )
+  const reviewHistory = value['reviewHistory']
+  const validReviewHistory = reviewHistory === undefined || (Array.isArray(reviewHistory) && reviewHistory.every(item => {
+    if (!isRecord(item)) return false
+    return typeof item['reviewerName'] === 'string' && item['reviewerName'] !== ''
+      && (item['verdict'] === 'pass' || item['verdict'] === 'reject')
+      && (item['comment'] === undefined || typeof item['comment'] === 'string')
+      && isFiniteNumber(item['reviewedAt'])
+      && (item['attempt'] === undefined || Number.isSafeInteger(item['attempt']))
+      && (item['contractRevision'] === undefined || Number.isSafeInteger(item['contractRevision']))
+  }))
   // 自成长耗时/复盘字段:全部可选,旧任务(无这些字段)仍合法;复盘记录按形状校验。
   const retro = value['retro']
   const validRetro = retro === undefined || (
@@ -838,6 +925,16 @@ function isTeamTask(value: unknown): value is TeamTask {
     && (value['milestone'] === undefined || typeof value['milestone'] === 'boolean')
     && (value['reviewRequired'] === undefined || typeof value['reviewRequired'] === 'boolean')
     && validReview
+    && validReviewHistory
+    && (value['contractRevision'] === undefined || (Number.isSafeInteger(value['contractRevision']) && (value['contractRevision'] as number) >= 0))
+    && (value['impact'] === undefined || value['impact'] === 'main' || value['impact'] === 'changes-decision' || value['impact'] === 'blocks-execution' || value['impact'] === 'evidence-quality' || value['impact'] === 'maintenance')
+    && (value['budgetException'] === undefined || (isRecord(value['budgetException']) && typeof value['budgetException']['decisionImpact'] === 'string' && isFiniteNumber(value['budgetException']['grantedAt'])))
+    && (value['deliverable'] === undefined || typeof value['deliverable'] === 'string')
+    && (value['deliverableKey'] === undefined || typeof value['deliverableKey'] === 'string')
+    && (value['acceptance'] === undefined || typeof value['acceptance'] === 'string')
+    && (value['acceptanceRevision'] === undefined || (Number.isSafeInteger(value['acceptanceRevision']) && (value['acceptanceRevision'] as number) >= 0))
+    && (value['acceptanceHistory'] === undefined || Array.isArray(value['acceptanceHistory']))
+    && (value['verification'] === undefined || (isRecord(value['verification']) && Array.isArray(value['verification']['checked']) && value['verification']['checked'].every((entry) => typeof entry === 'string') && Array.isArray(value['verification']['unchecked']) && value['verification']['unchecked'].every((entry) => typeof entry === 'string')))
     && (value['blockedByReview'] === undefined || typeof value['blockedByReview'] === 'boolean')
     && (value['awaitingInput'] === undefined || typeof value['awaitingInput'] === 'boolean')
     && isOptionalString(value['helper'])
@@ -864,9 +961,14 @@ export function taskRequiresReview(task: TeamTask): boolean {
   return task.reviewRequired === true
 }
 
-/** Whether the gate is satisfied: the latest review verdict is `pass`. */
+/** Whether the gate is satisfied: latest review pass bound to current attempt and contract.
+ * Legacy reviews lacking both bindings remain accepted for old state compatibility. */
 export function taskReviewPassed(task: TeamTask): boolean {
-  return task.review?.verdict === 'pass'
+  const review = task.review
+  if (review?.verdict !== 'pass') return false
+  const attemptBound = review.attempt === undefined || review.attempt === (task.attempt ?? 0)
+  const contractBound = review.contractRevision === undefined || review.contractRevision === (task.contractRevision ?? 0)
+  return attemptBound && contractBound
 }
 
 // ── 任务中间态(改进 4):blockedByReview / awaitingInput ──
@@ -955,6 +1057,10 @@ function isTeamState(value: unknown, expectedId: string): value is TeamState {
     && typeof value['name'] === 'string'
     && value['name'].trim() !== ''
     && isOptionalString(value['description'])
+    && isOptionalString(value['goal'])
+    && (value['workflowMode'] === undefined || value['workflowMode'] === 'decision' || value['workflowMode'] === 'governance-maintenance')
+    && (value['mainChainTaskBudget'] === undefined || (Number.isSafeInteger(value['mainChainTaskBudget']) && (value['mainChainTaskBudget'] as number) > 0))
+    && (value['mainChainTaskUsed'] === undefined || (Number.isSafeInteger(value['mainChainTaskUsed']) && (value['mainChainTaskUsed'] as number) >= 0))
     && typeof value['captainSessionId'] === 'string'
     && value['captainSessionId'] !== ''
     && isFiniteNumber(value['createdAt'])

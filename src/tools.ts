@@ -55,6 +55,14 @@ import {
   sanitizeKey,
   taskAwaitingInput,
   taskBlockedByReview,
+  teamGoal,
+  workflowMode,
+  mainChainTaskBudget,
+  taskImpact,
+  isMainChainTask,
+  isMaintenanceTask,
+  maintenanceDependencyPath,
+  deliverableKey,
   teamMode,
   transitionError,
   unsatisfiedDependencies,
@@ -497,6 +505,9 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       name: { type: 'string', required: true, description: 'Name for the new team (used as its stable id).' },
       description: { type: 'string', description: 'Team purpose / the goal the team will work on.' },
       mode: { type: 'string', enum: ['light', 'standard', 'governed'], description: 'Collaboration mode; light omits the automatic commissar and disallows gated tasks.' },
+      goal: { type: 'string', description: 'Explicit workflow goal (defaults to description).' },
+      workflow_mode: { type: 'string', enum: ['decision', 'governance-maintenance'], description: 'User-selected workflow mode; decision prioritizes a bounded main chain.' },
+      main_chain_task_budget: { type: 'number', description: 'Maximum main-chain tasks; legacy/default is 3.' },
     },
     output: {
       schema: {
@@ -541,6 +552,11 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
             name: teamName,
             id: teamId,
             description: args.description,
+            goal: args.goal ?? args.description,
+            workflowMode: args.workflow_mode === 'governance-maintenance' ? 'governance-maintenance' : 'decision',
+            mainChainTaskBudget: typeof args.main_chain_task_budget === 'number' && Number.isFinite(args.main_chain_task_budget) && args.main_chain_task_budget > 0
+              ? Math.floor(args.main_chain_task_budget) : 3,
+            mainChainTaskUsed: 0,
             mode,
             captainSessionId: captain.id,
             createdAt: Date.now(),
@@ -1071,6 +1087,12 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         type: 'number',
         description: 'Optional internal estimated effort in milliseconds (e.g. 30 * 60 * 1000 = 30m). Prefer estimate_level; this is kept for internal conversion and compatibility. Drives elapsed tracking and overrun warnings when no level is set.',
       },
+      impact: { type: 'string', enum: ['changes-decision', 'blocks-execution', 'evidence-quality', 'maintenance'], description: 'Workflow impact. The first three consume main-chain budget; maintenance is delayed and budget-free.' },
+      deliverable: { type: 'string', description: 'Optional output path/key; duplicate active writers are rejected.' },
+      acceptance: { type: 'string', description: 'Acceptance contract for this task.' },
+      checked: { type: 'array', items: { type: 'string' }, description: 'What this task verifies or covers.' },
+      unchecked: { type: 'array', items: { type: 'string' }, description: 'Known scope not verified by this task.' },
+      over_budget_decision_impact: { type: 'string', description: 'Required auditable explanation when a main task exceeds the decision-mode budget.' },
     },
     output: {
       schema: {
@@ -1113,6 +1135,35 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           }
         }
         if (args.assignee !== undefined && args.assignee !== CAPTAIN_KEY) requireMember(fresh, args.assignee)
+        const impact = args.impact === 'changes-decision' || args.impact === 'blocks-execution' || args.impact === 'evidence-quality' || args.impact === 'maintenance'
+          ? args.impact
+          : 'blocks-execution'
+        const normalizedDeliverable = typeof args.deliverable === 'string' ? args.deliverable.trim() : undefined
+        const outputKey = deliverableKey(normalizedDeliverable)
+        if (normalizedDeliverable !== undefined && outputKey === undefined) {
+          throw new Error(`deliverable must be an exact workspace-relative file path, got ${JSON.stringify(args.deliverable)}`)
+        }
+        if (outputKey !== undefined && fresh.tasks.some(existing => !TERMINAL_TASK_STATUSES.includes(existing.status) && existing.deliverableKey === outputKey)) {
+          throw new Error(`deliverable "${args.deliverable}" already has an active writer`)
+        }
+        const usedBefore = fresh.mainChainTaskUsed ?? fresh.tasks.filter(existing => isMainChainTask(existing)).length
+        let budgetException: { decisionImpact: string; grantedAt: number } | undefined
+        if (impact !== 'maintenance') {
+          const maintenancePath = maintenanceDependencyPath(fresh.tasks, dependencies)
+          if (maintenancePath !== undefined) {
+            throw new Error(`main-chain task cannot depend on maintenance task path ${maintenancePath.join(' → ')}`)
+          }
+          const budget = mainChainTaskBudget(fresh)
+          const exception = args.over_budget_decision_impact?.trim()
+          const decisionMode = workflowMode(fresh) === 'decision'
+          if (decisionMode && usedBefore >= budget && exception === undefined) {
+            throw new Error(`main-chain task budget exhausted (${usedBefore}/${budget}); provide over_budget_decision_impact or create maintenance work`)
+          }
+          if (decisionMode && usedBefore >= budget && exception !== undefined) {
+            budgetException = { decisionImpact: exception, grantedAt: Date.now() }
+          }
+          fresh.mainChainTaskUsed = usedBefore + 1
+        }
         const milestone = args.milestone === true
         // Derived gate flag persisted here so snapshots and the completion
         // gate share one source of truth: high/critical risk or a milestone.
@@ -1157,6 +1208,12 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           ...args.estimate_ms !== undefined && Number.isFinite(args.estimate_ms) && args.estimate_ms > 0
             ? { estimatedMs: Math.round(args.estimate_ms) }
             : {},
+          impact,
+          ...outputKey !== undefined ? { deliverable: normalizedDeliverable!, deliverableKey: outputKey } : {},
+          ...typeof args.acceptance === 'string' && args.acceptance.trim() !== '' ? { acceptance: args.acceptance.trim(), acceptanceRevision: 0 } : {},
+          verification: { checked: args.checked ?? [], unchecked: args.unchecked ?? [] },
+          ...budgetException !== undefined ? { budgetException } : {},
+          contractRevision: 0,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         }
@@ -1206,7 +1263,8 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     parameters: {
       task_id: { type: 'string', required: true, description: 'Task to retry/reassign.' },
       assignee: { type: 'string', required: true, description: 'Active member name, or "captain" for captain takeover.' },
-      reason: { type: 'string', description: 'Why the task is being retried or reassigned.' },
+      reason: { type: 'string', description: 'Why the task is being retried or reassigned; legacy callers may omit it.' },
+      acceptance: { type: 'string', description: 'Optional revised acceptance contract; revision is audited in place.' },
     },
     output: {
       schema: {
@@ -1233,6 +1291,11 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
       const target = args.assignee.trim()
       if (target === '') throw new Error('reassignment assignee must not be empty')
+      const acceptanceRevisionRequested = args.acceptance !== undefined
+      if (acceptanceRevisionRequested && (args.acceptance?.trim() === '' || args.reason?.trim() === undefined || args.reason.trim() === '')) {
+        throw new Error('reassigning acceptance requires non-empty acceptance and reason')
+      }
+      const reassignmentReason = args.reason?.trim() || 'unspecified legacy reassignment'
 
       const revoked = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
         const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
@@ -1251,6 +1314,14 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           || task.assignee === undefined || task.assignee === CAPTAIN_KEY
           ? undefined
           : fresh.members.find(member => member.name === task.assignee && member.status !== 'removed')
+        if (args.acceptance !== undefined && args.acceptance.trim() !== '') {
+          const prior = task.acceptance
+          const nextRevision = (task.acceptanceRevision ?? 0) + 1
+          task.acceptanceHistory = [...(task.acceptanceHistory ?? []), { revision: task.acceptanceRevision ?? 0, acceptance: prior, reason: reassignmentReason, changedAt: Date.now() }]
+          task.acceptance = args.acceptance.trim()
+          task.acceptanceRevision = nextRevision
+          task.contractRevision = (task.contractRevision ?? 0) + 1
+        }
         invalidateTaskAttempt(task, target, true)
         await writeTeam(stateRoot, fresh)
         return {
@@ -1748,6 +1819,8 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           verdict: args.verdict,
           ...args.comment !== undefined && args.comment.trim() !== '' ? { comment: args.comment } : {},
           reviewedAt: Date.now(),
+          attempt: task.attempt ?? 0,
+          contractRevision: task.contractRevision ?? 0,
         }
         // 改进 4:pass 解除"等待复核"中间态;reject 保持 in_progress 待返工,
         // blockedByReview 维持不变(任务仍被门禁拦截,直到出现 pass)。
@@ -1940,6 +2013,28 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         attempt_id: viewerMayUseAttempt ? (task.attemptId ?? '') : '',
         reassigning: task.reassigning === true,
         ...task.riskLevel !== undefined ? { risk_level: task.riskLevel } : {},
+        impact: taskImpact(task),
+        ...task.budgetException !== undefined ? { budget_exception: { decision_impact: task.budgetException.decisionImpact, granted_at: task.budgetException.grantedAt } } : {},
+        ...task.deliverable !== undefined ? { deliverable: task.deliverable, deliverable_key: task.deliverableKey ?? task.deliverable.toLowerCase() } : {},
+        ...task.acceptance !== undefined ? { acceptance: task.acceptance, acceptance_revision: task.acceptanceRevision ?? 0 } : {},
+        verification: task.verification === undefined
+          ? { checked: [], unchecked: [] }
+          : { checked: task.verification.checked, unchecked: task.verification.unchecked },
+        ...task.contractRevision !== undefined ? { contract_revision: task.contractRevision } : {},
+        ...task.acceptanceHistory !== undefined ? { acceptance_history: task.acceptanceHistory.map((entry) => ({
+          revision: entry.revision,
+          ...entry.acceptance !== undefined ? { acceptance: entry.acceptance } : {},
+          reason: entry.reason,
+          changed_at: entry.changedAt,
+        })) } : {},
+        ...task.reviewHistory !== undefined ? { review_history: task.reviewHistory.map((entry) => ({
+          reviewer_name: entry.reviewerName,
+          verdict: entry.verdict,
+          ...entry.comment !== undefined ? { comment: entry.comment } : {},
+          reviewed_at: entry.reviewedAt,
+          ...entry.attempt !== undefined ? { attempt: entry.attempt } : {},
+          ...entry.contractRevision !== undefined ? { contract_revision: entry.contractRevision } : {},
+        })) } : {},
         ...task.milestone === true ? { milestone: true } : {},
         ...task.reviewRequired === true ? { review_required: true } : {},
         // 改进 4:任务中间态(等待政委复核 / 等待输入)显式透出给模型。
@@ -1949,6 +2044,8 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           review: {
             reviewer_name: task.review.reviewerName,
             verdict: task.review.verdict,
+            ...task.review.attempt !== undefined ? { attempt: task.review.attempt } : {},
+            ...task.review.contractRevision !== undefined ? { contract_revision: task.review.contractRevision } : {},
             ...task.review.comment !== undefined ? { comment: task.review.comment } : {},
             reviewed_at: task.review.reviewedAt,
           },
@@ -2013,6 +2110,10 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         team_id: team.id,
         team_name: team.name,
         description: team.description ?? '',
+        goal: teamGoal(team),
+        workflow_mode: workflowMode(team),
+        main_chain_task_budget: mainChainTaskBudget(team),
+        main_chain_task_used: team.mainChainTaskUsed ?? team.tasks.filter(isMainChainTask).length,
         viewer: identity.name,
         members,
         tasks,

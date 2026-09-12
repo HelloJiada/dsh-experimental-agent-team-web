@@ -12,11 +12,27 @@
  * `fs` service offers no directory deletion.
  * @module dsh-agent-team-web/state
  */
-import type { TaskStatus, TeamMessage, TeamMode, TeamState, TeamTask } from './types.ts';
+import type { TaskImpact, TaskStatus, TeamMessage, TeamMode, TeamState, TeamTask } from './types.ts';
 /** Mailbox key of the captain. */
 export declare const CAPTAIN_KEY = "captain";
 /** Effective collaboration mode; legacy team files default to standard. */
 export declare function teamMode(team: Pick<TeamState, 'mode'>): TeamMode;
+/** Effective workflow mode; legacy records default to a decision workflow. */
+export declare function workflowMode(team: Pick<TeamState, 'workflowMode'>): 'decision' | 'governance-maintenance';
+/** Effective user goal; legacy records retain their description/name behavior. */
+export declare function teamGoal(team: Pick<TeamState, 'goal' | 'description' | 'name'>): string;
+/** Effective main-chain budget; legacy teams retain a compact bounded default. */
+export declare function mainChainTaskBudget(team: Pick<TeamState, 'mainChainTaskBudget'>): number;
+/** Effective impact class; legacy tasks remain execution-blocking main-chain work. */
+export declare function taskImpact(task: Pick<TeamTask, 'impact'>): TaskImpact;
+/** Whether a task is maintenance-only and must not block decision work. */
+export declare function isMaintenanceTask(task: Pick<TeamTask, 'impact'>): boolean;
+/** Whether a task consumes the bounded decision/workflow main chain. */
+export declare function isMainChainTask(task: Pick<TeamTask, 'impact'>): boolean;
+/** Normalize an exact task deliverable key for process-local single-writer checks. */
+export declare function deliverableKey(value: string | undefined): string | undefined;
+/** Reject a main task when any transitive dependency is maintenance-only. */
+export declare function maintenanceDependencyPath(tasks: readonly TeamTask[], dependencies: readonly string[]): string[] | undefined;
 /**
  * Serialize mutations of one team across the whole process.
  * @param key - the team id (or any mutation scope).
@@ -205,7 +221,8 @@ export interface AtomicReplaceOptions {
 export declare function replaceFileAtomicOrDirect(temporary: string, file: string, content: string, primitives: AtomicReplacePrimitives, options?: AtomicReplaceOptions): Promise<void>;
 /** Whether the commissar gate applies to a task (derived at creation). */
 export declare function taskRequiresReview(task: TeamTask): boolean;
-/** Whether the gate is satisfied: the latest review verdict is `pass`. */
+/** Whether the gate is satisfied: latest review pass bound to current attempt and contract.
+ * Legacy reviews lacking both bindings remain accepted for old state compatibility. */
 export declare function taskReviewPassed(task: TeamTask): boolean;
 /**
  * 改进 4:任务描述是否含有待确认问题(等待队长/成员提供输入)。

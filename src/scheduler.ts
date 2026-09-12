@@ -32,6 +32,10 @@ import {
   releaseMailboxDelivery,
   taskAwaitingInput,
   unsatisfiedDependencies,
+  teamGoal,
+  workflowMode,
+  mainChainTaskBudget,
+  isMainChainTask,
   withTeamLock,
   writeTeam,
 } from './state.ts'
@@ -59,6 +63,14 @@ interface DispatchTicket {
   readonly previousAssignee?: string
   readonly subject: string
   readonly description?: string
+  readonly impact?: string
+  readonly goal?: string
+  readonly workflowMode?: string
+  readonly mainChainTaskBudget?: number
+  readonly mainChainTaskUsed?: number
+  readonly deliverable?: string
+  readonly acceptance?: string
+  readonly verification?: { readonly checked: string[]; readonly unchecked: string[] }
   /** Help dispatch: the member is assisting the owner, ownership unchanged. */
   readonly helping?: boolean
   /** Original owner (help mode): name + member id + unchanged attemptId. */
@@ -153,8 +165,12 @@ export function nextReadyTask(tasks: readonly TeamTask[], memberName: string): T
     && task.reassigning !== true
     && !taskAwaitingInput(task)
     && unsatisfiedDependencies([...tasks], task.dependencies).length === 0)
-  return ready.find(task => task.assignee === memberName)
-    ?? ready.find(task => task.assignee === undefined)
+  const main = ready.filter(task => task.impact !== 'maintenance')
+  const maintenance = ready.filter(task => task.impact === 'maintenance')
+  return main.find(task => task.assignee === memberName)
+    ?? main.find(task => task.assignee === undefined)
+    ?? maintenance.find(task => task.assignee === memberName)
+    ?? maintenance.find(task => task.assignee === undefined)
 }
 
 /**
@@ -205,7 +221,7 @@ export function nextHelpTask(
   if (helper === undefined || isCommissarRole(helper.role)) return undefined
   return tasks
     .filter(task => isHelppableTask(task, team, helperName, now, parkedAttempts, liveStatus, stallThresholdMs))
-    .sort((a, b) => a.updatedAt - b.updatedAt)[0]
+    .sort((a, b) => (a.impact === 'maintenance' ? 1 : 0) - (b.impact === 'maintenance' ? 1 : 0) || a.updatedAt - b.updatedAt)[0]
 }
 
 function helpingPrompt(ticket: DispatchTicket, stateDir: string, teamId: string): string {
@@ -226,6 +242,14 @@ function assignmentPrompt(ticket: DispatchTicket, stateDir: string, teamId: stri
   return `AgentTeams automatic task assignment from the shared task list.
 
 Task: ${ticket.taskId} — ${ticket.subject}${description}
+Workflow goal: ${ticket.goal ?? '(legacy goal unavailable)'}
+Workflow mode: ${ticket.workflowMode ?? 'decision'}
+Main-chain budget: ${ticket.mainChainTaskUsed ?? 0}/${ticket.mainChainTaskBudget ?? 3}
+Impact: ${ticket.impact ?? 'blocks-execution'}
+Deliverable: ${ticket.deliverable ?? '(none)'}
+Acceptance: ${ticket.acceptance ?? '(none)'}
+Verification checked: ${ticket.verification?.checked.join('; ') || '(none declared)'}
+Verification unchecked: ${ticket.verification?.unchecked.join('; ') || '(none declared)'}
 Attempt: ${ticket.attempt}
 Attempt id: ${ticket.attemptId}
 
@@ -405,6 +429,14 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
               previousAssignee,
               subject: owned.subject,
               description: owned.description,
+              impact: owned.impact,
+              deliverable: owned.deliverable,
+              acceptance: owned.acceptance,
+              verification: owned.verification,
+              goal: teamGoal(fresh),
+              workflowMode: workflowMode(fresh),
+              mainChainTaskBudget: mainChainTaskBudget(fresh),
+              mainChainTaskUsed: fresh.mainChainTaskUsed ?? fresh.tasks.filter(isMainChainTask).length,
               ...standDown !== undefined ? { standDown } : {},
             }
           }
@@ -425,6 +457,14 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
                 previousAssignee,
                 subject: ready.subject,
                 description: ready.description,
+               impact: ready.impact,
+               deliverable: ready.deliverable,
+               acceptance: ready.acceptance,
+               verification: ready.verification,
+               goal: teamGoal(fresh),
+               workflowMode: workflowMode(fresh),
+               mainChainTaskBudget: mainChainTaskBudget(fresh),
+               mainChainTaskUsed: fresh.mainChainTaskUsed ?? fresh.tasks.filter(isMainChainTask).length,
               }
             }
             // Self-organizing help: a teammate's stalled task. No ownership

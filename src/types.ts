@@ -23,6 +23,31 @@ export const TERMINAL_TASK_STATUSES: readonly TaskStatus[] = ['completed', 'fail
 /** Task risk level, set by the captain at creation time. */
 export type TaskRiskLevel = 'low' | 'medium' | 'high' | 'critical'
 
+/** Workflow mode selected by the user; distinct from collaboration TeamMode. */
+export type WorkflowMode = 'decision' | 'governance-maintenance'
+
+/** Workflow impact class. Every non-maintenance class consumes the main-chain budget. */
+export type TaskImpact = 'changes-decision' | 'blocks-execution' | 'evidence-quality' | 'maintenance'
+
+/** Structured evidence boundary retained with a task contract. */
+export interface TaskVerification {
+  readonly checked: string[]
+  readonly unchecked: string[]
+}
+
+/** Auditable exception required when a main-chain task exceeds the budget. */
+export interface TaskBudgetException {
+  readonly decisionImpact: string
+  readonly grantedAt: number
+}
+
+export interface AcceptanceRevision {
+  readonly revision: number
+  readonly acceptance?: string
+  readonly reason: string
+  readonly changedAt: number
+}
+
 /**
  * 复盘原因分类(超时归因)。与 t1 设计一致:
  * 任务被低估 / 依赖阻塞 / 需求变化 / 成员效率 / 环境问题 / 按时完成 / 其他。
@@ -158,6 +183,10 @@ export interface TaskReviewRecord {
   readonly verdict: 'pass' | 'reject'
   readonly comment?: string
   readonly reviewedAt: number
+  /** Review is valid only for this execution attempt (new fields additive). */
+  readonly attempt?: number
+  /** Review is valid only for this acceptance contract revision. */
+  readonly contractRevision?: number
 }
 
 /** One task of a team's task list. */
@@ -193,6 +222,23 @@ export interface TeamTask {
   reviewRequired?: boolean
   /** Latest commissar review record (audit trail for the gate). */
   review?: TaskReviewRecord
+  /** Archived review verdicts invalidated by a new attempt/contract. */
+  reviewHistory?: TaskReviewRecord[]
+  /** Current review binding; legacy reviews without these fields remain valid. */
+  contractRevision?: number
+  /** Scope/impact class; legacy tasks default to main. */
+  impact?: TaskImpact
+  /** Auditable exception when main-chain budget is exceeded. */
+  budgetException?: TaskBudgetException
+  /** Stable normalized deliverable used for process-local conflict detection. */
+  deliverable?: string
+  deliverableKey?: string
+  /** Acceptance contract and its revision history. */
+  acceptance?: string
+  acceptanceRevision?: number
+  acceptanceHistory?: AcceptanceRevision[]
+  /** Structured output boundary. */
+  verification?: TaskVerification
   /** 中间态:任务完成被政委门禁拦截,等待 pass 复核(改进 4)。
    * update_task 的完成请求被门禁拦截时置位,政委 verdict=pass 后清除,
    * 任务进入终结状态时兜底清除。与派生的 reviewRequired 不同:它表示
@@ -281,6 +327,14 @@ export interface TeamState {
   id: string
   /** Team purpose/goal. */
   description?: string
+  /** Explicit workflow goal (additive alias for newer clients). */
+  goal?: string
+  /** Explicit user-selected workflow mode; absent legacy defaults to decision. */
+  workflowMode?: WorkflowMode
+  /** Main-chain task budget; absent legacy defaults to 3. */
+  mainChainTaskBudget?: number
+  /** Number of active main-chain tasks created. */
+  mainChainTaskUsed?: number
   /** Collaboration policy; absent legacy records are standard. */
   mode?: TeamMode
   /** Session id of the captain agent that owns this team. */

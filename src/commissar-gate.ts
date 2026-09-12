@@ -15,6 +15,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { deliverToMember } from './members.ts'
 import { appendMailbox, CAPTAIN_KEY, createMessage } from './state.ts'
 import type { TeamMember, TeamMessage, TeamState, TeamTask } from './types.ts'
+import { taskReviewPassed } from './state.ts'
 
 /** Whether a role string denotes the commissar oversight role (any spelling). */
 export function isCommissarRole(role: string | undefined): boolean {
@@ -34,7 +35,7 @@ export function isActiveCommissar(member: TeamMember | undefined): boolean {
  * @param task - the task about to be completed.
  */
 export function gateBlocksCompletion(task: TeamTask): boolean {
-  return task.reviewRequired === true && task.review?.verdict !== 'pass'
+  return task.reviewRequired === true && !taskReviewPassed(task)
 }
 
 /**

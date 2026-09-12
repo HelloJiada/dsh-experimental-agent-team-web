@@ -132,6 +132,30 @@ This is a documented assumption, not a defect: single-process operation is the
 supported deployment, and the atomic-write layer guarantees you never see
 corrupted state even if a process crashes mid-write.
 
+## Workflow guardrails
+
+The captain may set an explicit `goal`, `workflow_mode` (`decision` or
+`governance-maintenance`), and a bounded `main_chain_task_budget` when creating
+a team. Main-chain tasks consume that lifetime budget; a task exceeding it must
+record an explicit decision-impact exception. Maintenance tasks do not consume
+that budget and cannot be a direct or transitive dependency of a main-chain
+task. The scheduler dispatches ready main-chain work before maintenance work.
+
+Tasks can carry an impact class, exact `deliverable`, acceptance contract, and
+structured `checked` / `unchecked` evidence boundary. Exact deliverables use a
+**process-local task lock**: two non-terminal tasks in the same plugin process
+cannot register the same normalized path (including root files such as
+`README.md`). This is neither an OS file lock nor a filesystem watcher; direct
+external writers, symlink aliases, and separate harness processes remain outside
+this guarantee.
+
+A captain can revise a task's acceptance only through reassignment with a
+non-empty reason. The same task id remains durable, while the acceptance and its
+revision history are retained. A review pass is bound to the active task attempt
+and contract revision; retries, reassignment, and acceptance revision archive
+and clear the old review so it cannot authorize later work. Legacy team records
+without these additive fields remain readable through documented fallback values.
+
 ## Installation
 
 ### 1. Install the bundle
