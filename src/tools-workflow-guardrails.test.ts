@@ -165,6 +165,41 @@ describe('workflow guardrails — tool integration', () => {
   })
 })
 
+describe('门禁不吞证据 — 完成被拒时提交的 output 必须落盘', () => {
+  let workspace = ''
+  let stateRoot = ''
+  const tool = harness()
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), 'agent-team-gate-evidence-'))
+    stateRoot = join(workspace, '.agent-team-web')
+    await mkdir(stateRoot, { recursive: true })
+  })
+  afterEach(async () => { await rm(workspace, { recursive: true, force: true }) })
+
+  it('completed 被门禁拒绝时，本次提交的 output 仍持久化，且错误信息告知已保存', async () => {
+    await writeTeamToDisk(stateRoot, team({
+      tasks: [task('t1', {
+        status: 'in_progress', assignee: '技术员', attempt: 1, attemptId: 'att-1',
+        riskLevel: 'high', reviewRequired: true, claimedAt: 1, startedAt: 1, updatedAt: 1,
+      })], taskSeq: 1,
+    }))
+
+    await expect(tool('agent_teams_update_task').execute(
+      { task_id: 't1', status: 'completed', attempt_id: 'att-1', output: '完整交付报告（不得丢失）' },
+      execOf(agent(workspace, ENGINEER_ID)),
+    )).rejects.toThrow(/WAS saved/)
+
+    const persisted = await readTeam(stateRoot, 'workflow-team')
+    const gated = persisted!.tasks[0]!
+    // 门禁语义不变：仍未完成，处于等待复核中间态
+    expect(gated.status).toBe('in_progress')
+    expect(gated.blockedByReview).toBe(true)
+    // 但本次提交的报告必须留下，signals 同步；否则复核人看到的是旧版本
+    expect(gated.output).toBe('完整交付报告（不得丢失）')
+    expect(gated.signals?.outputBytes).toBe('完整交付报告（不得丢失）'.length)
+  })
+})
+
 describe('政委排除 — 政委不得拥有或执行任务（P1 回归）', () => {
   let workspace = ''
   let stateRoot = ''

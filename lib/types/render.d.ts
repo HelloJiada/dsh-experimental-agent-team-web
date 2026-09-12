@@ -11,6 +11,23 @@
 import type { JsonValue } from '@deepseek-ai/dsh-util-values';
 import { type TaskRetro, type TaskSignals } from './types.ts';
 /**
+ * Bounded preview length for a task output inside the status text.
+ *
+ * The status view is polled often, so a full task output cannot be inlined.
+ * The cut is deliberately **explicit**: a reviewer who reads a shortened output
+ * must be able to tell that the text continues, otherwise they may certify an
+ * artifact they never saw in full (this happened in practice — a long QA report
+ * was reviewed against a different rendition than the persisted one).
+ */
+export declare const STATUS_TEXT_PREVIEW_CHARS = 300;
+/**
+ * Shorten `text` to `limit` characters while saying so.
+ * @param text - the full text.
+ * @param limit - maximum characters kept.
+ * @returns the text unchanged when short enough, otherwise a marked preview.
+ */
+export declare function previewStatusText(text: string, limit: number): string;
+/**
  * 产出信号的 snake_case 序列化(update_task 输出与 status 输出共用)。
  * undefined 返回空对象,便于 `...serializeSignals(task.signals)` 展开。
  */

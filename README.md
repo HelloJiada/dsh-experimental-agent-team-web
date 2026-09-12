@@ -8,7 +8,7 @@
 
 ## DSH compatibility
 
-Version 0.1.18 uses the package's self-contained AgentTeams kernel and is tested
+Version 0.1.19 uses the package's self-contained AgentTeams kernel and is tested
 against the public DSH `0.1.3-alpha.2` package line, and against a DSH
 `0.1.5-rc.2` checkout running `pnpm dsh web`. It does **not** require the
 unpublished official experimental Agent Teams package or a local DSH checkout.
@@ -165,7 +165,7 @@ The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.18.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.19.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -222,4 +222,4 @@ page for the current asset name.)
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.18.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.19.tgz`

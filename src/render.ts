@@ -16,6 +16,29 @@ import { ROLE_TITLES } from './suggest.ts'
 import { ESTIMATE_LEVEL_RANGES, type TaskRetro, type TaskSignals } from './types.ts'
 
 /**
+ * Bounded preview length for a task output inside the status text.
+ *
+ * The status view is polled often, so a full task output cannot be inlined.
+ * The cut is deliberately **explicit**: a reviewer who reads a shortened output
+ * must be able to tell that the text continues, otherwise they may certify an
+ * artifact they never saw in full (this happened in practice — a long QA report
+ * was reviewed against a different rendition than the persisted one).
+ */
+export const STATUS_TEXT_PREVIEW_CHARS = 300
+
+/**
+ * Shorten `text` to `limit` characters while saying so.
+ * @param text - the full text.
+ * @param limit - maximum characters kept.
+ * @returns the text unchanged when short enough, otherwise a marked preview.
+ */
+export function previewStatusText(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  const omitted = text.length - limit
+  return `${text.slice(0, limit)}\n      … [truncated: ${omitted} of ${text.length} chars omitted — this is a preview, not the full text; ask the owner to send the full text]`
+}
+
+/**
  * 产出信号的 snake_case 序列化(update_task 输出与 status 输出共用)。
  * undefined 返回空对象,便于 `...serializeSignals(task.signals)` 展开。
  */
@@ -111,7 +134,7 @@ export function renderStatus(value: JsonValue): string {
     `Tasks (${team.tasks.length}):`,
     ...team.tasks.map((task) => {
       const deps = task.dependencies.length > 0 ? ` (deps: ${task.dependencies.join(',')})` : ''
-      const output = task.output !== undefined ? `\n      output: ${task.output.slice(0, 300)}` : ''
+      const output = task.output !== undefined ? `\n      output: ${previewStatusText(task.output, STATUS_TEXT_PREVIEW_CHARS)}` : ''
       const handoff = task.reassigning ? ' (reassigning)' : ''
       const risk = task.risk_level !== undefined || task.milestone === true
         ? ` [${task.risk_level ?? 'milestone'}${task.milestone === true ? ', milestone' : ''}]`

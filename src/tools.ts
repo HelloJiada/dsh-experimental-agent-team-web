@@ -1665,10 +1665,26 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         // (网络,可能秒级)移到锁外,避免阻塞同队所有工具。
         if (args.status === 'completed' && gateBlocksCompletion(task)) {
           task.blockedByReview = true
+          // Evidence must not be lost to the gate. The completion is still
+          // rejected (status stays in_progress until the commissar passes), but
+          // the report the owner just submitted is persisted first — otherwise
+          // this early return discards it and the reviewer is shown an older
+          // rendition than the one the owner actually submitted (observed in
+          // practice: a long QA report was reviewed against a stale output).
+          const outputSaved = args.output !== undefined && args.output !== task.output
+          if (args.output !== undefined) {
+            task.output = args.output
+            const prior = task.signals
+            task.signals = {
+              ...prior?.turns !== undefined ? { turns: prior.turns } : {},
+              outputBytes: args.output.length,
+              ...prior?.selfReport !== undefined ? { selfReport: prior.selfReport } : {},
+            }
+          }
           task.updatedAt = Date.now()
           await writeTeam(stateRoot, fresh)
           const notice = await appendCommissarReviewNotice(stateRoot, fresh, task)
-          return { kind: 'gate-blocked' as const, team: fresh, taskId: task.id, notice }
+          return { kind: 'gate-blocked' as const, team: fresh, taskId: task.id, notice, outputSaved }
         }
         if (args.status !== undefined) {
           const transition = transitionError(task.status, args.status)
@@ -1795,11 +1811,17 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       // R-26:门禁被拦截时,锁内已持久化 blockedByReview + 政委邮箱;
       // 锁外再补 live 唤醒(网络,不占锁),然后抛出门禁错误。
       if (updated.kind === 'gate-blocked') {
+        // Say explicitly whether the submitted report survived the rejection:
+        // the rejection path used to discard it silently, so an owner could not
+        // tell whether it had to resend the text.
+        const saved = updated.outputSaved
+          ? ' Your submitted output WAS saved on the task, so you do not need to resend it.'
+          : ''
         if (updated.notice !== undefined) {
           await wakeCommissarReview(ctx, stateRoot, updated.team, updated.notice, exec.signal)
-          throw new Error(`task ${updated.taskId} requires commissar review (需要政委复核) before completing — the commissar has been notified; retry after agent_teams_review_task(verdict=pass)`)
+          throw new Error(`task ${updated.taskId} requires commissar review (需要政委复核) before completing — the commissar has been notified; retry after agent_teams_review_task(verdict=pass).${saved}`)
         }
-        throw new Error(`task ${updated.taskId} requires commissar review (需要政委复核) before completing, but the team has no active commissar — add one with agent_teams_add_member(role=commissar) first`)
+        throw new Error(`task ${updated.taskId} requires commissar review (需要政委复核) before completing, but the team has no active commissar — add one with agent_teams_add_member(role=commissar) first.${saved}`)
       }
       const result = updated.value
       // R-31:kick fire-and-forget,工具不等待终结后全队再派发完成。

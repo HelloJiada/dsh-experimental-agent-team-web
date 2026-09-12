@@ -8,7 +8,43 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { renderStatus, serializeRetro, serializeSignals } from './render.ts'
+import { previewStatusText, renderStatus, serializeRetro, serializeSignals, STATUS_TEXT_PREVIEW_CHARS } from './render.ts'
+
+describe('previewStatusText — 截断必须显式（不得静默丢正文）', () => {
+  it('短文本原样返回，不加标记', () => {
+    const short = '短结论'
+    expect(previewStatusText(short, 300)).toBe(short)
+    expect(previewStatusText('x'.repeat(300), 300)).toBe('x'.repeat(300))
+  })
+
+  it('超长文本截断并显式说明省略了多少字符与总长', () => {
+    const long = 'x'.repeat(1000)
+    const preview = previewStatusText(long, STATUS_TEXT_PREVIEW_CHARS)
+    expect(preview.startsWith('x'.repeat(STATUS_TEXT_PREVIEW_CHARS))).toBe(true)
+    expect(preview).toContain('truncated')
+    expect(preview).toContain('700 of 1000 chars omitted')
+    // 标记必须让读者知道"这不是全文"
+    expect(preview).toContain('not the full text')
+  })
+
+  it('renderStatus 的 task output 使用显式预览而非静默截断', () => {
+    const value = {
+      team_name: 'team',
+      viewer: 'captain',
+      members: [],
+      tasks: [{
+        id: 't1', subject: 's', status: 'claimed', assignee: 'A', dependencies: [],
+        attempt: 1, attempt_id: '', reassigning: false, output: 'y'.repeat(900),
+      }],
+      captain_inbox: [],
+      member_inboxes: {},
+      mailbox_warning_count: 0,
+    }
+    const text = renderStatus(value as never)
+    expect(text).toContain('truncated')
+    expect(text).toContain('600 of 900 chars omitted')
+  })
+})
 
 describe('serializeSignals / serializeRetro — R-33 公共序列化', () => {
   it('undefined 输入返回空对象(可直接展开)', () => {
