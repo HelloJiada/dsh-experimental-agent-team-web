@@ -116,7 +116,7 @@ export function renderStatus(value: JsonValue): string {
       status: string
       activity: string
     }[]
-    tasks: { id: string; subject: string; status: string; assignee: string; dependencies: string[]; attempt: number; attempt_id: string; reassigning: boolean; risk_level?: string; milestone?: boolean; review_required?: boolean; review?: { reviewer_name: string; verdict: string; comment?: string; reviewed_at: number }; helper?: string; output?: string; estimate_level?: string; estimated_ms?: number; claimed_at?: number; started_at?: number; completed_at?: number; actual_ms?: number; overrun_ms?: number; updated_at?: number; signals?: { turns?: number; tool_calls?: number; output_bytes: number; self_report?: string }; retro?: { attempt: number; actual_ms: number; estimate_level?: string; estimated_ms?: number; overrun_ms?: number; level_deviation?: number; overran: boolean; cause: string; summary: string; retro_note?: string; captain_verdict?: string; recommendation: string; includes_gate_wait?: boolean; has_helper?: boolean; created_at: number }; suggested_role?: string; suggested_member?: string; suggestion_confidence?: string }[]
+    tasks: { id: string; subject: string; status: string; assignee: string; dependencies: string[]; attempt: number; attempt_id: string; reassigning: boolean; risk_level?: string; milestone?: boolean; review_required?: boolean; review?: { reviewer_name: string; verdict: string; comment?: string; reviewed_at: number }; blocked_by_review?: boolean; acceptance?: string; acceptance_revision?: number; deliverable?: string; helper?: string; output?: string; estimate_level?: string; estimated_ms?: number; claimed_at?: number; started_at?: number; completed_at?: number; actual_ms?: number; overrun_ms?: number; updated_at?: number; signals?: { turns?: number; tool_calls?: number; output_bytes: number; self_report?: string }; retro?: { attempt: number; actual_ms: number; estimate_level?: string; estimated_ms?: number; overrun_ms?: number; level_deviation?: number; overran: boolean; cause: string; summary: string; retro_note?: string; captain_verdict?: string; recommendation: string; includes_gate_wait?: boolean; has_helper?: boolean; created_at: number }; suggested_role?: string; suggested_member?: string; suggestion_confidence?: string }[]
     captain_inbox: { from: string; content: string }[]
     member_inboxes: Record<string, { count: number; latest: string }>
     mailbox_warnings: string[]
@@ -135,6 +135,15 @@ export function renderStatus(value: JsonValue): string {
     ...team.tasks.map((task) => {
       const deps = task.dependencies.length > 0 ? ` (deps: ${task.dependencies.join(',')})` : ''
       const output = task.output !== undefined ? `\n      output: ${previewStatusText(task.output, STATUS_TEXT_PREVIEW_CHARS)}` : ''
+      // The acceptance contract is what a reviewer must verify against, so it
+      // has to be readable from the status view. Members could not see it at
+      // all before, which forced reviewers to ask for the contract by message.
+      const acceptance = task.acceptance !== undefined
+        ? `\n      acceptance (rev ${task.acceptance_revision ?? 0}): ${previewStatusText(task.acceptance, STATUS_TEXT_PREVIEW_CHARS)}`
+        : ''
+      const deliverable = task.deliverable !== undefined
+        ? `\n      deliverable: ${previewStatusText(task.deliverable, 160)}`
+        : ''
       const handoff = task.reassigning ? ' (reassigning)' : ''
       const risk = task.risk_level !== undefined || task.milestone === true
         ? ` [${task.risk_level ?? 'milestone'}${task.milestone === true ? ', milestone' : ''}]`
@@ -142,7 +151,13 @@ export function renderStatus(value: JsonValue): string {
       const gate = task.review_required === true
         ? task.review?.verdict === 'pass'
           ? ' · review passed'
-          : ` · review pending (政委待复核)${task.review !== undefined ? ` · last verdict ${task.review.verdict}` : ''}`
+          // Distinguish "this task will need a review" from "the owner has
+          // submitted and is now waiting on the reviewer". Reporting both as
+          // "review pending" made an idle commissar think it was being paged
+          // the moment a gated task was created (observed twice).
+          : task.blocked_by_review === true
+            ? ` · awaiting review (已提交待复核)${task.review !== undefined ? ` · last verdict ${task.review.verdict}` : ''}`
+            : ` · review required (将需复核·尚未提交)${task.review !== undefined ? ` · last verdict ${task.review.verdict}` : ''}`
         : ''
       const helping = task.helper !== undefined ? ` · helped by ${task.helper}` : ''
       // 自成长耗时:预估等级优先、已用/实际、超时状态(与面板同一套阈值)。
@@ -183,7 +198,7 @@ export function renderStatus(value: JsonValue): string {
         && (task.assignee === '' || (task.suggested_member !== undefined && task.suggested_member !== '' && task.assignee !== task.suggested_member))
         ? ` · 建议分配给：${ROLE_TITLES[task.suggested_role as keyof typeof ROLE_TITLES] ?? task.suggested_role}（${task.suggested_role}）${task.suggested_member !== undefined && task.suggested_member !== '' ? ` → ${task.suggested_member}` : ''}${task.suggestion_confidence !== undefined ? ` [${task.suggestion_confidence}]` : ''}`
         : ''
-      return `  - ${task.id} [${task.status}] attempt ${task.attempt}${handoff}${risk}${gate}${helping}${suggestion}${timing}${signals}${retro} ${task.subject} → ${task.assignee || 'unassigned'}${deps}${output}`
+      return `  - ${task.id} [${task.status}] attempt ${task.attempt}${handoff}${risk}${gate}${helping}${suggestion}${timing}${signals}${retro} ${task.subject} → ${task.assignee || 'unassigned'}${deps}${deliverable}${acceptance}${output}`
     }),
     `Captain inbox (${team.captain_inbox.length}):`,
     ...team.captain_inbox.map((message) => `  - [${message.from}] ${message.content.slice(0, 200)}`),

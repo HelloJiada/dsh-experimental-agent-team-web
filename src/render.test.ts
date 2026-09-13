@@ -46,6 +46,57 @@ describe('previewStatusText — 截断必须显式（不得静默丢正文）', 
   })
 })
 
+describe('renderStatus — 复核标记与合同可见性（P1 回归）', () => {
+  const baseTask = {
+    id: 't1', subject: 's', status: 'claimed', assignee: 'A', dependencies: [],
+    attempt: 1, attempt_id: '', reassigning: false,
+  }
+  function statusFor(task: Record<string, unknown>): string {
+    return renderStatus({
+      team_name: 'team', viewer: 'captain', members: [], tasks: [task],
+      captain_inbox: [], member_inboxes: {}, mailbox_warning_count: 0,
+    } as never)
+  }
+
+  it('已提交待复核与「将需复核」必须区分（不得都写成 review pending）', () => {
+    const notSubmitted = statusFor({ ...baseTask, review_required: true })
+    expect(notSubmitted).toContain('review required (将需复核·尚未提交)')
+    expect(notSubmitted).not.toContain('awaiting review')
+
+    const submitted = statusFor({ ...baseTask, review_required: true, blocked_by_review: true })
+    expect(submitted).toContain('awaiting review (已提交待复核)')
+    expect(submitted).not.toContain('将需复核')
+
+    // 旧措辞不得再出现（它会让空闲政委以为正被催复核）
+    expect(notSubmitted).not.toContain('review pending (政委待复核)')
+    expect(submitted).not.toContain('review pending (政委待复核)')
+  })
+
+  it('acceptance 合同须在 status 中可见（含修订号）', () => {
+    const text = statusFor({
+      ...baseTask,
+      review_required: true,
+      acceptance: 'P0：未跑测试即判 PASS。P1：漏核预算项。',
+      acceptance_revision: 3,
+    })
+    expect(text).toContain('acceptance (rev 3):')
+    expect(text).toContain('P0：未跑测试即判 PASS')
+  })
+
+  it('超长 acceptance/deliverable 走显式预览，不静默截断', () => {
+    const text = statusFor({
+      ...baseTask,
+      acceptance: 'A'.repeat(800),
+      acceptance_revision: 1,
+      deliverable: 'D'.repeat(400),
+    })
+    expect(text).toContain('acceptance (rev 1):')
+    expect(text).toContain('truncated')
+    expect(text).toContain('not the full text')
+    expect(text).toContain('deliverable:')
+  })
+})
+
 describe('serializeSignals / serializeRetro — R-33 公共序列化', () => {
   it('undefined 输入返回空对象(可直接展开)', () => {
     expect(serializeSignals(undefined)).toEqual({})
