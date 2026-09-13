@@ -1,0 +1,22 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+*.tgz
+.agent-teams/
+.agent-team-web/
+.dsh-inspect/
+qa-*.mjs
+qa-screenshots/
+.qa-cdp-eval.mjs
+.local-tools/
+
+# 发布/打包临时目录（本仓库发布链会产生，绝不入库）
+.release-verify/
+.tmp-pack-check/
+
+# AgentTeam 对比分析产物（不提交 GitHub）
+docs/agentteam-comparison-report.md
+docs/agentteam-dsh-local-analysis.md
+docs/github-agentteam-research.md
