@@ -114,7 +114,7 @@ describe('client bundle protocol', () => {
     ]))
     expect([...requested].every(id => available.has(id))).toBe(true)
     expect(exports).toMatchObject({
-      inject: ['uiConversation', 'slots', 'sessions', 'locale', 'settingsScope'],
+      inject: ['uiConversation', 'slots', 'sessions', 'uiWorkspace', 'locale', 'settingsScope'],
       apply: expect.any(Function),
     })
 

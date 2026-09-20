@@ -1,24 +1,18 @@
 /** Version-tolerant navigation into durable AgentTeams member transcripts. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
-import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client';
-/** Narrow sessions-service face used by the activity panel and team card. */
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client';
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client';
+/** Current DSH navigation is owned by the workspace UI, not `ctx.sessions`. */
 export interface AgentTeamsSessionNavigator {
-    /** Legacy/ordinary session navigation. */
-    open(id: SessionId): void;
-    /** rc.8 addressed subagent navigation. */
-    openSubagent?(address: SubagentAddress): void;
-    /** Refresh the exact parent's durable direct-child catalog. */
-    refreshSubagents?(parentSessionId: SessionId): Promise<void>;
-    /** Reuse an address already retained by the client runtime when available. */
-    subagentAddress?(id: SessionId): SubagentAddress | undefined;
+    readonly sessions: Pick<ISessions, 'refreshSubagents' | 'subagentAddress'>;
+    readonly openSession: UiWorkspace['openSession'];
 }
 /**
  * Open one member's persisted transcript.
  *
- * Harness rc.8 intentionally removed cold subagents from the ordinary session
- * list. They must first be rediscovered in their parent's catalog, then opened
- * with the exact parent/child/mode address. Older runtimes have only `open()`;
- * the fallback preserves the plugin's rc.6 peer range.
+ * Cold subagents are intentionally absent from the ordinary session catalog.
+ * Rediscover the direct-child address first, then let the workspace UI retain
+ * and select that address. This preserves its lifecycle and selection ownership.
  */
-export declare function openAgentTeamMember(sessions: AgentTeamsSessionNavigator, parentSessionId: SessionId, childSessionId: SessionId): Promise<'subagent' | 'session'>;
+export declare function openAgentTeamMember(navigator: AgentTeamsSessionNavigator, parentSessionId: SessionId, childSessionId: SessionId): Promise<'subagent'>;
 //# sourceMappingURL=session-navigation.d.ts.map

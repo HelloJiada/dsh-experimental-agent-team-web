@@ -12,11 +12,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // The frame-level overlay is declared by ui-layout. This import is type-only;
 // ctx.slots.inject below owns the runtime wait for the declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 // Pull the renderer-owned ctx.slots service augmentation into ClientContext.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section'
 // entry) and the ctx.settingsScope augmentation (settings-namespace scope).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { ActivityPanel } from './ActivityPanel.tsx'
 import { AgentTeamsCard, type AgentTeamsCardInjected } from './AgentTeamsCard.tsx'
 import { agentTeamsCardDefinition } from './agent-teams-card-definition.ts'
@@ -45,7 +47,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
  * `settingsScope` 必须显式声明——cordis 服务代理守卫在未 inject 时访问会抛
  * "cannot get property 'settingsScope' without inject",渲染期崩溃被错误边界
  * 吞掉导致 content 区空白(t11 根因)。 */
-export const inject = ['uiConversation', 'slots', 'sessions', 'locale', 'settingsScope']
+export const inject = ['uiConversation', 'slots', 'sessions', 'uiWorkspace', 'locale', 'settingsScope']
 
 /** The replayed user message is the canonical transcript entry. */
 function HiddenAgentTeamsCommand(): null {
@@ -67,7 +69,10 @@ export function apply(ctx: ClientContext): void {
   )
   const openMember = async (parentId: SessionId, childId: SessionId): Promise<boolean> => {
     try {
-      await openAgentTeamMember(ctx.sessions, parentId, childId)
+      await openAgentTeamMember({
+        sessions: ctx.sessions,
+        openSession: ctx.uiWorkspace.openSession.bind(ctx.uiWorkspace),
+      }, parentId, childId)
       clearHistoryDiagnostic(String(childId))
       return true
     } catch (error: unknown) {
@@ -79,6 +84,7 @@ export function apply(ctx: ClientContext): void {
   const Panel = ({ t }: PropsLocale<'agentTeamWeb'>) => (
     <ActivityPanel
       sessionsList={ctx.sessions.list}
+      isCurrentSession={(sessionId) => (ctx.sessions.retainInfo(sessionId).getSnapshot().retainedBy.mainView ?? 0) > 0}
       openMember={openMember}
       t={t}
     />

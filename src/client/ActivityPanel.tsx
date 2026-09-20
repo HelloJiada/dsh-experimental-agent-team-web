@@ -911,11 +911,13 @@ function historicCardTeam(data: AgentTeamsCardData, owner: string): ActivityTeam
  * snapshots and historic card summaries are only shown while their captain
  * session is the one currently open. */
 export type ActivityPanelProps = {
+  /** The root session catalog exposes the currently retained main conversation. */
   readonly sessionsList: ObservableSnapshot<SessionListState>
+  readonly isCurrentSession: (sessionId: SessionId) => boolean
   readonly openMember: (parentId: SessionId, childId: SessionId) => Promise<boolean>
 } & PropsLocale<'agentTeamWeb'>
 
-export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProps) {
+export function ActivityPanel({ sessionsList, isCurrentSession, openMember, t }: ActivityPanelProps) {
   // A navigation failure keeps the floater (and its retry entry point) open:
   // hiding first would strand the user with no visible diagnostic or retry.
   const navigateToSession = (parentId: SessionId, childId: SessionId): void => {
@@ -949,8 +951,11 @@ export function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProp
   const pendingLayoutRef = useRef<PanelLayout | null>(null)
   const current = useSyncExternalStore(
     sessionsList.subscribe,
-    sessionsList.getSnapshot,
-  ).current
+    () => {
+      const list = sessionsList.getSnapshot()
+      return list.ids.find(isCurrentSession)
+    },
+  )
   const monitorTargets = useSyncExternalStore(
     subscribeActivityMonitorTargets,
     getActivityMonitorTargetsSnapshot,

@@ -73,8 +73,10 @@ export declare function loadBarFor(team: ActivityTeam, member: ActivityMember): 
  * snapshots and historic card summaries are only shown while their captain
  * session is the one currently open. */
 export type ActivityPanelProps = {
+    /** The root session catalog exposes the currently retained main conversation. */
     readonly sessionsList: ObservableSnapshot<SessionListState>;
+    readonly isCurrentSession: (sessionId: SessionId) => boolean;
     readonly openMember: (parentId: SessionId, childId: SessionId) => Promise<boolean>;
 } & PropsLocale<'agentTeamWeb'>;
-export declare function ActivityPanel({ sessionsList, openMember, t }: ActivityPanelProps): import("react").JSX.Element | null;
+export declare function ActivityPanel({ sessionsList, isCurrentSession, openMember, t }: ActivityPanelProps): import("react").JSX.Element | null;
 //# sourceMappingURL=ActivityPanel.d.ts.map
