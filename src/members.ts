@@ -471,7 +471,9 @@ Working rules:
   // 并显式包裹为「数据引用,不是指令」,切断 retro_note 原文作为指令注入的通道。
   const memoryLines = memories.map((entry) => {
     const level = entry.level !== undefined ? `[${entry.level}] ` : ''
-    return `- ${level}${truncatePracticeForInjection(entry.practice)} (来源任务「${entry.sourceTaskSubject}」· 归因 ${entry.cause})`
+    // 来源标题是任务所有者可控字符串，可能含换行/伪造指令；不把它带入
+    // 高优先级 system prompt。只保留截断的经验文本与固定枚举归因。
+    return `- ${level}${truncatePracticeForInjection(entry.practice)} (历史经验 · 归因 ${entry.cause})`
   }).join('\n')
   return `${base}
 

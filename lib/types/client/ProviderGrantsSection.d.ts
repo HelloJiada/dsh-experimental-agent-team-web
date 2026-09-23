@@ -221,6 +221,55 @@ export interface SelfGrowthView {
         readonly verdict: string;
     }[];
 }
+export interface PracticeEntry {
+    readonly id: string;
+    readonly sourceTeamId: string;
+    readonly sourceTaskId: string;
+    readonly sourceTaskSubject: string;
+    readonly role: string;
+    readonly practice: string;
+    readonly verdict: string;
+    readonly appliesWhen?: readonly string[];
+    readonly counterexamples?: readonly {
+        readonly context: string;
+        readonly reason: string;
+    }[];
+    readonly expiresAt?: number | null;
+    readonly disabledAt?: number | null;
+    readonly disabledReason?: string;
+    readonly revision: number;
+    readonly reviewHistory?: readonly unknown[];
+}
+export interface PracticeWorkspace {
+    readonly path: string;
+    readonly title: string;
+}
+export interface PracticesResponse {
+    readonly workspaces?: readonly PracticeWorkspace[];
+    readonly entries?: readonly PracticeEntry[];
+    readonly workspace?: string;
+}
+/** Explicit scope is mandatory: no browser cwd or implicit workspace fallback. */
+export declare function fetchPractices(workspace?: string): Promise<PracticesResponse>;
+export type PracticeWriteResult = {
+    readonly kind: 'ok';
+    readonly entry: PracticeEntry;
+} | {
+    readonly kind: 'conflict';
+} | {
+    readonly kind: 'forbidden';
+} | {
+    readonly kind: 'failed';
+    readonly status?: number;
+};
+/** Persist before changing UI state; stale/forbidden/error responses never become success. */
+export declare function submitPracticeMutation(body: object, token: string | undefined, send?: typeof fetch): Promise<PracticeWriteResult>;
+export declare function validatePracticePatch(patch: {
+    practice: string;
+    appliesWhen: string;
+    counterexamples: string;
+    expiresAt: string;
+}): string | undefined;
 /** 纯函数(t20):从 /state 响应体取设置中心数据——providers(含 models)+
  * roleDefaultsBase(不含覆盖的 base:profile ?? DEFAULT)+ roleDefaultsOverrides
  * (settings.roleDefaults 原文,初始值;实时覆盖由 scope snapshot 提供)

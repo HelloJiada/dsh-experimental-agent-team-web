@@ -119,6 +119,25 @@ describe('全局库文件读写', () => {
     expect(roundTrip[1]?.role).toBe('researcher')
   })
 
+  it('新可选治理字段与旧条目并存：读盘不伪造旧证据', async () => {
+    const legacy = entry('bp-old')
+    const governed = entry('bp-new', {
+      sourceTaskId: 't2',
+      evidence: [{ taskId: 't2', attempt: 1, observedAt: 1234 }],
+      appliesWhen: ['任务是代码审查'],
+      counterexamples: [{ context: '需求不明确', reason: '先确认需求' }],
+      expiresAt: 999999,
+      revision: 2,
+      reviewHistory: [{ actor: 'captain', action: 'review', at: 1234, summary: '已核证' }],
+    })
+    await writeBestPractices(tempRoot, [legacy, governed])
+    const restored = await readBestPractices(tempRoot)
+    expect(restored).toHaveLength(2)
+    expect(restored[0]).toEqual(legacy)
+    expect(restored[0]).not.toHaveProperty('evidence')
+    expect(restored[1]).toEqual(governed)
+  })
+
   it('文件命名为 .agent-team-web/best-practices.json', async () => {
     await writeBestPractices(tempRoot, [entry('bp-1')])
     const { readFile } = await import('node:fs/promises')
@@ -188,6 +207,59 @@ describe('selectBestPracticesForRole — 团队记忆注入(按角色匹配 + �
     const selected = selectBestPracticesForRole(entries, 'engineer')
     expect(selected).toHaveLength(3)
     expect(selected[0]?.updatedAt).toBeGreaterThan(selected[2]?.updatedAt ?? 0)
+  })
+
+  it('已撤销、已过期、未来条件无上下文时一律不注入；旧已审核经验保留', () => {
+    const now = 10_000
+    const records = [
+      entry('bp-disabled', { disabledAt: 9_000, disabledReason: '用户撤销', updatedAt: 9_000 }),
+      entry('bp-expired', { expiresAt: 9_999, updatedAt: 8_000 }),
+      entry('bp-conditioned', { appliesWhen: ['任务是代码审查'], updatedAt: 7_000 }),
+      entry('bp-old-1', { updatedAt: 2_000 }),
+      entry('bp-old-2', { updatedAt: 1_000 }),
+    ]
+    expect(selectBestPracticesForRole(records, 'engineer', now).map(item => item.id)).toEqual(['bp-old-1', 'bp-old-2'])
+  })
+
+  it('恶意形状的来源字段即使通过旧库读取也不能让注入过滤器抛错', async () => {
+    const broken = entry('bp-broken', { sourceTeamId: null as unknown as string })
+    await writeBestPractices(tempRoot, [broken, entry('bp-safe-1', { sourceTaskId: 't2' }), entry('bp-safe-2', { sourceTaskId: 't3' })])
+    const restored = await readBestPractices(tempRoot)
+    expect(restored.map(item => item.id)).toEqual(['bp-safe-1', 'bp-safe-2'])
+    expect(selectBestPracticesForRole(restored, 'engineer', 10_000).map(item => item.id)).toEqual(['bp-safe-1', 'bp-safe-2'])
+  })
+
+  it('合法显式证据可作为历史引用；反例与审查记录只作为元数据', () => {
+    const records = [
+      entry('bp-evidenced-1', { evidence: [{ taskId: 't1', attempt: 1, observedAt: 9_000 }],
+        counterexamples: [{ context: '需求不明', reason: '先澄清' }],
+        reviewHistory: [{ actor: 'captain', action: 'approve', at: 9_000 }] }),
+      entry('bp-evidenced-2', { sourceTaskId: 't2', evidence: [{ taskId: 't2' }] }),
+    ]
+    expect(selectBestPracticesForRole(records, 'engineer', 10_000).map(item => item.id)).toEqual(['bp-evidenced-1', 'bp-evidenced-2'])
+  })
+
+  it('新证据与来源冲突、非法来源字段不能注入，但不影响其他旧经验', () => {
+    const records = [
+      entry('bp-conflict', { evidence: [{ taskId: 'different-task' }] }),
+      entry('bp-empty-source', { sourceTaskId: '   ' }),
+      entry('bp-old-1', { sourceTaskId: 't1', updatedAt: 2_000 }),
+      entry('bp-old-2', { sourceTaskId: 't2', updatedAt: 1_000 }),
+    ]
+    expect(selectBestPracticesForRole(records, 'engineer', 10_000).map(item => item.id)).toEqual(['bp-old-1', 'bp-old-2'])
+  })
+
+  it('待审修订和不合法的新字段不会注入，读盘仍保留条目供人工纠错', async () => {
+    const invalid = entry('bp-invalid', { evidence: [{ taskId: 't1', excerpt: 'x'.repeat(10_000) }] })
+    await writeBestPractices(tempRoot, [invalid, entry('bp-safe', { sourceTaskId: 't2' })])
+    const restored = await readBestPractices(tempRoot)
+    expect(restored.map(item => item.id)).toEqual(['bp-invalid', 'bp-safe'])
+    expect(selectBestPracticesForRole(restored, 'engineer', 10_000)).toHaveLength(0)
+    expect(selectBestPracticesForRole([
+      entry('bp-draft', { verdict: 'pending', updatedAt: 20_000 }),
+      entry('bp-safe-1', { sourceTaskId: 't3' }),
+      entry('bp-safe-2', { sourceTaskId: 't4' }),
+    ], 'engineer', 10_000).map(item => item.id)).toEqual(['bp-safe-1', 'bp-safe-2'])
   })
 
   it('已否决经验(verdict=useless,陈旧文件残留)不注入', () => {

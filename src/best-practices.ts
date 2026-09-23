@@ -19,6 +19,27 @@ import type { EstimateLevel, TaskRetro, TaskRetroCause } from './types.ts'
 export type BestPracticeVerdict = 'pending' | 'useful' | 'useless' | 'revised'
 
 /** 一条经验库条目(全局,跨团队,带溯源)。 */
+export interface BestPracticeEvidence {
+  /** 可核对的来源任务标识，必须与条目 sourceTaskId 一致。 */
+  readonly taskId: string
+  readonly attempt?: number
+  /** 可选、仅存储供人工核对；不注入成员提示。 */
+  readonly excerpt?: string
+  readonly observedAt?: number
+}
+
+export interface BestPracticeCounterexample {
+  readonly context: string
+  readonly reason: string
+}
+
+export interface BestPracticeReview {
+  readonly actor: string
+  readonly action: string
+  readonly at: number
+  readonly summary?: string
+}
+
 export interface BestPracticeEntry {
   /** 稳定 id(bp-<uuid8>)。 */
   readonly id: string
@@ -40,6 +61,19 @@ export interface BestPracticeEntry {
   readonly verdict: BestPracticeVerdict
   readonly createdAt: number
   readonly updatedAt: number
+  /** 来源证据。缺失表示历史条目，继续按旧来源字段引用；显式证据必须可验证。 */
+  readonly evidence?: readonly BestPracticeEvidence[]
+  /** 适用条件描述；当前注入路径无上下文，非空时 fail-closed。 */
+  readonly appliesWhen?: readonly string[]
+  /** 反例上下文与原因，仅作审核上下文，不作为指令。 */
+  readonly counterexamples?: readonly BestPracticeCounterexample[]
+  /** 过期时间（Unix 毫秒）；到期后禁止注入。 */
+  readonly expiresAt?: number
+  /** 撤销时间（Unix 毫秒）；存在即禁止注入。 */
+  readonly disabledAt?: number
+  readonly disabledReason?: string
+  readonly revision?: number
+  readonly reviewHistory?: readonly BestPracticeReview[]
 }
 
 /** 全局经验库文件名(位于 stateRoot 下)。 */
@@ -139,6 +173,7 @@ export function upsertBestPractice(
       role: next.role,
       sourceTaskSubject: next.sourceTaskSubject,
       ...practiceChanged ? { verdict: 'pending' as const } : {},
+      revision: (existing.revision ?? 0) + 1,
       updatedAt: Date.now(),
     }
     return entries.map((entry, index) => index === existingIndex ? merged : entry)
@@ -159,6 +194,10 @@ export function updateBestPracticeVerdict(
       ...entry,
       cause: cause ?? entry.cause,
       verdict,
+      revision: (entry.revision ?? 0) + 1,
+      reviewHistory: [...entry.reviewHistory ?? [], {
+        actor: 'captain', action: 'review', at: Date.now(), summary: verdict,
+      }],
       updatedAt: Date.now(),
     }
   })
@@ -231,15 +270,74 @@ export const MAX_INJECTED_PRACTICE_LENGTH = 200
 export function selectBestPracticesForRole(
   entries: readonly BestPracticeEntry[],
   role: string | undefined,
+  now = Date.now(),
 ): BestPracticeEntry[] {
   if (role === undefined || role.trim() === '') return []
   const normalized = role.trim()
   const matched = entries.filter(entry =>
-    entry.role === normalized && INJECTABLE_BEST_PRACTICE_VERDICTS.has(entry.verdict))
+    entry.role === normalized
+      && INJECTABLE_BEST_PRACTICE_VERDICTS.has(entry.verdict)
+      && isOptionalMetadataValid(entry)
+      && isInjectableSource(entry)
+      && !isExpiredOrDisabled(entry, now)
+      && hasNoUnmatchedConditions(entry))
   if (matched.length < MIN_MEMBER_MEMORY_SAMPLES) return []
   return [...matched]
     .sort((left, right) => right.updatedAt - left.updatedAt)
     .slice(0, MAX_MEMBER_MEMORY_ENTRIES)
+}
+
+/** 来源校验：显式 evidence 须非空、结构有效且每项 taskId 与源任务一致。 */
+function isValidEvidence(entry: BestPracticeEntry): boolean {
+  return Array.isArray(entry.evidence) && entry.evidence.length > 0
+    && entry.evidence.every(item =>
+      typeof item === 'object' && item !== null
+        && typeof item.taskId === 'string' && item.taskId === entry.sourceTaskId
+        && (item.attempt === undefined || (Number.isInteger(item.attempt) && item.attempt > 0))
+        && (item.excerpt === undefined || (typeof item.excerpt === 'string' && item.excerpt.length <= 500))
+        && (item.observedAt === undefined || (typeof item.observedAt === 'number' && Number.isFinite(item.observedAt))))
+}
+
+/** 来源校验：旧条目依赖原有非空来源标识，继续支持历史引用路径。 */
+function isInjectableSource(entry: BestPracticeEntry): boolean {
+  if (typeof entry.sourceTeamId !== 'string' || !entry.sourceTeamId.trim()
+    || typeof entry.sourceTaskId !== 'string' || !entry.sourceTaskId.trim()
+    || typeof entry.sourceTaskSubject !== 'string' || !entry.sourceTaskSubject.trim()) return false
+  return entry.evidence === undefined || isValidEvidence(entry)
+}
+
+/** 可选字段运行时校验：错误的新字段保留可读，但禁止注入。 */
+function isOptionalMetadataValid(entry: BestPracticeEntry): boolean {
+  if (entry.evidence !== undefined && !isValidEvidence(entry)) return false
+  if (entry.appliesWhen !== undefined
+    && (!Array.isArray(entry.appliesWhen) || !entry.appliesWhen.every(item => typeof item === 'string'))) return false
+  if (entry.counterexamples !== undefined
+    && (!Array.isArray(entry.counterexamples) || !entry.counterexamples.every(item =>
+      typeof item === 'object' && item !== null
+        && typeof item.context === 'string' && typeof item.reason === 'string'))) return false
+  if (entry.expiresAt !== undefined && (typeof entry.expiresAt !== 'number' || !Number.isFinite(entry.expiresAt))) return false
+  if (entry.disabledAt !== undefined && (typeof entry.disabledAt !== 'number' || !Number.isFinite(entry.disabledAt))) return false
+  if (entry.disabledReason !== undefined && typeof entry.disabledReason !== 'string') return false
+  if (entry.revision !== undefined && (!Number.isInteger(entry.revision) || entry.revision < 0)) return false
+  if (entry.reviewHistory !== undefined && (!Array.isArray(entry.reviewHistory) || !entry.reviewHistory.every(item =>
+    typeof item === 'object' && item !== null
+      && typeof item.actor === 'string' && item.actor.trim() !== ''
+      && typeof item.action === 'string' && item.action.trim() !== ''
+      && typeof item.at === 'number' && Number.isFinite(item.at)
+      && (item.summary === undefined || typeof item.summary === 'string')))) return false
+  return true
+}
+
+/** 注入时点过期/撤销状态门禁。 */
+function isExpiredOrDisabled(entry: BestPracticeEntry, now: number): boolean {
+  return entry.disabledAt !== undefined
+    || (entry.expiresAt !== undefined && entry.expiresAt <= now)
+}
+
+/** 当前调用路径没有任务条件上下文；非空 appliesWhen 保守地拒绝注入。 */
+function hasNoUnmatchedConditions(entry: BestPracticeEntry): boolean {
+  return entry.appliesWhen === undefined
+    || (Array.isArray(entry.appliesWhen) && entry.appliesWhen.length === 0)
 }
 
 /** R-20/M-2:注入前截断经验文本,把经验限定为数据引用而非完整指令。 */

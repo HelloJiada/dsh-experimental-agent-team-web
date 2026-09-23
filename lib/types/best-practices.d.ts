@@ -12,6 +12,24 @@ import type { EstimateLevel, TaskRetro, TaskRetroCause } from './types.ts';
 /** 经验条目校准状态。 */
 export type BestPracticeVerdict = 'pending' | 'useful' | 'useless' | 'revised';
 /** 一条经验库条目(全局,跨团队,带溯源)。 */
+export interface BestPracticeEvidence {
+    /** 可核对的来源任务标识，必须与条目 sourceTaskId 一致。 */
+    readonly taskId: string;
+    readonly attempt?: number;
+    /** 可选、仅存储供人工核对；不注入成员提示。 */
+    readonly excerpt?: string;
+    readonly observedAt?: number;
+}
+export interface BestPracticeCounterexample {
+    readonly context: string;
+    readonly reason: string;
+}
+export interface BestPracticeReview {
+    readonly actor: string;
+    readonly action: string;
+    readonly at: number;
+    readonly summary?: string;
+}
 export interface BestPracticeEntry {
     /** 稳定 id(bp-<uuid8>)。 */
     readonly id: string;
@@ -33,6 +51,19 @@ export interface BestPracticeEntry {
     readonly verdict: BestPracticeVerdict;
     readonly createdAt: number;
     readonly updatedAt: number;
+    /** 来源证据。缺失表示历史条目，继续按旧来源字段引用；显式证据必须可验证。 */
+    readonly evidence?: readonly BestPracticeEvidence[];
+    /** 适用条件描述；当前注入路径无上下文，非空时 fail-closed。 */
+    readonly appliesWhen?: readonly string[];
+    /** 反例上下文与原因，仅作审核上下文，不作为指令。 */
+    readonly counterexamples?: readonly BestPracticeCounterexample[];
+    /** 过期时间（Unix 毫秒）；到期后禁止注入。 */
+    readonly expiresAt?: number;
+    /** 撤销时间（Unix 毫秒）；存在即禁止注入。 */
+    readonly disabledAt?: number;
+    readonly disabledReason?: string;
+    readonly revision?: number;
+    readonly reviewHistory?: readonly BestPracticeReview[];
 }
 /** 全局经验库文件名(位于 stateRoot 下)。 */
 export declare const BEST_PRACTICES_FILE = "best-practices.json";
@@ -99,7 +130,7 @@ export declare const MAX_INJECTED_PRACTICE_LENGTH = 200;
  * @param role - 目标成员的角色(如 `engineer`、`researcher`)。
  * @returns 可注入的经验条目(空数组 = 冷启动守卫触发或无角色或无可注入经验)。
  */
-export declare function selectBestPracticesForRole(entries: readonly BestPracticeEntry[], role: string | undefined): BestPracticeEntry[];
+export declare function selectBestPracticesForRole(entries: readonly BestPracticeEntry[], role: string | undefined, now?: number): BestPracticeEntry[];
 /** R-20/M-2:注入前截断经验文本,把经验限定为数据引用而非完整指令。 */
 export declare function truncatePracticeForInjection(practice: string): string;
 //# sourceMappingURL=best-practices.d.ts.map

@@ -36,6 +36,7 @@ import type { AgentTeamsActivation } from './command.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
 import { handleProviderGrant } from './provider-grant-route.ts'
+import { handlePractices } from './practices-route.ts'
 import {
   AgentTeamSettingsFields,
   settingsAccessFromConfig,
@@ -448,6 +449,17 @@ export function apply(ctx: Context, config: Config): void {
       trustedHosts,
     }),
   }), 'agent-teams: model-grant route')
+
+  // Governed experience edits require an explicit registered workspace, boot
+  // token, revision fence and atomic library mutation.
+  ctx.effect(() => webServer.register({
+    kind: 'exact',
+    path: '/plugins/agent-team-web/practices',
+    handler: (req, res) => handlePractices(workspaceRegistry, resolved.stateDir, req, res, {
+      token: webToken,
+      trustedHosts,
+    }),
+  }), 'agent-teams: practices route')
 
   // Whale mascot artwork: serve the packaged V2 role/action images to the
   // activity panel. An explicit allowlist guards the route (no path

@@ -2276,13 +2276,27 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           const entryIndex = library.findIndex(entry =>
             entry.sourceTeamId === fresh.id && entry.sourceTaskId === task.id)
           if (entryIndex >= 0) {
+            if (library[entryIndex]!.disabledAt !== undefined && args.verdict !== 'useless') {
+              // 撤销是用户显式治理状态，复盘校准不能暗中重新启用。
+              return undefined
+            }
             if (args.verdict === 'useless') {
-              return library.filter((entry, index) => index !== entryIndex)
+              // 不物理删除：保留来源和审计，立即停止后续成员注入。
+              practiceUpdated = true
+              return library.map((entry, index) => index === entryIndex ? {
+                ...entry, verdict: 'useless' as const, disabledAt: Date.now(),
+                disabledReason: '队长否决复盘', revision: (entry.revision ?? 0) + 1,
+                updatedAt: Date.now(),
+                reviewHistory: [...entry.reviewHistory ?? [], {
+                  actor: 'captain', action: 'reject', at: Date.now(), summary: '队长否决复盘',
+                }],
+              } : entry)
             }
             practiceUpdated = true
             return updateBestPracticeVerdict(library, library[entryIndex]!.id, args.verdict, retro.cause)
           }
-          // 库里没有(可能被剔过或从未入库):revised/useful 时按当前 retro 补建。
+          // 库里没有(从未入库):revised/useful 时按当前 retro 补建；
+          // 被撤销的条目保留在库中，不走此补建分支。
           if (args.verdict === 'useless') return undefined
           const practice = distillBestPractice(retro, {
             sourceTeamId: fresh.id,

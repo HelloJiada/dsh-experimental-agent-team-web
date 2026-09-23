@@ -17,6 +17,38 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
 }))
 
 import { ROLE_DUTY } from './roles.ts'
+
+describe('experience editor server settlement', () => {
+  const body = { workspace: '/explicit/workspace', id: 'bp-1', expectedRevision: 0, action: 'disable', reason: '用户撤销' }
+  it('only 200 with a valid entry reports success and includes token', async () => {
+    let request: RequestInit | undefined
+    const send = vi.fn(async (_url: string, init?: RequestInit) => {
+      request = init
+      return { ok: true, status: 200, json: async () => ({ id: 'bp-1', revision: 1 }) } as Response
+    })
+    expect(await submitPracticeMutation(body, 'token', send as typeof fetch)).toEqual({ kind: 'ok', entry: { id: 'bp-1', revision: 1 } })
+    expect(request?.headers).toMatchObject({ 'x-dsh-agent-teams-token': 'token' })
+    expect(JSON.parse(String(request?.body))).toMatchObject(body)
+  })
+  it.each([409, 403, 500])('HTTP %i never reports optimistic success', async status => {
+    const send = vi.fn(async () => ({ ok: false, status }) as Response)
+    expect((await submitPracticeMutation(body, 'token', send as typeof fetch)).kind).toBe(
+      status === 409 ? 'conflict' : status === 403 ? 'forbidden' : 'failed',
+    )
+  })
+  it('network error fails closed and never confirms save', async () => {
+    const send = vi.fn(async () => { throw new Error('offline') })
+    expect(await submitPracticeMutation(body, 'token', send as typeof fetch)).toEqual({ kind: 'failed' })
+  })
+})
+
+describe('experience editor input validation', () => {
+  it('requires practice and structured counterexamples before posting', () => {
+    expect(validatePracticePatch({ practice: ' ', appliesWhen: '', counterexamples: '', expiresAt: '' })).toContain('不能为空')
+    expect(validatePracticePatch({ practice: 'valid', appliesWhen: '', counterexamples: 'no separator', expiresAt: '' })).toContain('场景 | 原因')
+    expect(validatePracticePatch({ practice: 'valid', appliesWhen: '代码审查', counterexamples: '缓存未命中 | 先查日志', expiresAt: '' })).toBeUndefined()
+  })
+})
 import {
   autoAssignDiffers,
   autoAssignHasTarget,
@@ -33,6 +65,8 @@ import {
   settingsCenterFromStateBody,
   supportsReasoningEffort,
   toggleProviderModels,
+  validatePracticePatch,
+  submitPracticeMutation,
 } from './ProviderGrantsSection.tsx'
 
 const PROVIDERS = [

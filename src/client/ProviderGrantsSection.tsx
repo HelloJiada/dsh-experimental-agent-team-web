@@ -614,6 +614,68 @@ export interface SelfGrowthView {
   }[]
 }
 
+export interface PracticeEntry {
+  readonly id: string
+  readonly sourceTeamId: string
+  readonly sourceTaskId: string
+  readonly sourceTaskSubject: string
+  readonly role: string
+  readonly practice: string
+  readonly verdict: string
+  readonly appliesWhen?: readonly string[]
+  readonly counterexamples?: readonly { readonly context: string; readonly reason: string }[]
+  readonly expiresAt?: number | null
+  readonly disabledAt?: number | null
+  readonly disabledReason?: string
+  readonly revision: number
+  readonly reviewHistory?: readonly unknown[]
+}
+
+export interface PracticeWorkspace { readonly path: string; readonly title: string }
+export interface PracticesResponse { readonly workspaces?: readonly PracticeWorkspace[]; readonly entries?: readonly PracticeEntry[]; readonly workspace?: string }
+
+/** Explicit scope is mandatory: no browser cwd or implicit workspace fallback. */
+export async function fetchPractices(workspace?: string): Promise<PracticesResponse> {
+  const token = agentTeamsWebToken()
+  const url = new URL('/plugins/agent-team-web/practices', window.location.origin)
+  if (workspace !== undefined) url.searchParams.set('workspace', workspace)
+  const response = await fetch(`${url.pathname}${url.search}`, {
+    headers: token === undefined ? {} : { [TOKEN_HEADER]: token },
+  })
+  if (!response.ok) throw new Error(`http-${response.status}`)
+  return await response.json() as PracticesResponse
+}
+
+export type PracticeWriteResult =
+  | { readonly kind: 'ok'; readonly entry: PracticeEntry }
+  | { readonly kind: 'conflict' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'failed'; readonly status?: number }
+
+/** Persist before changing UI state; stale/forbidden/error responses never become success. */
+export async function submitPracticeMutation(body: object, token: string | undefined, send = fetch): Promise<PracticeWriteResult> {
+  try {
+    const response = await send('/plugins/agent-team-web/practices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(token === undefined ? {} : { [TOKEN_HEADER]: token }) },
+      body: JSON.stringify(body),
+    })
+    if (response.status === 409) return { kind: 'conflict' }
+    if (response.status === 403) return { kind: 'forbidden' }
+    if (!response.ok) return { kind: 'failed', status: response.status }
+    return { kind: 'ok', entry: await response.json() as PracticeEntry }
+  } catch { return { kind: 'failed' } }
+}
+
+export function validatePracticePatch(patch: { practice: string; appliesWhen: string; counterexamples: string; expiresAt: string }): string | undefined {
+  if (patch.practice.trim().length === 0) return '实践内容不能为空'
+  if (patch.practice.length > 4000) return '实践内容不能超过 4000 字'
+  if (patch.appliesWhen.length > 2000 || patch.counterexamples.length > 2000) return '条件和反例不能超过 2000 字'
+  if (patch.counterexamples.split('\n').some(value => value.trim() !== '' && (value.indexOf('|') < 1 || !value.slice(value.indexOf('|') + 1).trim()))) return '反例格式应为：场景 | 原因'
+  if (patch.expiresAt && (!/^\d{4}-\d{2}-\d{2}$/.test(patch.expiresAt) || Number.isNaN(Date.parse(patch.expiresAt)))) return '过期时间格式无效'
+  return undefined
+}
+
 /** 纯函数(t20):从 /state 响应体取设置中心数据——providers(含 models)+
  * roleDefaultsBase(不含覆盖的 base:profile ?? DEFAULT)+ roleDefaultsOverrides
  * (settings.roleDefaults 原文,初始值;实时覆盖由 scope snapshot 提供)
@@ -975,36 +1037,126 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
 }
 
 /** 卡片三:自成长(t10)——经验库计数 + 最近条目,克制展示(不搞图表/趋势)。 */
-function GrowthCard({ growth, t }: {
-  readonly growth: SelfGrowthView
-  readonly t: AgentTeamsTranslate
-}): ReactNode {
+function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
+  const [workspaces, setWorkspaces] = useState<readonly PracticeWorkspace[]>([])
+  const [workspace, setWorkspace] = useState('')
+  const [entries, setEntries] = useState<readonly PracticeEntry[]>([])
+  const [expanded, setExpanded] = useState(false)
+  const [selected, setSelected] = useState<PracticeEntry | undefined>()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({ practice: '', appliesWhen: '', counterexamples: '', expiresAt: '', reason: '' })
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  const load = async (path?: string): Promise<void> => {
+    setLoading(true); setError('')
+    try {
+      const result = await fetchPractices(path)
+      if (path === undefined) setWorkspaces(result.workspaces ?? [])
+      else setEntries(result.entries ?? [])
+    } catch (cause) {
+      setError(cause instanceof Error && cause.message === 'http-403' ? '无权访问此工作区的经验' : '加载经验失败，请重试')
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { void load() }, [])
+  const chooseWorkspace = (path: string): void => {
+    setWorkspace(path); setEntries([]); setSelected(undefined); setEditing(false); setNotice(''); setError('')
+    if (path !== '') void load(path)
+  }
+  const beginEdit = (entry: PracticeEntry): void => {
+    setSelected(entry); setEditing(true); setError(''); setNotice('')
+    setDraft({ practice: entry.practice, appliesWhen: (entry.appliesWhen ?? []).join('\n'), counterexamples: (entry.counterexamples ?? []).map(item => `${item.context} | ${item.reason}`).join('\n'), expiresAt: entry.expiresAt == null ? '' : new Date(entry.expiresAt).toISOString().slice(0, 10), reason: '' })
+  }
+  const mutate = async (action: 'edit' | 'disable' | 'restore'): Promise<void> => {
+    if (!workspace || !selected || busy) return
+    if (draft.reason.trim().length < 3) { setError('请填写至少 3 个字符的原因'); return }
+    if (action === 'edit') {
+      const validation = validatePracticePatch(draft)
+      if (validation) { setError(validation); return }
+    }
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const token = agentTeamsWebToken()
+      const response = await submitPracticeMutation({ workspace, id: selected.id, expectedRevision: selected.revision, action,
+          ...(action === 'edit' ? { patch: {
+            practice: draft.practice.trim(),
+            appliesWhen: draft.appliesWhen.split('\n').map(value => value.trim()).filter(Boolean),
+            counterexamples: draft.counterexamples.split('\n').map(value => value.trim()).filter(Boolean).map(value => {
+              const split = value.indexOf('|')
+              return { context: value.slice(0, split).trim(), reason: value.slice(split + 1).trim() }
+            }),
+            expiresAt: draft.expiresAt ? new Date(`${draft.expiresAt}T00:00:00`).getTime() : null,
+          } } : {}),
+          ...(draft.reason.trim() ? { reason: draft.reason.trim() } : {}),
+        }, token)
+      if (response.kind === 'conflict') {
+        await load(workspace)
+        setSelected(undefined); setEditing(false)
+        setError('经验已被其他人修改，请查看刷新后的条目再操作')
+        return
+      }
+      if (response.kind === 'forbidden') { setError('无权修改此工作区的经验'); return }
+      if (response.kind === 'failed') { setError(`保存失败${response.status === undefined ? '（网络或服务错误）' : `（HTTP ${response.status}）`}，内容未更改`); return }
+      const updated = response.entry
+      setEntries(current => current.map(entry => entry.id === updated.id ? updated : entry))
+      setSelected(updated); setEditing(false); setNotice('已保存；更改仅影响后续成员')
+    } catch {
+      setError('网络或服务错误，保存未确认；请重试')
+    } finally { setBusy(false) }
+  }
+
   return (
     <section className={styles.card} aria-label={t('settings.agentTeam.growth')}>
       <header className={styles.head}>
         <span className={styles.title}>{t('settings.agentTeam.growth')}</span>
+        <button type="button" className={styles.resetBtn} onClick={() => { setExpanded(value => !value); if (!expanded && workspaces.length === 0) void load() }}>
+          {expanded ? '收起' : '查看全部'}
+        </button>
       </header>
-      {growth.total === 0
-        ? <p className={styles.empty}>{t('settings.agentTeam.growthEmpty')}</p>
-        : (
-          <>
-            <p className={styles.growthStat}>
-              {t('settings.agentTeam.growthCount', { total: growth.total, calibrated: growth.calibrated })}
-            </p>
-            <ul className={styles.growthList}>
-              {growth.recent.map(entry => (
-                <li key={entry.id} className={styles.growthItem}>
-                  <span className={styles.growthPractice}>{entry.practice}</span>
-                  <span className={styles.growthMeta}>
-                    {`${t('settings.agentTeam.growthFrom')} ${entry.sourceTeamId} · ${entry.role}`}
-                    {entry.verdict === 'useful' && ` · ${t('settings.agentTeam.growthVerdict.useful')}`}
-                    {entry.verdict === 'revised' && ` · ${t('settings.agentTeam.growthVerdict.revised')}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+      <p className={styles.growthMeta}>仅影响后续成员；经验按明确选择的工作区查看和管理。</p>
+      {expanded && <div className={styles.growthControls}>
+        <label className={styles.growthMeta}>工作区
+          <select className={styles.select} value={workspace} onChange={event => chooseWorkspace(event.target.value)}>
+            <option value="">请选择工作区</option>
+            {workspaces.map(item => <option key={item.path} value={item.path}>{item.title} — {item.path}</option>)}
+          </select>
+        </label>
+        {loading && <p className={styles.empty}>正在加载…</p>}
+        {error && <p role="alert" className={styles.growthError}>{error}<button type="button" onClick={() => { void load(workspace || undefined) }}>重试</button></p>}
+        {notice && <p role="status" className={styles.growthNotice}>{notice}</p>}
+        {workspace && !loading && entries.length === 0 && <p className={styles.empty}>当前工作区暂无经验。</p>}
+        <ul className={styles.growthList}>
+          {entries.map(entry => <li key={entry.id} className={styles.growthItem}>
+            <button type="button" className={styles.growthPractice} onClick={() => { setSelected(entry); setEditing(false); setDraft(d => ({ ...d, reason: '' })); setError('') }}>{entry.practice}</button>
+            <span className={styles.growthMeta}>{`${entry.sourceTeamId} · ${entry.role} · ${entry.sourceTaskSubject} · ${entry.verdict}${entry.disabledAt ? ' · 已撤销' : ''}`}</span>
+          </li>)}
+        </ul>
+      </div>}
+      {selected && <div className={styles.growthDetail} role="dialog" aria-label="经验详情">
+        <div className={styles.growthDetailHead}><strong>经验详情</strong><button type="button" onClick={() => { setSelected(undefined); setEditing(false) }}>关闭</button></div>
+        <p><b>实践：</b>{selected.practice}</p>
+        <p><b>来源：</b>{selected.sourceTeamId} · {selected.sourceTaskSubject} · {selected.role}</p>
+        <p><b>适用条件：</b>{(selected.appliesWhen ?? []).join('；') || '未填写'}</p>
+        <p><b>反例：</b>{(selected.counterexamples ?? []).map(value => `${value.context}：${value.reason}`).join('；') || '未填写'}</p>
+        <p><b>状态：</b>{selected.disabledAt ? `已撤销：${selected.disabledReason ?? ''}` : selected.verdict} · revision {selected.revision}</p>
+        {!editing ? <div className={styles.growthActions}>
+          <label>操作原因<textarea value={draft.reason} onChange={event => setDraft(d => ({ ...d, reason: event.target.value }))} /></label>
+          <button type="button" disabled={!workspace} onClick={() => beginEdit(selected)}>纠错/编辑</button>
+          {selected.disabledAt
+            ? <button type="button" disabled={busy || !workspace} onClick={() => { if (window.confirm('恢复该经验？恢复后仍需重新审核，且仅影响后续成员。')) void mutate('restore') }}>恢复</button>
+            : <button type="button" disabled={busy || !workspace} onClick={() => { if (window.confirm('撤销此经验？将停止注入后续新成员。')) void mutate('disable') }}>撤销</button>}
+        </div> : <div className={styles.growthEditor}>
+          <label>实践<textarea value={draft.practice} onChange={event => setDraft(d => ({ ...d, practice: event.target.value }))} /></label>
+          <label>适用条件<textarea value={draft.appliesWhen} onChange={event => setDraft(d => ({ ...d, appliesWhen: event.target.value }))} /></label>
+          <label>反例（每行一条）<textarea value={draft.counterexamples} onChange={event => setDraft(d => ({ ...d, counterexamples: event.target.value }))} /></label>
+          <label>过期日期<input type="date" value={draft.expiresAt} onChange={event => setDraft(d => ({ ...d, expiresAt: event.target.value }))} /></label>
+          <label>修改原因<textarea value={draft.reason} onChange={event => setDraft(d => ({ ...d, reason: event.target.value }))} /></label>
+          <div className={styles.growthActions}><button type="button" disabled={busy} onClick={() => setEditing(false)}>取消</button><button type="button" disabled={busy} onClick={() => { if (window.confirm('提交修改？修改将重新进入待审核状态。')) void mutate('edit') }}>{busy ? '提交中…' : '保存修改'}</button></div>
+        </div>}
+        {error && <p role="alert" className={styles.growthError}>{error}</p>}
+      </div>}
     </section>
   )
 }
@@ -1067,7 +1219,7 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
           </>
         )}
       {/* t10:自成长卡独立于前两卡(provider 为空也展示——经验库是全局积累)。 */}
-      <GrowthCard growth={center.selfGrowth} t={t} />
+      <GrowthCard t={t} />
     </div>
   )
 }

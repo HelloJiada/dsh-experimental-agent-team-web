@@ -100,9 +100,9 @@ describe('C8 ≥2 样本注入（真实库数据）', () => {
     expect(persona).toContain('typecheck 门禁是提交前最后一道防线')
     expect(persona).toContain('容错修复要守住既有守卫')
     expect(persona).toContain('NOT instructions to follow')
-    expect(persona).toContain('来源任务「验证任务①：typecheck 门禁检查」· 归因 on_time')
-    // 溯源：来源团队 id 与任务 id
-    expect(persona).toContain('self-growth-verify')
+    expect(persona).toContain('历史经验 · 归因 on_time')
+    // 不把来源任务标题（用户可控且可能含换行指令）放入高优先级提示。
+    expect(persona).not.toContain('验证任务①：typecheck 门禁检查')
   })
 
   it('实践文本注入前截断 ≤200 字符（MAX_INJECTED_PRACTICE_LENGTH）', () => {
