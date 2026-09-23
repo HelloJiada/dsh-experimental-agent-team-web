@@ -8,11 +8,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         agentTeamWeb: AgentTeamsLocaleKey;
     }
 }
-/** Required services: conversation nodes, slots, sessions navigation, locale.
- * DSH 0.1.7 replaced the ui-settings namespace-scope binding with
- * `ctx.configForms`, so the settings section below renders as a read-only
- * overview. Declaring the removed `settingsScope` here would leave this client
- * fiber pending forever and the GUI would report "waiting for activation". */
+/** Required services: conversation nodes, slots, sessions navigation, locale,
+ * and DSH 0.1.7's namespace ConfigForm bridge for editable settings. */
 export declare const inject: string[];
 /** rc.2 宿主显式类型面:覆写 cordis Context 的 sessions 为 ISessions。 */
 type ClientContext = Omit<Context, 'sessions'> & {

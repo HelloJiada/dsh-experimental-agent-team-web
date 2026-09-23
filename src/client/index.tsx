@@ -42,12 +42,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Required services: conversation nodes, slots, sessions navigation, locale.
- * DSH 0.1.7 replaced the ui-settings namespace-scope binding with
- * `ctx.configForms`, so the settings section below renders as a read-only
- * overview. Declaring the removed `settingsScope` here would leave this client
- * fiber pending forever and the GUI would report "waiting for activation". */
-export const inject = ['uiConversation', 'slots', 'sessions', 'uiWorkspace', 'locale']
+/** Required services: conversation nodes, slots, sessions navigation, locale,
+ * and DSH 0.1.7's namespace ConfigForm bridge for editable settings. */
+export const inject = ['uiConversation', 'slots', 'sessions', 'uiWorkspace', 'locale', 'configForms']
 
 /** The replayed user message is the canonical transcript entry. */
 function HiddenAgentTeamsCommand(): null {
@@ -115,17 +112,19 @@ export function apply(ctx: ClientContext): void {
     }),
   }, AgentTeamsCard))
 
-  // DSH 0.1.7 no longer exposes namespace scope binding from the public
-  // ui-settings client contract. Keep the section registered as a read-only
-  // overview until an external binder is published again.
+  // DSH 0.1.7's ConfigForms is the replacement for the removed
+  // settingsScope binder. Bind the served namespace once so controls remain
+  // live, receive Host revisions, and persist their writes.
   const sectionT = ctx.locale.bind(AGENT_TEAMS_LOCALE_NAMESPACE) as (key: AgentTeamsLocaleKey) => string
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
+  const agentTeamSettingsScope = ctx.configForms.get<ProviderGrantsSectionValue>(PROVIDER_GRANTS_NAMESPACE)
+  ctx.effect(() => ctx.configForms.whileServed([PROVIDER_GRANTS_NAMESPACE], () => ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'agent-team-web',
     order: 100,
     label: () => sectionT('settings.agentTeam.title'),
     inject: (): ProviderGrantsSectionInjected => ({
+      scope: agentTeamSettingsScope,
       t: sectionT,
     }),
-  }, ProviderGrantsSection))
+  }, ProviderGrantsSection))), 'agent-team-web: editable settings section')
 }

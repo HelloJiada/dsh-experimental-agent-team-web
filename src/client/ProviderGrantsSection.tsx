@@ -33,7 +33,8 @@ export interface SettingsScopeSnapshot<T> {
 export interface SettingsScope<T> {
   getSnapshot(): SettingsScopeSnapshot<T>
   subscribe(listener: () => void): () => void
-  set(field: string, value: unknown): Promise<void>
+  /** `true` when Host persisted the edit; `false` when it refused it. */
+  set(field: string, value: unknown): Promise<boolean>
 }
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { agentTeamsWebToken } from './activity-monitor.ts'

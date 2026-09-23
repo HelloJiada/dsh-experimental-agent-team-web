@@ -56,13 +56,23 @@ export interface AgentTeamSettingsValue {
 /** 设置页表单 schema：模型授权 + 角色档位覆盖。
  * schemastery 宽松解析(缺省字段透传),roleDefaults 条目可部分提供。
  * 显式类型注解避免声明发射引用深层 pnpm 路径(TS2742)。 */
+const enabledModelsSchema = z.dict(z.boolean()).default({})
+const roleDefaultsSchema = z.dict(z.object({
+  provider: z.string(),
+  model: z.string(),
+  reasoningEffort: z.string(),
+})).default({})
+
+// DSH settings accepts live edits only below fields marked `volatile`.
+// Schemastery 3.18 exposes this metadata directly rather than through a
+// `.volatile()` builder; without it, Host rejects the setting then restores the
+// old snapshot, making the UI controls appear to do nothing.
+;(enabledModelsSchema.meta as Record<string, unknown>).volatile = true
+;(roleDefaultsSchema.meta as Record<string, unknown>).volatile = true
+
 export const AgentTeamSettingsSchema: z<AgentTeamSettingsValue> = z.object({
-  enabledModels: z.dict(z.boolean()).default({}),
-  roleDefaults: z.dict(z.object({
-    provider: z.string(),
-    model: z.string(),
-    reasoningEffort: z.string(),
-  })).default({}),
+  enabledModels: enabledModelsSchema,
+  roleDefaults: roleDefaultsSchema,
 })
 
 /** 复合授权 key:`${provider}/${model}`(跨 provider 同名模型不撞车)。 */

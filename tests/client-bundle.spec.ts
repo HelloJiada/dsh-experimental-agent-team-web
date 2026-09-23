@@ -114,7 +114,7 @@ describe('client bundle protocol', () => {
     ]))
     expect([...requested].every(id => available.has(id))).toBe(true)
     expect(exports).toMatchObject({
-      inject: ['uiConversation', 'slots', 'sessions', 'uiWorkspace', 'locale'],
+      inject: ['uiConversation', 'slots', 'sessions', 'uiWorkspace', 'locale', 'configForms'],
       apply: expect.any(Function),
     })
 
@@ -122,7 +122,7 @@ describe('client bundle protocol', () => {
     const registeredSlots: RegisteredSlot[] = []
     let injectedSlotName: string | undefined
     (bundle.apply as unknown as (ctx: Record<string, unknown>) => void)({
-      effect: (): void => undefined,
+      effect: (register: () => unknown): void => { void register() },
       locale: {
         register: (): void => undefined,
         bind: (): (key: string) => string => (key: string) => key,
@@ -150,6 +150,14 @@ describe('client bundle protocol', () => {
         openSubagent: () => undefined,
         open: () => undefined,
         refreshSubagents: () => Promise.resolve(),
+      },
+      configForms: {
+        get: () => ({
+          getSnapshot: () => ({ status: 'ready', value: {}, base: {}, user: {}, revision: 0, writable: true, mode: 'host' }),
+          subscribe: () => () => undefined,
+          set: async () => true,
+        }),
+        whileServed: (_namespaces: readonly string[], callback: () => void) => { callback(); return () => undefined },
       },
     } as never)
 

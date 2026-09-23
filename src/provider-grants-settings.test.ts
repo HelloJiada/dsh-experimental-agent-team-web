@@ -90,8 +90,11 @@ describe('registerAgentTeamSettings — 注册并返回 scope', () => {
     expect(descriptors[0]?.ns).toBe(AGENT_TEAM_SETTINGS_NS)
     expect(descriptors[0]?.schema).toBe(AgentTeamSettingsSchema)
     expect(scope.get()).toEqual({ enabledModels: { 'kimi-coding/kimi-k2.7-code': true } })
-    // schema 缺省解析:无用户层时两字段均为 {}。
+    // schema 缺省解析:无用户层时两字段均为 {}；两个设置页写字段必须
+    // 标记为 volatile，否则 Host 会拒绝 SettingsScope 的即时写入。
     expect(AgentTeamSettingsSchema({})).toEqual({ enabledModels: {}, roleDefaults: {} })
+    expect((AgentTeamSettingsSchema.dict?.enabledModels?.meta as Record<string, unknown>).volatile).toBe(true)
+    expect((AgentTeamSettingsSchema.dict?.roleDefaults?.meta as Record<string, unknown>).volatile).toBe(true)
   })
 
   it('无 settings 服务 → 抛错', () => {

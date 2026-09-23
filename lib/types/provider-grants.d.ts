@@ -40,9 +40,6 @@ export interface AgentTeamSettingsValue {
     /** 角色默认档位覆盖:roleKey → 档位;缺失 = 走 profile.roleLlmDefaults → DEFAULT_ROLE_LLM。 */
     readonly roleDefaults?: Record<string, RoleLlmDefaultValue>;
 }
-/** 设置页表单 schema：模型授权 + 角色档位覆盖。
- * schemastery 宽松解析(缺省字段透传),roleDefaults 条目可部分提供。
- * 显式类型注解避免声明发射引用深层 pnpm 路径(TS2742)。 */
 export declare const AgentTeamSettingsSchema: z<AgentTeamSettingsValue>;
 /** 复合授权 key:`${provider}/${model}`(跨 provider 同名模型不撞车)。 */
 export declare function modelKey(provider: string, model: string): string;
