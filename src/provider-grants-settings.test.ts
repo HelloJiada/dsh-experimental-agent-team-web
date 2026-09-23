@@ -52,8 +52,20 @@ describe('settingsNamespace — 命名空间合法性', () => {
 })
 
 describe('设置字段 schema', () => {
-  it('schema 缺省解析:无用户层时两字段均为 {}', () => {
-    expect(AgentTeamSettingsSchema({})).toEqual({ enabledModels: {}, roleDefaults: {} })
+  it('实际插件解析器必须生成可实时更新的 volatile 引用，而非只有 meta 标记', () => {
+    const parsed = AgentTeamSettingsSchema({
+      enabledModels: { 'cc-switch/gpt-5.6-terra': true },
+      roleDefaults: { engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra' } },
+    })
+    const models = parsed.enabledModels as unknown as { get(): Record<string, boolean> }
+    const roles = parsed.roleDefaults as unknown as { get(): Record<string, { provider?: string; model?: string }> }
+    expect(typeof models.get).toBe('function')
+    expect(typeof roles.get).toBe('function')
+    const access = settingsAccessFromConfig(parsed)
+    expect(access.modelGrantedFor?.('cc-switch', 'gpt-5.6-terra')).toBe(true)
+    expect(access.roleDefaultsFor?.('engineer')).toEqual({ provider: 'cc-switch', model: 'gpt-5.6-terra' })
+    expect((AgentTeamSettingsSchema({}).enabledModels as unknown as { get(): object }).get()).toEqual({})
+    expect((AgentTeamSettingsSchema({}).roleDefaults as unknown as { get(): object }).get()).toEqual({})
   })
 
   it('两个字段都是 volatile —— 否则宿主不暴露表单且拒绝写入', () => {

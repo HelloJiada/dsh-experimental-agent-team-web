@@ -40,12 +40,14 @@ export interface AgentTeamSettingsValue {
     /** 角色默认档位覆盖:roleKey → 档位;缺失 = 走 profile.roleLlmDefaults → DEFAULT_ROLE_LLM。 */
     readonly roleDefaults?: Record<string, RoleLlmDefaultValue>;
 }
+declare const liveEnabledModelsSchema: z<Record<string, boolean>>;
+declare const liveRoleDefaultsSchema: z<Record<string, RoleLlmDefaultValue>>;
 /** 两个设置字段的 schema 片段。宿主插件把它们并入自己的 `Config`
  * (组合 entry id = 命名空间 `agent-team-web`),标记因此只有一处定义。
  * 显式类型注解避免声明发射引用深层 pnpm 路径(TS2742)。 */
 export declare const AgentTeamSettingsFields: {
-    enabledModels: z<Record<string, boolean>>;
-    roleDefaults: z<Record<string, RoleLlmDefaultValue>>;
+    enabledModels: typeof liveEnabledModelsSchema;
+    roleDefaults: typeof liveRoleDefaultsSchema;
 };
 /** 设置页字段的合成视图(类型消费者与测试用)。 */
 export declare const AgentTeamSettingsSchema: z<AgentTeamSettingsValue>;
@@ -130,4 +132,5 @@ export declare function settingsAccessFromConfig(config: AgentTeamSettingsSource
  * 组合 entry 的 volatile 字段。settings 服务缺席(headless)时写面保持
  * undefined → 路由 503,读访问不受影响。 */
 export declare function wireAgentTeamSettings(settingsCtx: unknown, access: AgentTeamSettingsAccess): void;
+export {};
 //# sourceMappingURL=provider-grants.d.ts.map

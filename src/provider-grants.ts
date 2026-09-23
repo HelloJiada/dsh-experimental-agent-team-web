@@ -66,25 +66,27 @@ const roleDefaultsSchema = z.dict(z.object({
 // DSH 只接受 volatile 字段下的设置页即时写入(settings/schema.ts 的
 // isVolatilePath),且 volatileForm 会跳过没有 volatile 字段的 entry。若少
 // 了该标记,宿主既不暴露可编辑表单、也拒绝一切写入——控件点了等于没点。
-// Schemastery 3.18 以元数据形式暴露它(无 .volatile() 构造器)。
-;(enabledModelsSchema.meta as Record<string, unknown>).volatile = true
-;(roleDefaultsSchema.meta as Record<string, unknown>).volatile = true
+// 必须使用 Schemastery >=3.18.4：其解析器才会把 meta.volatile 字段包装为
+// 实时 Volatile 引用。3.18.2 即便设置 meta 标记也只返回裸对象，宿主 Loader
+// 的 _commitVolatile 找不到引用，导致落盘成功但页面与运行时始终是旧值。
+const liveEnabledModelsSchema: z<Record<string, boolean>> = enabledModelsSchema.volatile() as unknown as z<Record<string, boolean>>
+const liveRoleDefaultsSchema: z<Record<string, RoleLlmDefaultValue>> = roleDefaultsSchema.volatile() as unknown as z<Record<string, RoleLlmDefaultValue>>
 
 /** 两个设置字段的 schema 片段。宿主插件把它们并入自己的 `Config`
  * (组合 entry id = 命名空间 `agent-team-web`),标记因此只有一处定义。
  * 显式类型注解避免声明发射引用深层 pnpm 路径(TS2742)。 */
 export const AgentTeamSettingsFields: {
-  enabledModels: z<Record<string, boolean>>
-  roleDefaults: z<Record<string, RoleLlmDefaultValue>>
+  enabledModels: typeof liveEnabledModelsSchema
+  roleDefaults: typeof liveRoleDefaultsSchema
 } = {
-  enabledModels: enabledModelsSchema,
-  roleDefaults: roleDefaultsSchema,
+  enabledModels: liveEnabledModelsSchema,
+  roleDefaults: liveRoleDefaultsSchema,
 }
 
 /** 设置页字段的合成视图(类型消费者与测试用)。 */
 export const AgentTeamSettingsSchema: z<AgentTeamSettingsValue> = z.object({
-  enabledModels: enabledModelsSchema,
-  roleDefaults: roleDefaultsSchema,
+  enabledModels: AgentTeamSettingsFields.enabledModels,
+  roleDefaults: AgentTeamSettingsFields.roleDefaults,
 })
 
 /** 复合授权 key:`${provider}/${model}`(跨 provider 同名模型不撞车)。 */
