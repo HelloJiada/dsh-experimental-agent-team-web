@@ -1,72 +1,42 @@
 /**
- * AgentTeam 设置中心 —— settings 命名空间域测试(t13 重构)。
+ * AgentTeam 设置中心 —— 设置字段域测试(DSH 0.1.7 重构)。
  *
- * 覆盖：命名空间合法性(kebab-case)、register 返回 scope(describe 可见
- * enabledModels/roleDefaults schema)、modelGrantedFromScope(复合 key +
- * deepseek 恒授权)、resolveRoleDefaults(三源链:settings 覆盖 → profile →
- * builtin)、wireAgentTeamSettings(读/写/快照三通道 + 释放全清空)。
+ * 覆盖：命名空间合法性(kebab-case)、设置字段必须 volatile(否则宿主既
+ * 不暴露表单也拒绝写入)、modelGrantedFromValue(复合 key + deepseek 恒
+ * 授权)、resolveRoleDefault(三源链:config 覆盖 → profile → builtin)、
+ * settingsAccessFromConfig(读访问直接来自 apply 期 config)、
+ * wireAgentTeamSettings(仅写面:经宿主 settings.update 落盘;释放即清空;
+ * settings 缺席时读访问不受影响)。
  * @module dsh-agent-team-web/provider-grants-settings.test
  */
 
 import { describe, expect, it } from 'vitest'
 import {
   AGENT_TEAM_SETTINGS_NS,
+  AgentTeamSettingsFields,
   AgentTeamSettingsSchema,
-  modelGrantedFromScope,
+  modelGrantedFromValue,
   modelKey,
-  registerAgentTeamSettings,
-  resolveRoleDefaults,
+  resolveRoleDefault,
+  settingsAccessFromConfig,
   settingsNamespace,
   wireAgentTeamSettings,
   type AgentTeamSettingsAccess,
-  type SettingsDescriptor,
-  type SettingsScope,
   type SettingsSurface,
 } from './provider-grants.ts'
 
-/** 假 scope:get() 返回固定 resolved value。 */
-function scopeOf(value: unknown): SettingsScope {
+/** 最小 settings 服务桩:记录 update 调用。 */
+function fakeSettings(calls: Array<{ ns: string; patch: object }>): SettingsSurface {
   return {
-    get: () => value,
-    watch: () => () => undefined,
-    update: async () => undefined,
-    replace: async () => undefined,
+    async update(ns: string, patch: object): Promise<void> {
+      calls.push({ ns, patch })
+    },
   }
 }
 
-/** 可变假 scope:记录 update 调用并让 get() 反映最新值。 */
-function mutableScope(initial: unknown, updates: Array<object>): SettingsScope {
-  let value: unknown = initial
-  return {
-    get: () => value,
-    watch: () => () => undefined,
-    update: async (patch) => {
-      updates.push(patch)
-      value = { ...(value as Record<string, unknown>), ...patch as Record<string, unknown> }
-    },
-    replace: async (section) => { value = section },
-  }
-}
-
-/** 最小 settings 服务桩:记录注册,返回假 scope;describe 可注入 value。 */
-function fakeSettings(overrides: { value?: unknown; scope?: SettingsScope } = {}): SettingsSurface & { registrations: Map<string, { schema: unknown; value: unknown }> } {
-  const registrations = new Map<string, { schema: unknown; value: unknown }>()
-  return {
-    registrations,
-    register(ns, schema) {
-      registrations.set(String(ns), { schema, value: overrides.value })
-      return overrides.scope ?? scopeOf(overrides.value)
-    },
-    describe(): SettingsDescriptor[] {
-      return [...registrations].map(([ns, registration]) => ({
-        ns: ns as SettingsDescriptor['ns'],
-        schema: registration.schema,
-        value: registration.value,
-        revision: 0,
-        applies: 'live',
-      }))
-    },
-  }
+/** volatile 标记读取(元数据形式,无 .volatile() 构造器)。 */
+function volatileOf(schema: unknown): unknown {
+  return (schema as { meta?: Record<string, unknown> }).meta?.volatile
 }
 
 describe('settingsNamespace — 命名空间合法性', () => {
@@ -81,113 +51,137 @@ describe('settingsNamespace — 命名空间合法性', () => {
   })
 })
 
-describe('registerAgentTeamSettings — 注册并返回 scope', () => {
-  it('register 后 describe 可见 enabledModels/roleDefaults schema 与默认值', () => {
-    const settings = fakeSettings({ value: { enabledModels: { 'kimi-coding/kimi-k2.7-code': true } } })
-    const scope = registerAgentTeamSettings({ settings })
-    const descriptors = settings.describe()
-    expect(descriptors).toHaveLength(1)
-    expect(descriptors[0]?.ns).toBe(AGENT_TEAM_SETTINGS_NS)
-    expect(descriptors[0]?.schema).toBe(AgentTeamSettingsSchema)
-    expect(scope.get()).toEqual({ enabledModels: { 'kimi-coding/kimi-k2.7-code': true } })
-    // schema 缺省解析:无用户层时两字段均为 {}；两个设置页写字段必须
-    // 标记为 volatile，否则 Host 会拒绝 SettingsScope 的即时写入。
+describe('设置字段 schema', () => {
+  it('schema 缺省解析:无用户层时两字段均为 {}', () => {
     expect(AgentTeamSettingsSchema({})).toEqual({ enabledModels: {}, roleDefaults: {} })
-    expect((AgentTeamSettingsSchema.dict?.enabledModels?.meta as Record<string, unknown>).volatile).toBe(true)
-    expect((AgentTeamSettingsSchema.dict?.roleDefaults?.meta as Record<string, unknown>).volatile).toBe(true)
   })
 
-  it('无 settings 服务 → 抛错', () => {
-    expect(() => registerAgentTeamSettings({})).toThrow(/settings service is not available/)
+  it('两个字段都是 volatile —— 否则宿主不暴露表单且拒绝写入', () => {
+    expect(volatileOf(AgentTeamSettingsFields.enabledModels)).toBe(true)
+    expect(volatileOf(AgentTeamSettingsFields.roleDefaults)).toBe(true)
+    expect(volatileOf(AgentTeamSettingsSchema.dict?.enabledModels)).toBe(true)
+    expect(volatileOf(AgentTeamSettingsSchema.dict?.roleDefaults)).toBe(true)
+  })
+
+  it('命名空间与组合 entry id 一致(宿主以 entry id 作为设置命名空间)', () => {
+    expect(String(AGENT_TEAM_SETTINGS_NS)).toBe('agent-team-web')
   })
 })
 
-describe('modelGrantedFromScope — 复合 key 模型授权判定', () => {
-  it('deepseek-official 名下模型恒授权(不看 scope)', () => {
-    expect(modelGrantedFromScope(scopeOf({}), 'deepseek-official', 'deepseek-v4-flash')).toBe(true)
+describe('modelGrantedFromValue — 复合 key 模型授权判定', () => {
+  it('deepseek-official 名下模型恒授权(不看 config)', () => {
+    expect(modelGrantedFromValue({}, 'deepseek-official', 'deepseek-v4-flash')).toBe(true)
+    expect(modelGrantedFromValue(undefined, 'deepseek-official', 'deepseek-v4-flash')).toBe(true)
   })
 
   it('其余 provider 按 `${provider}/${model}` 复合 key(跨 provider 同名不撞车)', () => {
-    const scope = scopeOf({ enabledModels: { 'kimi-coding/kimi-k2.7-code': true } })
-    expect(modelGrantedFromScope(scope, 'kimi-coding', 'kimi-k2.7-code')).toBe(true)
+    const value = { enabledModels: { 'kimi-coding/kimi-k2.7-code': true } }
+    expect(modelGrantedFromValue(value, 'kimi-coding', 'kimi-k2.7-code')).toBe(true)
     // 另一 provider 的同名模型不因 kimi 授权而授权。
-    expect(modelGrantedFromScope(scope, 'cc-switch', 'kimi-k2.7-code')).toBe(false)
-    expect(modelGrantedFromScope(scope, 'kimi-coding', 'other-model')).toBe(false)
+    expect(modelGrantedFromValue(value, 'cc-switch', 'kimi-k2.7-code')).toBe(false)
+    expect(modelGrantedFromValue(value, 'kimi-coding', 'other-model')).toBe(false)
   })
 
-  it('scope 值缺失 → 未授权(安全降级)', () => {
-    expect(modelGrantedFromScope(scopeOf(undefined), 'kimi-coding', 'kimi-k2.7-code')).toBe(false)
+  it('config 值缺失 → 未授权(安全降级)', () => {
+    expect(modelGrantedFromValue(undefined, 'cc-switch', 'gpt-5.6-terra')).toBe(false)
   })
 
   it('modelKey 复合格式', () => {
-    expect(modelKey('kimi-coding', 'kimi-k2.7-code')).toBe('kimi-coding/kimi-k2.7-code')
+    expect(modelKey('cc-switch', 'gpt-5.6-terra')).toBe('cc-switch/gpt-5.6-terra')
   })
 })
 
-describe('resolveRoleDefaults — 三源链(settings 覆盖 → profile → builtin)', () => {
+describe('resolveRoleDefault — 三源链(config 覆盖 → profile → builtin)', () => {
   const profile = { engineer: { model: 'deepseek-v4-flash' }, qa: { model: 'deepseek-v4-flash' } }
   const builtin = { engineer: { model: 'deepseek-v4-pro', reasoningEffort: 'high' }, researcher: { model: 'deepseek-v4-pro' } }
 
-  it('settings 覆盖优先;无覆盖 → profile;无 profile → builtin;都无 → undefined', () => {
-    const withOverride = scopeOf({ roleDefaults: { engineer: { model: 'custom-m1', reasoningEffort: 'low' } } })
-    expect(resolveRoleDefaults(withOverride, profile, builtin, 'engineer')).toEqual({ model: 'custom-m1', reasoningEffort: 'low' })
-    expect(resolveRoleDefaults(scopeOf({}), profile, builtin, 'engineer')).toEqual({ model: 'deepseek-v4-flash' })
-    expect(resolveRoleDefaults(scopeOf({}), {}, builtin, 'researcher')).toEqual({ model: 'deepseek-v4-pro' })
-    expect(resolveRoleDefaults(scopeOf({}), {}, {}, 'unknown-role')).toBeUndefined()
+  it('config 覆盖优先;无覆盖 → profile;无 profile → builtin;都无 → undefined', () => {
+    const withOverride = { roleDefaults: { engineer: { model: 'custom-m1', reasoningEffort: 'low' } } }
+    expect(resolveRoleDefault(withOverride, profile, builtin, 'engineer')).toEqual({ model: 'custom-m1', reasoningEffort: 'low' })
+    expect(resolveRoleDefault({}, profile, builtin, 'engineer')).toEqual({ model: 'deepseek-v4-flash' })
+    expect(resolveRoleDefault({}, {}, builtin, 'researcher')).toEqual({ model: 'deepseek-v4-pro' })
+    expect(resolveRoleDefault({}, {}, {}, 'unknown-role')).toBeUndefined()
   })
 
   it('roleDefaults 缺失字段不覆盖下层(部分覆盖语义由调用方保证)', () => {
-    const partial = scopeOf({ roleDefaults: { engineer: { reasoningEffort: 'off' } } })
-    expect(resolveRoleDefaults(partial, profile, builtin, 'engineer')).toEqual({ reasoningEffort: 'off' })
+    const partial = { roleDefaults: { engineer: { reasoningEffort: 'off' } } }
+    expect(resolveRoleDefault(partial, profile, builtin, 'engineer')).toEqual({ reasoningEffort: 'off' })
   })
 })
 
-describe('wireAgentTeamSettings — apply 期接线(scope 闭包 → access)', () => {
-  it('三通道经 scope 生效;作用域释放全清空', async () => {
-    const updates: Array<object> = []
-    const scope = mutableScope({
-      enabledModels: { 'kimi-coding/kimi-k2.7-code': true },
-      roleDefaults: {},
-    }, updates)
-    const settings = fakeSettings({ scope })
-    let disposer: (() => void) | undefined
-    const settingsCtx = {
-      settings,
-      effect: (fn: () => () => void) => { disposer = fn() },
-    }
-    const access: AgentTeamSettingsAccess = {}
-    wireAgentTeamSettings(settingsCtx, access)
-
-    // 读判定(复合 key + deepseek 恒授权)
-    expect(access.modelGrantedFor?.('kimi-coding', 'kimi-k2.7-code')).toBe(true)
-    expect(access.modelGrantedFor?.('kimi-coding', 'other')).toBe(false)
-    expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-flash')).toBe(true)
-    // 快照读
-    expect(access.enabledModels?.()).toEqual({ 'kimi-coding/kimi-k2.7-code': true })
-    expect(access.roleDefaults?.()).toEqual({})
-    // 写面:授权模型 → scope.update 收到重建的 enabledModels map
-    await access.setModelGrant?.('xiaomi', 'm1', true)
-    expect(updates[0]).toEqual({ enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'xiaomi/m1': true } })
-    expect(access.modelGrantedFor?.('xiaomi', 'm1')).toBe(true)
-    // 写面:deepseek 名下 no-op
-    await access.setModelGrant?.('deepseek-official', 'deepseek-v4-flash', true)
-    expect(updates).toHaveLength(1)
-    // 角色档位覆盖写 + 「默认」删覆盖
-    await access.setRoleDefault?.('engineer', { model: 'custom-m1' })
-    await access.setRoleDefault?.('engineer', undefined)
-    expect(access.roleDefaults?.()).toEqual({})
-
-    disposer?.()
-    expect(access.modelGrantedFor).toBeUndefined()
-    expect(access.enabledModels).toBeUndefined()
-    expect(access.setModelGrant).toBeUndefined()
-    expect(access.roleDefaultsFor).toBeUndefined()
-    expect(access.setRoleDefault).toBeUndefined()
+describe('settingsAccessFromConfig — 读访问直接来自 apply 期 config', () => {
+  it('判定/快照三通道都读同一份 config', () => {
+    const access = settingsAccessFromConfig({
+      enabledModels: { 'cc-switch/gpt-5.6-terra': true },
+      roleDefaults: { engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra' } },
+    })
+    expect(access.modelGrantedFor?.('cc-switch', 'gpt-5.6-terra')).toBe(true)
+    expect(access.modelGrantedFor?.('cc-switch', 'gpt-5.6-luna')).toBe(false)
+    expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-pro')).toBe(true)
+    expect(access.enabledModels?.()).toEqual({ 'cc-switch/gpt-5.6-terra': true })
+    expect(access.roleDefaultsFor?.('engineer')).toEqual({ provider: 'cc-switch', model: 'gpt-5.6-terra' })
+    expect(access.roleDefaults?.()).toEqual({ engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra' } })
   })
 
-  it('无 settings 服务 → 抛错,access 不被写入', () => {
-    const access: AgentTeamSettingsAccess = {}
-    expect(() => wireAgentTeamSettings({}, access)).toThrow(/settings service is not available/)
-    expect(access.modelGrantedFor).toBeUndefined()
+  it('缺省 config → 空 map 且仅 deepseek 恒授权', () => {
+    const access = settingsAccessFromConfig({})
+    expect(access.enabledModels?.()).toEqual({})
+    expect(access.roleDefaults?.()).toEqual({})
+    expect(access.roleDefaultsFor?.('engineer')).toBeUndefined()
+    expect(access.modelGrantedFor?.('cc-switch', 'gpt-5.6-terra')).toBe(false)
+    // 读访问不依赖 settings 服务,写面缺席(spawn 校验仍可用)。
+    expect(access.setModelGrant).toBeUndefined()
+  })
+})
+
+describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)', () => {
+  it('授权/撤销与角色覆盖写入都落到命名空间,deepseek 为 no-op', async () => {
+    const calls: Array<{ ns: string; patch: object }> = []
+    let disposer: (() => void) | undefined
+    const settingsCtx = {
+      settings: fakeSettings(calls),
+      effect: (fn: () => () => void) => { disposer = fn() },
+    }
+    const access: AgentTeamSettingsAccess = settingsAccessFromConfig({
+      enabledModels: { 'kimi-coding/kimi-k2.7-code': true },
+      roleDefaults: {},
+    })
+    wireAgentTeamSettings(settingsCtx, access)
+
+    await access.setModelGrant?.('cc-switch', 'gpt-5.6-terra', true)
+    expect(calls[0]).toEqual({
+      ns: 'agent-team-web',
+      patch: { enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'cc-switch/gpt-5.6-terra': true } },
+    })
+
+    // deepseek 名下隐式恒授权 → 不落盘
+    await access.setModelGrant?.('deepseek-official', 'deepseek-v4-flash', true)
+    expect(calls).toHaveLength(1)
+
+    // 撤销 = 写 false(键保留,语义显式)
+    await access.setModelGrant?.('cc-switch', 'gpt-5.6-terra', false)
+    expect(calls[1]?.patch).toEqual({
+      enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'cc-switch/gpt-5.6-terra': false },
+    })
+
+    // 角色覆盖写 + 「默认」删覆盖
+    await access.setRoleDefault?.('engineer', { model: 'gpt-5.6-terra' })
+    expect(calls[2]?.patch).toEqual({ roleDefaults: { engineer: { model: 'gpt-5.6-terra' } } })
+    await access.setRoleDefault?.('engineer', undefined)
+    expect(calls[3]?.patch).toEqual({ roleDefaults: {} })
+
+    // 释放:写面清空(读访问由 config 闭包持有,不随之清空)
+    disposer?.()
+    expect(access.setModelGrant).toBeUndefined()
+    expect(access.setRoleDefault).toBeUndefined()
+    expect(access.modelGrantedFor?.('deepseek-official', 'x')).toBe(true)
+  })
+
+  it('settings 服务缺席(headless)→ 写面保持缺席,读访问不受影响', () => {
+    const access: AgentTeamSettingsAccess = settingsAccessFromConfig({ enabledModels: {} })
+    wireAgentTeamSettings({}, access)
+    expect(access.setModelGrant).toBeUndefined()
+    expect(access.setRoleDefault).toBeUndefined()
+    expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-pro')).toBe(true)
   })
 })

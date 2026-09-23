@@ -103,6 +103,12 @@ export interface Config {
      * the parent preset instead of inheriting the parent agent scope.
      */
     registration?: 'lazy' | 'eager';
+    /** 模型调度授权(key `${provider}/${model}` → true 授权)。设置页写面字段,
+     * 必须 volatile;缺省 = 空 map(仅 deepseek-official 恒授权)。 */
+    enabledModels?: Record<string, boolean>;
+    /** 角色档位覆盖(roleKey → 档位)。设置页写面字段,必须 volatile;缺省回落到
+     * profile.roleLlmDefaults → 内置 DEFAULT_ROLE_LLM。 */
+    roleDefaults?: Record<string, MemberLlmDefaults>;
 }
 export declare const Config: z<Config>;
 export declare function apply(ctx: Context, config: Config): void;

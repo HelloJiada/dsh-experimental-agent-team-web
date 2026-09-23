@@ -40,15 +40,26 @@ export interface AgentTeamSettingsValue {
     /** 角色默认档位覆盖:roleKey → 档位;缺失 = 走 profile.roleLlmDefaults → DEFAULT_ROLE_LLM。 */
     readonly roleDefaults?: Record<string, RoleLlmDefaultValue>;
 }
+/** 两个设置字段的 schema 片段。宿主插件把它们并入自己的 `Config`
+ * (组合 entry id = 命名空间 `agent-team-web`),标记因此只有一处定义。
+ * 显式类型注解避免声明发射引用深层 pnpm 路径(TS2742)。 */
+export declare const AgentTeamSettingsFields: {
+    enabledModels: z<Record<string, boolean>>;
+    roleDefaults: z<Record<string, RoleLlmDefaultValue>>;
+};
+/** 设置页字段的合成视图(类型消费者与测试用)。 */
 export declare const AgentTeamSettingsSchema: z<AgentTeamSettingsValue>;
 /** 复合授权 key:`${provider}/${model}`(跨 provider 同名模型不撞车)。 */
 export declare function modelKey(provider: string, model: string): string;
-/** 宿主 settings 服务的最小契约面（register 返回命名空间 scope）。 */
+/** 宿主 settings 服务的最小契约面。
+ *
+ * DSH 0.1.7 的 `SettingsForms` 只有 `describe/update/replace/mutate/configure`
+ * —— 旧版的 `register(ns, schema)` 已移除,设置命名空间不再是独立注册的
+ * 对象,而是**组合 entry 的 id**,其 schema 即该 entry 插件的 `Config`。
+ * 因此本插件的设置字段必须住在自己的 `Config` 里(见 index.ts)。
+ */
 export interface SettingsSurface {
-    register(ns: SettingsNamespace, schema: unknown): SettingsScope;
-    describe(options?: {
-        redactSecrets?: boolean;
-    }): readonly SettingsDescriptor[];
+    update(ns: string, patch: object, expectedRevision?: number): Promise<void>;
 }
 /** 一个已注册命名空间的描述（配置 UI / 读取方消费）。 */
 export interface SettingsDescriptor {
@@ -58,7 +69,8 @@ export interface SettingsDescriptor {
     readonly revision: number;
     readonly applies: 'live' | 'restart';
 }
-/** 命名空间 owner 侧句柄（与宿主 dsh-settings SettingsScope 同构的子集）。 */
+/** 旧版(`register` 返回命名空间 scope)的 SettingsScope 形状,保留仅作类型
+ * 参考,不再参与接线。 */
 export interface SettingsScope {
     /** 当前 resolved value：schema 默认值 → base → 用户层。同步。 */
     get(): unknown;
@@ -66,15 +78,13 @@ export interface SettingsScope {
     update(patch: object): Promise<void>;
     replace(section: object): Promise<void>;
 }
-/** 注册 AgentTeam 设置中心命名空间，返回命名空间 scope（设置页渲染 + spawn 校验共用）。 */
-export declare function registerAgentTeamSettings(sctx: unknown): SettingsScope;
-/** 模型授权判定(基于 scope resolved value):deepseek-official 名下模型恒
- * 授权(回退不死路);其余看 enabledModels[`${provider}/${model}`] 开关。 */
-export declare function modelGrantedFromScope(scope: SettingsScope, provider: string, model: string): boolean;
-/** 角色档位解析(settings 覆盖 → profile.roleLlmDefaults → DEFAULT_ROLE_LLM
- * 三源链):settings.roleDefaults[roleKey] 存在即用之(「默认」= 删该覆盖);
+/** 模型授权判定(基于 apply 期 Config 的 enabledModels):deepseek-official
+ * 名下模型恒授权(回退不死路);其余看 enabledModels[`${provider}/${model}`]。 */
+export declare function modelGrantedFromValue(value: AgentTeamSettingsValue | undefined, provider: string, model: string): boolean;
+/** 角色档位解析(config 覆盖 → profile.roleLlmDefaults → DEFAULT_ROLE_LLM
+ * 三源链):config.roleDefaults[roleKey] 存在即用之(「默认」= 删覆盖);
  * 否则 profile 档位;再否则内置档位。 */
-export declare function resolveRoleDefaults(scope: SettingsScope, profile: Record<string, RoleLlmDefaultValue> | undefined, builtin: Record<string, RoleLlmDefaultValue> | undefined, roleKey: string): RoleLlmDefaultValue | undefined;
+export declare function resolveRoleDefault(value: AgentTeamSettingsValue | undefined, profile: Record<string, RoleLlmDefaultValue> | undefined, builtin: Record<string, RoleLlmDefaultValue> | undefined, roleKey: string): RoleLlmDefaultValue | undefined;
 /** 设置中心的工具侧/写面共享访问对象（apply 期接线写入，作用域释放清空）。 */
 export interface AgentTeamSettingsAccess {
     /** spawn 校验模型授权(tools.ts 读)；undefined → 仅 deepseek-official 恒授权。 */
@@ -90,9 +100,15 @@ export interface AgentTeamSettingsAccess {
     /** 角色档位覆盖写入(设置页 RolePresetCard)；value=undefined → 删覆盖回「默认」。 */
     setRoleDefault?: (roleKey: string, value: RoleLlmDefaultValue | undefined) => Promise<void>;
 }
-/** apply 期接线（在 ctx.inject(['settings']) 作用域内调用）：
- * 捕获 scope 经闭包写入 access(判定/快照/写面);settings 作用域释放时
- * 全部清空(sctx.effect 注册 disposer)。工具 execute 与 HTTP 路由、快照
- * 采集经 access 读写。 */
+/** 从 apply 期 Config 直接构造读访问对象。
+ *
+ * DSH 0.1.7 没有 `settings.register`,设置字段只能住在插件自己的 `Config`
+ * 里(entry id = `agent-team-web`,与设置页命名空间同名);因此工具侧/快照
+ * 采集直接读本次 apply 的 config。一次 volatile 写入由 Loader 重新应用本
+ * entry,闭包随之拿到新值。 */
+export declare function settingsAccessFromConfig(config: AgentTeamSettingsValue): AgentTeamSettingsAccess;
+/** 接线写面(HTTP 路由第二写面):经宿主 `settings.update(ns, patch)` 写入
+ * 组合 entry 的 volatile 字段。settings 服务缺席(headless)时写面保持
+ * undefined → 路由 503,读访问不受影响。 */
 export declare function wireAgentTeamSettings(settingsCtx: unknown, access: AgentTeamSettingsAccess): void;
 //# sourceMappingURL=provider-grants.d.ts.map

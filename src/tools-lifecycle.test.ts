@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { registerAgentTeamsTools, type ToolsConfig } from './tools.ts'
 import { BEST_PRACTICES_FILE, type BestPracticeEntry } from './best-practices.ts'
-import { AGENT_TEAM_SETTINGS_NS, wireAgentTeamSettings } from './provider-grants.ts'
+import { settingsAccessFromConfig } from './provider-grants.ts'
 import { readTeam } from './state.ts'
 import type { TeamMember, TeamState, TeamTask } from './types.ts'
 
@@ -492,12 +492,12 @@ describe('agent_teams_add_member — 添加成员', () => {
     expect(persisted?.members.find(m => m.name === '技术员')?.provider).toBe('kimi-coding')
   })
 
-  it('模型授权:真实 scope 穿透——inject 捕获的 settings scope 真正被 execute 使用', async () => {
-    // 全链路验证(t13 接线):wireAgentTeamSettings(inject 作用域捕获 register()
-    // 返回的 scope,经闭包写入 config.modelGrantedFor)→ registerAgentTeamsTools
-    // → add_member execute 读 config.modelGrantedFor。工具 ctx 不含 settings
-    // stub —— 若接线断裂(直读 ctx.settings 或 scope 未穿透),授权判定恒 false,
-    // 本用例必回退 deepseek-official 而失败。
+  it('模型授权:config 穿透——apply 期 config 的 enabledModels 真正被 execute 使用', async () => {
+    // 全链路验证:设置字段住在插件 Config 里,apply 期用
+    // settingsAccessFromConfig(config) 造出读访问对象并交给
+    // registerAgentTeamsTools → add_member execute 读 config.modelGrantedFor。
+    // 工具 ctx 不含 settings stub —— 若接线断裂或 config 未穿透,授权判定恒
+    // false,本用例必回退 deepseek-official 而失败。
     const tools = new Map<string, CapturedTool>()
     const executeCtx = {
       tools: { register: (def: CapturedTool) => { tools.set(def.name, def); return def } },
@@ -519,22 +519,11 @@ describe('agent_teams_add_member — 添加成员', () => {
         startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
       },
     } as unknown as Context
-    // 模拟 apply 期:settings 服务在 inject 作用域内注册命名空间并返回 scope。
-    const scope = {
-      get: () => ({ enabledModels: { 'kimi-coding/kimi-k2.7-code': true }, roleDefaults: {} }),
-      watch: () => () => undefined,
-      update: async () => undefined,
-      replace: async () => undefined,
+    // 模拟 apply 期:config 携带已授权的复合 key(写面此时缺席,读访问不受影响)。
+    const wiredConfig = {
+      ...config,
+      ...settingsAccessFromConfig({ enabledModels: { 'kimi-coding/kimi-k2.7-code': true }, roleDefaults: {} }),
     }
-    const settingsCtx = {
-      settings: {
-        register: () => scope,
-        describe: () => [{ ns: AGENT_TEAM_SETTINGS_NS, schema: {}, value: { enabledModels: { 'kimi-coding/kimi-k2.7-code': true } }, revision: 0, applies: 'live' }],
-      },
-      effect: () => () => undefined,
-    }
-    const wiredConfig = { ...config }
-    wireAgentTeamSettings(settingsCtx, wiredConfig)
     registerAgentTeamsTools(executeCtx, wiredConfig)
     const execTool = (name: string): CapturedTool => {
       const def = tools.get(name)

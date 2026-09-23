@@ -36,7 +36,12 @@ import type { AgentTeamsActivation } from './command.ts'
 import { installAgentTeamsGestureBoundary, registerAgentTeamsCommand } from './command.ts'
 import { handleCloseTeam } from './close-route.ts'
 import { handleProviderGrant } from './provider-grant-route.ts'
-import { wireAgentTeamSettings, type AgentTeamSettingsAccess } from './provider-grants.ts'
+import {
+  AgentTeamSettingsFields,
+  settingsAccessFromConfig,
+  wireAgentTeamSettings,
+  type AgentTeamSettingsAccess,
+} from './provider-grants.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -152,6 +157,12 @@ export interface Config {
    * the parent preset instead of inheriting the parent agent scope.
    */
   registration?: 'lazy' | 'eager'
+  /** 模型调度授权(key `${provider}/${model}` → true 授权)。设置页写面字段,
+   * 必须 volatile;缺省 = 空 map(仅 deepseek-official 恒授权)。 */
+  enabledModels?: Record<string, boolean>
+  /** 角色档位覆盖(roleKey → 档位)。设置页写面字段,必须 volatile;缺省回落到
+   * profile.roleLlmDefaults → 内置 DEFAULT_ROLE_LLM。 */
+  roleDefaults?: Record<string, MemberLlmDefaults>
 }
 
 export const Config: z<Config> = z.object({
@@ -172,6 +183,12 @@ export const Config: z<Config> = z.object({
   slashCommand: z.boolean().default(true),
   trustedHosts: z.array(z.string()).default([]),
   registration: z.union(['lazy', 'eager'] as const).default('lazy'),
+  // 设置页写面字段。DSH 0.1.7 的设置命名空间就是组合 entry 的 id,其 schema
+  // 即本插件 Config;只有标为 volatile 的字段才会出现在设置表单里并接受
+  // 即时写入(settings/schema.ts 的 volatileForm / isVolatilePath)。这两个
+  // 字段与 AgentTeamSettingsFields 共用同一份 volatile schema。
+  enabledModels: AgentTeamSettingsFields.enabledModels,
+  roleDefaults: AgentTeamSettingsFields.roleDefaults,
 })
 
 /**
@@ -243,13 +260,12 @@ export function apply(ctx: Context, config: Config): void {
   // member spawn (`spawnMember`), the earliest point the provider list is
   // settled, rather than here.
 
-  // AgentTeam 设置中心（t13:命名空间 agent-team-web,模型粒度授权 + 角色档位
-  // 覆盖）。t6 接线延续：在 inject 作用域内捕获 register() 返回的
-  // SettingsScope,经闭包写入 settingsAccess(判定/快照/写面);工具 execute
-  // 与 HTTP 路由、快照采集经 settingsAccess 读写;settings 作用域释放时
-  // 全部清空。headless 无 settings 服务 → 不注册,modelGrantedFor 保持
-  // undefined → spawn 校验退化为仅 deepseek-official 名下恒授权(默认语义)。
-  const settingsAccess: AgentTeamSettingsAccess = {}
+  // AgentTeam 设置中心(t13:模型粒度授权 + 角色档位覆盖)。DSH 0.1.7 起设置
+  // 命名空间就是组合 entry id(`agent-team-web`),其 schema 即本插件 Config,
+  // 故读访问直接取本次 apply 的 config(volatile 写入会重新应用本 entry);
+  // 写面仅为 HTTP 第二通道保留,经宿主 settings.update 落盘,settings 服务
+  // 缺席(headless)时保持 undefined → 路由 503,读访问不受影响。
+  const settingsAccess: AgentTeamSettingsAccess = settingsAccessFromConfig(config)
   ctx.inject(['settings'], (settingsCtx) => {
     wireAgentTeamSettings(settingsCtx, settingsAccess)
   })

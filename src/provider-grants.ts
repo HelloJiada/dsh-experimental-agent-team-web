@@ -63,13 +63,25 @@ const roleDefaultsSchema = z.dict(z.object({
   reasoningEffort: z.string(),
 })).default({})
 
-// DSH settings accepts live edits only below fields marked `volatile`.
-// Schemastery 3.18 exposes this metadata directly rather than through a
-// `.volatile()` builder; without it, Host rejects the setting then restores the
-// old snapshot, making the UI controls appear to do nothing.
+// DSH 只接受 volatile 字段下的设置页即时写入(settings/schema.ts 的
+// isVolatilePath),且 volatileForm 会跳过没有 volatile 字段的 entry。若少
+// 了该标记,宿主既不暴露可编辑表单、也拒绝一切写入——控件点了等于没点。
+// Schemastery 3.18 以元数据形式暴露它(无 .volatile() 构造器)。
 ;(enabledModelsSchema.meta as Record<string, unknown>).volatile = true
 ;(roleDefaultsSchema.meta as Record<string, unknown>).volatile = true
 
+/** 两个设置字段的 schema 片段。宿主插件把它们并入自己的 `Config`
+ * (组合 entry id = 命名空间 `agent-team-web`),标记因此只有一处定义。
+ * 显式类型注解避免声明发射引用深层 pnpm 路径(TS2742)。 */
+export const AgentTeamSettingsFields: {
+  enabledModels: z<Record<string, boolean>>
+  roleDefaults: z<Record<string, RoleLlmDefaultValue>>
+} = {
+  enabledModels: enabledModelsSchema,
+  roleDefaults: roleDefaultsSchema,
+}
+
+/** 设置页字段的合成视图(类型消费者与测试用)。 */
 export const AgentTeamSettingsSchema: z<AgentTeamSettingsValue> = z.object({
   enabledModels: enabledModelsSchema,
   roleDefaults: roleDefaultsSchema,
@@ -80,10 +92,15 @@ export function modelKey(provider: string, model: string): string {
   return `${provider}/${model}`
 }
 
-/** 宿主 settings 服务的最小契约面（register 返回命名空间 scope）。 */
+/** 宿主 settings 服务的最小契约面。
+ *
+ * DSH 0.1.7 的 `SettingsForms` 只有 `describe/update/replace/mutate/configure`
+ * —— 旧版的 `register(ns, schema)` 已移除,设置命名空间不再是独立注册的
+ * 对象,而是**组合 entry 的 id**,其 schema 即该 entry 插件的 `Config`。
+ * 因此本插件的设置字段必须住在自己的 `Config` 里(见 index.ts)。
+ */
 export interface SettingsSurface {
-  register(ns: SettingsNamespace, schema: unknown): SettingsScope
-  describe(options?: { redactSecrets?: boolean }): readonly SettingsDescriptor[]
+  update(ns: string, patch: object, expectedRevision?: number): Promise<void>
 }
 
 /** 一个已注册命名空间的描述（配置 UI / 读取方消费）。 */
@@ -95,7 +112,8 @@ export interface SettingsDescriptor {
   readonly applies: 'live' | 'restart'
 }
 
-/** 命名空间 owner 侧句柄（与宿主 dsh-settings SettingsScope 同构的子集）。 */
+/** 旧版(`register` 返回命名空间 scope)的 SettingsScope 形状,保留仅作类型
+ * 参考,不再参与接线。 */
 export interface SettingsScope {
   /** 当前 resolved value：schema 默认值 → base → 用户层。同步。 */
   get(): unknown
@@ -104,33 +122,26 @@ export interface SettingsScope {
   replace(section: object): Promise<void>
 }
 
-/** 注册 AgentTeam 设置中心命名空间，返回命名空间 scope（设置页渲染 + spawn 校验共用）。 */
-export function registerAgentTeamSettings(sctx: unknown): SettingsScope {
-  const settings = (sctx as { settings?: SettingsSurface }).settings
-  if (settings === undefined) {
-    throw new Error('settings service is not available to register agent-team-web')
-  }
-  return settings.register(AGENT_TEAM_SETTINGS_NS, AgentTeamSettingsSchema)
-}
-
-/** 模型授权判定(基于 scope resolved value):deepseek-official 名下模型恒
- * 授权(回退不死路);其余看 enabledModels[`${provider}/${model}`] 开关。 */
-export function modelGrantedFromScope(scope: SettingsScope, provider: string, model: string): boolean {
+/** 模型授权判定(基于 apply 期 Config 的 enabledModels):deepseek-official
+ * 名下模型恒授权(回退不死路);其余看 enabledModels[`${provider}/${model}`]。 */
+export function modelGrantedFromValue(
+  value: AgentTeamSettingsValue | undefined,
+  provider: string,
+  model: string,
+): boolean {
   if (provider === 'deepseek-official') return true
-  const value = scope.get() as AgentTeamSettingsValue | undefined
   return value?.enabledModels?.[modelKey(provider, model)] === true
 }
 
-/** 角色档位解析(settings 覆盖 → profile.roleLlmDefaults → DEFAULT_ROLE_LLM
- * 三源链):settings.roleDefaults[roleKey] 存在即用之(「默认」= 删该覆盖);
+/** 角色档位解析(config 覆盖 → profile.roleLlmDefaults → DEFAULT_ROLE_LLM
+ * 三源链):config.roleDefaults[roleKey] 存在即用之(「默认」= 删覆盖);
  * 否则 profile 档位;再否则内置档位。 */
-export function resolveRoleDefaults(
-  scope: SettingsScope,
+export function resolveRoleDefault(
+  value: AgentTeamSettingsValue | undefined,
   profile: Record<string, RoleLlmDefaultValue> | undefined,
   builtin: Record<string, RoleLlmDefaultValue> | undefined,
   roleKey: string,
 ): RoleLlmDefaultValue | undefined {
-  const value = scope.get() as AgentTeamSettingsValue | undefined
   const override = value?.roleDefaults?.[roleKey]
   if (override !== undefined) return override
   return profile?.[roleKey] ?? builtin?.[roleKey]
@@ -152,43 +163,40 @@ export interface AgentTeamSettingsAccess {
   setRoleDefault?: (roleKey: string, value: RoleLlmDefaultValue | undefined) => Promise<void>
 }
 
-/** apply 期接线（在 ctx.inject(['settings']) 作用域内调用）：
- * 捕获 scope 经闭包写入 access(判定/快照/写面);settings 作用域释放时
- * 全部清空(sctx.effect 注册 disposer)。工具 execute 与 HTTP 路由、快照
- * 采集经 access 读写。 */
+/** 从 apply 期 Config 直接构造读访问对象。
+ *
+ * DSH 0.1.7 没有 `settings.register`,设置字段只能住在插件自己的 `Config`
+ * 里(entry id = `agent-team-web`,与设置页命名空间同名);因此工具侧/快照
+ * 采集直接读本次 apply 的 config。一次 volatile 写入由 Loader 重新应用本
+ * entry,闭包随之拿到新值。 */
+export function settingsAccessFromConfig(config: AgentTeamSettingsValue): AgentTeamSettingsAccess {
+  return {
+    modelGrantedFor: (provider: string, model: string) => modelGrantedFromValue(config, provider, model),
+    roleDefaultsFor: (roleKey: string) => config.roleDefaults?.[roleKey],
+    enabledModels: () => config.enabledModels ?? {},
+    roleDefaults: () => config.roleDefaults ?? {},
+  }
+}
+
+/** 接线写面(HTTP 路由第二写面):经宿主 `settings.update(ns, patch)` 写入
+ * 组合 entry 的 volatile 字段。settings 服务缺席(headless)时写面保持
+ * undefined → 路由 503,读访问不受影响。 */
 export function wireAgentTeamSettings(settingsCtx: unknown, access: AgentTeamSettingsAccess): void {
-  const scope = registerAgentTeamSettings(settingsCtx)
-  access.modelGrantedFor = (provider: string, model: string) => modelGrantedFromScope(scope, provider, model)
-  access.roleDefaultsFor = (roleKey: string) => {
-    const value = scope.get() as AgentTeamSettingsValue | undefined
-    return value?.roleDefaults?.[roleKey]
-  }
-  access.enabledModels = () => {
-    const value = scope.get() as AgentTeamSettingsValue | undefined
-    return value?.enabledModels ?? {}
-  }
-  access.roleDefaults = () => {
-    const value = scope.get() as AgentTeamSettingsValue | undefined
-    return value?.roleDefaults ?? {}
-  }
+  const settings = (settingsCtx as { settings?: SettingsSurface }).settings
+  if (settings === undefined) return
   access.setModelGrant = async (provider: string, model: string, enabled: boolean): Promise<void> => {
     if (provider === 'deepseek-official') return // 隐式恒授权,永不落盘
-    const current = scope.get() as AgentTeamSettingsValue | undefined
+    const current = access.enabledModels?.() ?? {}
     const key = modelKey(provider, model)
-    await scope.update({ enabledModels: { ...(current?.enabledModels ?? {}), [key]: enabled } })
+    await settings.update(String(AGENT_TEAM_SETTINGS_NS), { enabledModels: { ...current, [key]: enabled } })
   }
   access.setRoleDefault = async (roleKey: string, value: RoleLlmDefaultValue | undefined): Promise<void> => {
-    const current = scope.get() as AgentTeamSettingsValue | undefined
-    const next = { ...(current?.roleDefaults ?? {}) }
+    const next = { ...(access.roleDefaults?.() ?? {}) }
     if (value === undefined) delete next[roleKey] // 「默认」= 删覆盖
     else next[roleKey] = value
-    await scope.update({ roleDefaults: next })
+    await settings.update(String(AGENT_TEAM_SETTINGS_NS), { roleDefaults: next })
   }
   const dispose = (): void => {
-    access.modelGrantedFor = undefined
-    access.roleDefaultsFor = undefined
-    access.enabledModels = undefined
-    access.roleDefaults = undefined
     access.setModelGrant = undefined
     access.setRoleDefault = undefined
   }
