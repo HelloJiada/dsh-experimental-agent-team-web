@@ -6,23 +6,21 @@ import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 /** Current DSH navigation is owned by the workspace UI, not `ctx.sessions`. */
 export interface AgentTeamsSessionNavigator {
-  readonly sessions: Pick<ISessions, 'refreshSubagents' | 'subagentAddress'>
+  readonly sessions: Pick<ISessions, 'subagentAddress'>
   readonly openSession: UiWorkspace['openSession']
 }
 
 /**
  * Open one member's persisted transcript.
  *
- * Cold subagents are intentionally absent from the ordinary session catalog.
- * Rediscover the direct-child address first, then let the workspace UI retain
- * and select that address. This preserves its lifecycle and selection ownership.
+ * The workspace UI resolves and retains direct-child addresses as it opens
+ * them, preserving its lifecycle and selection ownership.
  */
 export async function openAgentTeamMember(
   navigator: AgentTeamsSessionNavigator,
   parentSessionId: SessionId,
   childSessionId: SessionId,
 ): Promise<'subagent'> {
-  await navigator.sessions.refreshSubagents(parentSessionId)
   const retained = navigator.sessions.subagentAddress(childSessionId)
   navigator.openSession(retained?.parentSessionId === parentSessionId
     ? retained

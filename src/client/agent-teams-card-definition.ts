@@ -121,34 +121,15 @@ export const agentTeamsCardDefinition: ConversationNodeDefinition<AgentTeamsNode
   },
   update: (context, match) => {
     if (match.event.type !== 'tool/result') return context.state
-    const failed = match.event.data.error !== undefined
-      || match.event.data.message.content.some((block) => block.type === 'tool-result' && block.isError === true)
-    if (failed) return context.state
-    for (const block of match.event.data.message.content) {
-      const parsed = parseAgentTeamsCreateResult(block)
-      if (parsed !== undefined) {
-        return {
-          ...context.state,
-          teamId: parsed.teamId,
-          ...(parsed.name === undefined ? {} : { name: parsed.name }),
-          ...(parsed.captainSessionId === undefined ? {} : { captainSessionId: parsed.captainSessionId }),
-          accepted: true,
-        }
-      }
-      if (block.type === 'tool-result') {
-        const nested = parseAgentTeamsCreateResult(block.content)
-        if (nested !== undefined) {
-          return {
-            ...context.state,
-            teamId: nested.teamId,
-            ...(nested.name === undefined ? {} : { name: nested.name }),
-            ...(nested.captainSessionId === undefined ? {} : { captainSessionId: nested.captainSessionId }),
-            accepted: true,
-          }
-        }
-      }
+    if (match.event.data.error !== undefined) return context.state
+    const parsed = parseAgentTeamsCreateResult(match.event.data.message.content)
+    return parsed === undefined ? context.state : {
+      ...context.state,
+      teamId: parsed.teamId,
+      ...(parsed.name === undefined ? {} : { name: parsed.name }),
+      ...(parsed.captainSessionId === undefined ? {} : { captainSessionId: parsed.captainSessionId }),
+      accepted: true,
     }
-    return context.state
   },
   buildViewNode: (context): ChatConversationViewNode | null => {
     if (context.start === undefined) return null

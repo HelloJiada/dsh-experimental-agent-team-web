@@ -22,7 +22,7 @@ import {
   type CSSProperties, type PointerEvent as ReactPointerEvent,
 } from 'react'
 import {
-  IconBranchOutline16, IconChevronDownOutline14, IconCloseOutline16, IconPanelLeftOutline16,
+  IconBranchOutlineRegular, IconChevronDownOutlineMedium, IconCloseOutlineRegular, IconPanelLeftOutlineMedium,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -489,7 +489,7 @@ function DependencyMap({ tasks, t, compact = false }: {
     <section className={css.dependencySection} aria-label={t('dependency.aria')} data-dependency-map>
       <header className={css.sectionHead}>
         <button type="button" className={css.sectionToggleTitle} onClick={() => { setOpen((current) => !current) }} aria-expanded={open}>
-          <Chevron open={open} /><IconBranchOutline16 /> {t(parallel ? 'dependency.parallel' : 'dependency.title')}
+          <Chevron open={open} /><IconBranchOutlineRegular /> {t(parallel ? 'dependency.parallel' : 'dependency.title')}
         </button>
         <span className={css.sectionHint}>{pinnedTaskId === null
           ? t(parallel ? 'dependency.hint.parallel' : 'dependency.hint.chain')
@@ -1461,7 +1461,7 @@ export function ActivityPanel({ sessionsList, isCurrentSession, openMember, t }:
                   aria-label={t(geometry.mode === 'docked' ? 'activity.float' : 'activity.dockRight')}
                   title={t(geometry.mode === 'docked' ? 'activity.float' : 'activity.dockRight')}
                 >
-                  <IconPanelLeftOutline16 />
+                  <IconPanelLeftOutlineMedium />
                 </button>
               )}
               <button
@@ -1479,7 +1479,7 @@ export function ActivityPanel({ sessionsList, isCurrentSession, openMember, t }:
                 aria-label={t('activity.collapse')}
                 title={t('activity.collapse')}
               >
-                <IconChevronDownOutline14 />
+                <IconChevronDownOutlineMedium />
               </button>
               {liveTeam !== undefined && (
                 <button

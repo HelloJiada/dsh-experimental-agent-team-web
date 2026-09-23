@@ -18,8 +18,23 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import { IconBrowseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { IconBrowseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+
+/** Minimal settings namespace face retained for the panel's host bridge. */
+export interface SettingsScopeSnapshot<T> {
+  readonly status: 'loading' | 'ready' | 'unavailable'
+  readonly value: T | undefined
+  readonly base: unknown
+  readonly user: unknown
+  readonly revision: number | undefined
+  readonly writable: boolean
+  readonly mode: 'host' | 'memory'
+}
+export interface SettingsScope<T> {
+  getSnapshot(): SettingsScopeSnapshot<T>
+  subscribe(listener: () => void): () => void
+  set(field: string, value: unknown): Promise<void>
+}
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { agentTeamsWebToken } from './activity-monitor.ts'
 import type { AgentTeamsTranslate } from './locales.ts'
@@ -86,7 +101,7 @@ export interface RolePresetTemplate {
 
 /** 注入面:scope(读写命名空间) + t(文案)。 */
 export interface ProviderGrantsSectionInjected {
-  scope: SettingsScope<ProviderGrantsSectionValue>
+  scope?: SettingsScope<ProviderGrantsSectionValue>
   t: AgentTeamsTranslate
 }
 
@@ -895,7 +910,7 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                 title={`${t('settings.agentTeam.viewAria')}: ${row.role}`}
                 onClick={() => { setViewing(row) }}
               >
-                <IconBrowseOutline16 />
+                <IconBrowseOutlineRegular />
               </button>
             </li>
           )

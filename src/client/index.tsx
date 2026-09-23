@@ -115,21 +115,16 @@ export function apply(ctx: ClientContext): void {
     }),
   }, AgentTeamsCard))
 
-  // AgentTeam 设置中心(t13):settings.section 一张 section 两张卡(模型调度
-  // 授权 + 角色预设),导航改名 AgentTeam。scope 在 apply 期 bind 一次(照
-  // ui-settings-models 先例,注入面引用稳定对象;不在注入面每次调用时 bind,
-  // 避免渲染期建 controller + 注册 effect)。
+  // DSH 0.1.7 no longer exposes namespace scope binding from the public
+  // ui-settings client contract. Keep the section registered as a read-only
+  // overview until an external binder is published again.
   const sectionT = ctx.locale.bind(AGENT_TEAMS_LOCALE_NAMESPACE) as (key: AgentTeamsLocaleKey) => string
-  const agentTeamSettingsScope = ctx.settingsScope.bind<ProviderGrantsSectionValue>({
-    namespace: PROVIDER_GRANTS_NAMESPACE,
-  })
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'agent-team-web',
     order: 100,
     label: () => sectionT('settings.agentTeam.title'),
     inject: (): ProviderGrantsSectionInjected => ({
-      scope: agentTeamSettingsScope,
       t: sectionT,
     }),
   }, ProviderGrantsSection))

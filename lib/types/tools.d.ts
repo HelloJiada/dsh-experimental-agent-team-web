@@ -64,7 +64,7 @@ export declare function memberOpenTask(team: TeamState, memberName: string, exce
  * activity to `next-turn`. This prevents reports from waiting behind the
  * captain's entire orchestration turn.
  */
-export declare function steerCaptainReport(captain: Pick<Agent, 'steer'>, from: string, content: string): boolean;
+export declare function steerCaptainReport(captain: Pick<Agent, 'steer' | 'id'>, from: string, content: string): boolean;
 /** Process-wide AgentTeams runtime handles shared by every tool body. */
 export interface AgentTeamsRuntime {
     /**
