@@ -163,18 +163,48 @@ export interface AgentTeamSettingsAccess {
   setRoleDefault?: (roleKey: string, value: RoleLlmDefaultValue | undefined) => Promise<void>
 }
 
-/** 从 apply 期 Config 直接构造读访问对象。
+/** DSH 交付 volatile 配置字段的引用形状(schemastery 的 `volatile()` 分支在
+ * `Schema.resolve` 里把该字段包成 `createVolatile(value)`)。
+ *
+ * 宿主自己的插件同样按引用取值——例如 subagent 插件的
+ * `this.config.maxActiveSubagents.get()`。**volatile 字段在 apply 期不是裸值**:
+ * 直接当对象读(键查找)会恒得 undefined,写面看起来永远"没生效"。
+ * 本地结构化声明,避免依赖宿主侧的深层类型导出。 */
+export interface VolatileBox<T> {
+  get(): T | undefined
+}
+
+/** 取 volatile 字段的当前值:是引用就走 `.get()`(每次读都是最新值),
+ * 是裸值则原样返回(测试夹具与旧宿主)。 */
+export function unwrapVolatile<T>(value: unknown): T | undefined {
+  if (value === null || value === undefined) return undefined
+  if (typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function') {
+    return (value as VolatileBox<T>).get()
+  }
+  return value as T
+}
+
+/** apply 期 config 里两个设置字段的来源(运行时是 VolatileBox,测试里可以是裸值)。 */
+export interface AgentTeamSettingsSource {
+  readonly enabledModels?: unknown
+  readonly roleDefaults?: unknown
+}
+
+/** 从 apply 期 Config 构造读访问对象。
  *
  * DSH 0.1.7 没有 `settings.register`,设置字段只能住在插件自己的 `Config`
- * 里(entry id = `agent-team-web`,与设置页命名空间同名);因此工具侧/快照
- * 采集直接读本次 apply 的 config。一次 volatile 写入由 Loader 重新应用本
- * entry,闭包随之拿到新值。 */
-export function settingsAccessFromConfig(config: AgentTeamSettingsValue): AgentTeamSettingsAccess {
+ * 里(entry id = `agent-team-web`,与设置页命名空间同名)。两个字段是
+ * volatile:Loader 检测到"仅 volatile 变化"时**不重新 apply**,而是把新值
+ * 提交进运行中 fiber 的引用(`_commitVolatile` → `updateVolatile`)。因此这里
+ * 每次读都经 `unwrapVolatile` 现场取值,而不是在 apply 期快照一次。 */
+export function settingsAccessFromConfig(config: AgentTeamSettingsSource): AgentTeamSettingsAccess {
+  const enabledModels = (): Record<string, boolean> => unwrapVolatile<Record<string, boolean>>(config.enabledModels) ?? {}
+  const roleDefaults = (): Record<string, RoleLlmDefaultValue> => unwrapVolatile<Record<string, RoleLlmDefaultValue>>(config.roleDefaults) ?? {}
   return {
-    modelGrantedFor: (provider: string, model: string) => modelGrantedFromValue(config, provider, model),
-    roleDefaultsFor: (roleKey: string) => config.roleDefaults?.[roleKey],
-    enabledModels: () => config.enabledModels ?? {},
-    roleDefaults: () => config.roleDefaults ?? {},
+    modelGrantedFor: (provider: string, model: string) => modelGrantedFromValue({ enabledModels: enabledModels() }, provider, model),
+    roleDefaultsFor: (roleKey: string) => roleDefaults()[roleKey],
+    enabledModels,
+    roleDefaults,
   }
 }
 

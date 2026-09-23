@@ -123,6 +123,22 @@ describe('settingsAccessFromConfig — 读访问直接来自 apply 期 config', 
     expect(access.roleDefaults?.()).toEqual({ engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra' } })
   })
 
+  it('volatile 引用在 apply 后更新时，每次读取均取得新快照', () => {
+    let models: Record<string, boolean> = {}
+    let roles: Record<string, { provider: string; model: string }> = {}
+    const access = settingsAccessFromConfig({
+      enabledModels: { get: () => models },
+      roleDefaults: { get: () => roles },
+    })
+    expect(access.modelGrantedFor?.('cc-switch', 'gpt-5.6-terra')).toBe(false)
+    models = { 'cc-switch/gpt-5.6-terra': true }
+    roles = { engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra' } }
+    expect(access.modelGrantedFor?.('cc-switch', 'gpt-5.6-terra')).toBe(true)
+    expect(access.enabledModels?.()).toEqual(models)
+    expect(access.roleDefaultsFor?.('engineer')).toEqual(roles.engineer)
+    expect(access.roleDefaults?.()).toEqual(roles)
+  })
+
   it('缺省 config → 空 map 且仅 deepseek 恒授权', () => {
     const access = settingsAccessFromConfig({})
     expect(access.enabledModels?.()).toEqual({})
