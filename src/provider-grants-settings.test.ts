@@ -185,3 +185,21 @@ describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)'
     expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-pro')).toBe(true)
   })
 })
+
+describe('插件 Config 就是设置命名空间(防回归)', () => {
+  it('entry Config 必须携带两个 volatile 字段 —— 否则设置页整页消失', async () => {
+    // DSH 0.1.7 的 SettingsForms.describe() 以组合 entry 的 Config 为 schema,
+    // volatileForm() 会跳过没有 volatile 字段的 entry;write() 也只放行
+    // volatile 路径。字段一旦离开 Config(比如改回「独立注册命名空间」),
+    // 本用例先红,而不是等到用户点不动才发现。
+    const { Config } = await import('./index.ts')
+    const form = AgentTeamSettingsFields
+    expect(volatileOf(form.enabledModels)).toBe(true)
+    expect(volatileOf(form.roleDefaults)).toBe(true)
+    // Config 复用同一份 schema 实例,故标记与字段名同时被钉住。
+    expect(Config.dict?.enabledModels).toBe(form.enabledModels)
+    expect(Config.dict?.roleDefaults).toBe(form.roleDefaults)
+    expect(volatileOf(Config.dict?.enabledModels)).toBe(true)
+    expect(volatileOf(Config.dict?.roleDefaults)).toBe(true)
+  })
+})
