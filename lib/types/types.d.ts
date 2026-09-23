@@ -179,6 +179,22 @@ export interface TeamTask {
     acceptanceHistory?: AcceptanceRevision[];
     /** Structured output boundary. */
     verification?: TaskVerification;
+    /** Frozen original single-task boundary; absent on legacy tasks (not retroactively protected). */
+    scopeContract?: {
+        readonly originalAcceptance: string;
+        readonly originalDeliverable?: string;
+        readonly excluded: readonly string[];
+        readonly maxInvestigations: number;
+        readonly investigationsUsed: number;
+        readonly findings: readonly {
+            readonly summary: string;
+            readonly evidence: string;
+            readonly relation: 'blocks-acceptance' | 'data-loss' | 'security' | 'unrelated' | 'uncertain';
+            readonly disposition: 'pending-captain' | 'approved' | 'deferred';
+        }[];
+        readonly awaitingCaptain: boolean;
+        readonly originalAcceptanceMet: boolean;
+    };
     /** 中间态:任务完成被政委门禁拦截,等待 pass 复核(改进 4)。
      * update_task 的完成请求被门禁拦截时置位,政委 verdict=pass 后清除,
      * 任务进入终结状态时兜底清除。与派生的 reviewRequired 不同:它表示

@@ -33,7 +33,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { type AgentTeamsRuntime, type ToolsConfig } from './tools.ts';
 /**
- * The 14 collaboration tools activated together, in protocol order.
+ * The collaboration tools activated together, in protocol order.
  *
  * MUST stay identical to what {@link registerAgentTeamsTools} registers: this
  * list is the `Tools:` line the captain protocol ends with, so a name that is
@@ -41,7 +41,7 @@ import { type AgentTeamsRuntime, type ToolsConfig } from './tools.ts';
  * `agent_teams_set_mode` was missing here until this list was pinned by
  * `activation.test.ts`.
  */
-export declare const TEAM_TOOL_NAMES: readonly ["agent_teams_create", "agent_teams_add_member", "agent_teams_remove_member", "agent_teams_create_task", "agent_teams_reassign_task", "agent_teams_claim_task", "agent_teams_update_task", "agent_teams_review_task", "agent_teams_send_message", "agent_teams_status", "agent_teams_retro_review", "agent_teams_best_practices", "agent_teams_set_mode", "agent_teams_delete"];
+export declare const TEAM_TOOL_NAMES: readonly ["agent_teams_create", "agent_teams_add_member", "agent_teams_remove_member", "agent_teams_create_task", "agent_teams_triage_finding", "agent_teams_reassign_task", "agent_teams_claim_task", "agent_teams_update_task", "agent_teams_review_task", "agent_teams_send_message", "agent_teams_status", "agent_teams_retro_review", "agent_teams_best_practices", "agent_teams_set_mode", "agent_teams_delete"];
 /**
  * Prompt-section name shared by the always-on hint and the activated
  * protocol. The agent-scoped protocol registers under this same name so it

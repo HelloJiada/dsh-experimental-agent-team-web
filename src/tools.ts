@@ -1136,6 +1136,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       checked: { type: 'array', items: { type: 'string' }, description: 'What this task verifies or covers.' },
       unchecked: { type: 'array', items: { type: 'string' }, description: 'Known scope not verified by this task.' },
       over_budget_decision_impact: { type: 'string', description: 'Required auditable explanation when a main task exceeds the decision-mode budget.' },
+      max_investigations: { type: 'number', description: 'Bounded follow-up investigations within this task (default 2); only meaningful with acceptance.' },
     },
     output: {
       schema: {
@@ -1233,6 +1234,10 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
             + 'Add the commissar back (agent_teams_set_mode) or create the task without risk=high/critical and milestone=true.',
           )
         }
+        if (args.max_investigations !== undefined
+          && (!Number.isSafeInteger(args.max_investigations) || args.max_investigations < 0 || args.max_investigations > 10)) {
+          throw new Error('max_investigations must be an integer between 0 and 10')
+        }
         const task: TeamTask = {
           id: `t${fresh.taskSeq + 1}`,
           subject: args.subject,
@@ -1256,6 +1261,16 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           ...outputKey !== undefined ? { deliverable: normalizedDeliverable!, deliverableKey: outputKey } : {},
           ...typeof args.acceptance === 'string' && args.acceptance.trim() !== '' ? { acceptance: args.acceptance.trim(), acceptanceRevision: 0 } : {},
           verification: { checked: args.checked ?? [], unchecked: args.unchecked ?? [] },
+          ...typeof args.acceptance === 'string' && args.acceptance.trim() !== '' ? { scopeContract: {
+            originalAcceptance: args.acceptance.trim(),
+            ...normalizedDeliverable === undefined ? {} : { originalDeliverable: normalizedDeliverable },
+            excluded: args.unchecked ?? [],
+            maxInvestigations: args.max_investigations ?? 2,
+            investigationsUsed: 0,
+            findings: [],
+            awaitingCaptain: false,
+            originalAcceptanceMet: false,
+          } } : {},
           ...budgetException !== undefined ? { budgetException } : {},
           contractRevision: 0,
           createdAt: Date.now(),
@@ -1298,6 +1313,56 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       // R-31:kick fire-and-forget,工具不等待全队派发完成。
       kickTeamAsync(workspace, team.id, captain)
       return created
+    },
+  }))
+
+  scopeCtx.tools.register(defineTool({
+    name: 'agent_teams_triage_finding',
+    description: 'Captain-only decision for one reported single-task discovery. Approve only a minimal blocker/safety repair; defer unrelated findings. Never silently enlarge original acceptance.',
+    parameters: {
+      task_id: { type: 'string', required: true },
+      finding_index: { type: 'number', required: true },
+      decision: { type: 'string', required: true, enum: ['approve', 'defer'] },
+      reason: { type: 'string', required: true },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: {
+        task_id: { type: 'string', required: true },
+        decision: { type: 'string', required: true },
+        awaiting_captain: { type: 'boolean', required: true },
+      } },
+      render: (_args, value) => [{ type: 'text', text: `Task ${value.task_id} discovery ${value.decision}; awaiting captain: ${value.awaiting_captain}` }],
+    },
+    async execute(args, exec) {
+      const captain = requireCaptain(exec)
+      const workspace = workspaceOf(captain)
+      const stateRoot = stateRootOf(workspace, config)
+      const team = await requireCaptainTeam(workspace, config, captain, warnSkippedTeamDir(ctx))
+      return withTeamLock(teamLockKey(stateRoot, team.id), async () => {
+        const fresh = await requireFreshCaptainTeam(stateRoot, team.id, captain.id)
+        const task = requireTask(fresh, args.task_id)
+        const scope = task.scopeContract
+        if (scope === undefined) throw new Error(`task ${task.id} is legacy and has no frozen scope contract`)
+        if (TERMINAL_TASK_STATUSES.includes(task.status)) throw new Error(`terminal task ${task.id} cannot be triaged`)
+        const finding = scope.findings[args.finding_index]
+        if (!Number.isSafeInteger(args.finding_index) || finding === undefined || finding.disposition !== 'pending-captain') {
+          throw new Error('finding index must identify a pending captain decision')
+        }
+        if (args.reason.trim() === '') throw new Error('scope triage reason must not be empty')
+        if (args.decision === 'approve' && finding.relation !== 'blocks-acceptance' && finding.relation !== 'data-loss' && finding.relation !== 'security') {
+          throw new Error('only an acceptance blocker, data loss or security finding may be approved in this task')
+        }
+        const findings = scope.findings.map((item, index) => index === args.finding_index
+          ? { ...item, disposition: args.decision === 'approve' ? 'approved' as const : 'deferred' as const,
+              evidence: `${item.evidence}\n队长裁决: ${args.reason.trim()}` }
+          : item)
+        task.scopeContract = { ...scope, findings,
+          awaitingCaptain: scope.investigationsUsed >= scope.maxInvestigations
+            || findings.some(item => item.disposition === 'pending-captain') }
+        task.updatedAt = Date.now()
+        await writeTeam(stateRoot, fresh)
+        return { task_id: task.id, decision: args.decision, awaiting_captain: task.scopeContract.awaitingCaptain }
+      })
     },
   }))
 
@@ -1493,6 +1558,9 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         // 队长例外(验收点②:队长手动 assignee 指定不受影响,队长决策权保留):
         // 队长是输入提供方——队长认领待输入任务即视为输入已提供,顺带清除标记
         // (与"开始执行即视为已提供输入"同一语义,显式 false 压制描述派生)。
+        if (task.scopeContract?.awaitingCaptain === true) {
+          throw new Error(`task ${task.id} awaits captain scope decision and cannot be claimed`)
+        }
         if (taskAwaitingInput(task)) {
           if (identity.kind !== 'captain') {
             throw new Error(`task ${task.id} is awaiting input (待输入) — the captain must answer the pending question first (update_task with input_answered=true) before a member can claim it`)
@@ -1556,6 +1624,10 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         type: 'string',
         description: 'Optional self-reported output signal (L1): evidence of work beyond wall-clock time, e.g. "深挖了 1400 行 CSS". Stored on the task signals; never required.',
       },
+      finding: { type: 'string', description: 'A new discovery; report before acting on it.' },
+      finding_evidence: { type: 'string', description: 'Concrete evidence for the discovery.' },
+      finding_relation: { type: 'string', enum: ['blocks-acceptance', 'data-loss', 'security', 'unrelated', 'uncertain'], description: 'Relation to the original acceptance; classification never auto-approves expansion.' },
+      original_acceptance_met: { type: 'boolean', description: 'Owner reports original acceptance is met; completion then stops scope expansion.' },
       input_answered: {
         type: 'boolean',
         description: 'R-02: mark the task\'s pending question as answered — clears the awaitingInput (待输入) intermediate state so the task can be dispatched and claimed. Set by the captain (or the task owner) once the required input has been provided; persisted immediately.',
@@ -1654,6 +1726,43 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
             ...task.attemptId === undefined ? {} : { attempt_id: task.attemptId },
             ...task.output !== undefined ? { output: task.output } : {},
           } }
+        }
+        const scope = task.scopeContract
+        if (scope !== undefined) {
+          if (scope.awaitingCaptain && args.status !== 'failed' && args.status !== 'cancelled') {
+            throw new Error(`task ${task.id} awaits captain scope decision; no further work or completion before captain triage`)
+          }
+          if (args.finding !== undefined) {
+            if (scope.originalAcceptanceMet) throw new Error(`task ${task.id} original acceptance was met; new findings belong in a separate task`)
+            if (scope.investigationsUsed >= scope.maxInvestigations) throw new Error(`task ${task.id} investigation budget exhausted; create a separate task`)
+            if (args.finding.trim() === '' || args.finding_evidence?.trim() === '' || args.finding_evidence === undefined || args.finding_relation === undefined) {
+              throw new Error('finding requires nonempty summary, evidence and relation')
+            }
+            const relation = args.finding_relation
+            const urgent = relation === 'data-loss' || relation === 'security'
+            const used = scope.investigationsUsed + 1
+            task.scopeContract = {
+              ...scope,
+              investigationsUsed: used,
+              awaitingCaptain: urgent || relation !== 'unrelated' || used >= scope.maxInvestigations,
+              findings: [...scope.findings, {
+                summary: args.finding.trim(), evidence: args.finding_evidence.trim(), relation,
+                disposition: relation === 'unrelated' && used < scope.maxInvestigations ? 'deferred' : 'pending-captain',
+              }],
+            }
+            task.updatedAt = Date.now()
+            await writeTeam(stateRoot, fresh)
+            return { kind: 'updated' as const, value: {
+              task_id: task.id, status: task.status, attempt: task.attempt ?? 0,
+              ...task.attemptId === undefined ? {} : { attempt_id: task.attemptId },
+            } }
+          }
+          if (args.original_acceptance_met === true) {
+            task.scopeContract = { ...scope, originalAcceptanceMet: true }
+          }
+          if (args.status === 'completed' && task.scopeContract?.originalAcceptanceMet !== true) {
+            throw new Error(`task ${task.id} must confirm original_acceptance_met before completion`)
+          }
         }
         // Commissar gate: a task under review (high/critical risk or
         // milestone) may only be marked completed after the commissar passed

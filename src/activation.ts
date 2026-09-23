@@ -36,7 +36,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { registerAgentTeamsTools, type AgentTeamsRuntime, type ToolsConfig } from './tools.ts'
 
 /**
- * The 14 collaboration tools activated together, in protocol order.
+ * The collaboration tools activated together, in protocol order.
  *
  * MUST stay identical to what {@link registerAgentTeamsTools} registers: this
  * list is the `Tools:` line the captain protocol ends with, so a name that is
@@ -49,6 +49,7 @@ export const TEAM_TOOL_NAMES = [
   'agent_teams_add_member',
   'agent_teams_remove_member',
   'agent_teams_create_task',
+  'agent_teams_triage_finding',
   'agent_teams_reassign_task',
   'agent_teams_claim_task',
   'agent_teams_update_task',

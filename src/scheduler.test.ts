@@ -3,12 +3,26 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { isHelppableTask, installTeamScheduler, nextHelpTask, type SchedulerConfig } from './scheduler.ts'
+import { isHelppableTask, installTeamScheduler, nextHelpTask, nextReadyTask, type SchedulerConfig } from './scheduler.ts'
 import { beginTaskAttempt, invalidateTaskAttempt } from './state.ts'
 import { memberOpenTask } from './tools.ts'
 import type { TeamMember, TeamState, TeamTask } from './types.ts'
 
 const STALL = 60_000
+
+describe('task scope dispatch fence', () => {
+  const contract = {
+    originalAcceptance: 'A passes', excluded: [], maxInvestigations: 1,
+    investigationsUsed: 1, findings: [], awaitingCaptain: true, originalAcceptanceMet: false,
+  }
+  it('pending work awaiting captain triage is not automatically dispatched', () => {
+    expect(nextReadyTask([task('t1', { status: 'pending', scopeContract: contract })], 'B')).toBeUndefined()
+  })
+  it('stalled work awaiting captain triage is not helped by another member', () => {
+    const blocked = task('t1', { scopeContract: contract })
+    expect(isHelppableTask(blocked, team({ tasks: [blocked] }), 'A', Date.now(), new Map(), () => 'idle', STALL)).toBe(false)
+  })
+})
 
 function member(name: string, overrides: Partial<TeamMember> = {}): TeamMember {
   return {

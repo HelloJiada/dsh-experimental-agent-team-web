@@ -935,6 +935,20 @@ function isTeamTask(value: unknown): value is TeamTask {
     && (value['acceptanceRevision'] === undefined || (Number.isSafeInteger(value['acceptanceRevision']) && (value['acceptanceRevision'] as number) >= 0))
     && (value['acceptanceHistory'] === undefined || Array.isArray(value['acceptanceHistory']))
     && (value['verification'] === undefined || (isRecord(value['verification']) && Array.isArray(value['verification']['checked']) && value['verification']['checked'].every((entry) => typeof entry === 'string') && Array.isArray(value['verification']['unchecked']) && value['verification']['unchecked'].every((entry) => typeof entry === 'string')))
+    && (value['scopeContract'] === undefined || (isRecord(value['scopeContract'])
+      && typeof value['scopeContract']['originalAcceptance'] === 'string'
+      && isOptionalString(value['scopeContract']['originalDeliverable'])
+      && Array.isArray(value['scopeContract']['excluded'])
+      && value['scopeContract']['excluded'].every((item) => typeof item === 'string')
+      && Number.isSafeInteger(value['scopeContract']['maxInvestigations'])
+      && Number.isSafeInteger(value['scopeContract']['investigationsUsed'])
+      && Array.isArray(value['scopeContract']['findings'])
+      && value['scopeContract']['findings'].every((item) => isRecord(item)
+        && typeof item['summary'] === 'string' && typeof item['evidence'] === 'string'
+        && (item['relation'] === 'blocks-acceptance' || item['relation'] === 'data-loss' || item['relation'] === 'security' || item['relation'] === 'unrelated' || item['relation'] === 'uncertain')
+        && (item['disposition'] === 'pending-captain' || item['disposition'] === 'approved' || item['disposition'] === 'deferred'))
+      && typeof value['scopeContract']['awaitingCaptain'] === 'boolean'
+      && typeof value['scopeContract']['originalAcceptanceMet'] === 'boolean'))
     && (value['blockedByReview'] === undefined || typeof value['blockedByReview'] === 'boolean')
     && (value['awaitingInput'] === undefined || typeof value['awaitingInput'] === 'boolean')
     && isOptionalString(value['helper'])

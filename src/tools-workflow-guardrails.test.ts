@@ -67,6 +67,63 @@ describe('workflow guardrails — tool integration', () => {
   })
   afterEach(async () => { await rm(workspace, { recursive: true, force: true }) })
 
+  it('locks original acceptance, defers unrelated findings, pauses on blocker and requires captain triage', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    const captain = agent(workspace, CAPTAIN_ID)
+    const member = agent(workspace, ENGINEER_ID)
+    const created = await tool('agent_teams_create_task').execute({
+      subject: 'A', acceptance: 'A checks pass', unchecked: ['unrelated refactor'],
+      max_investigations: 2, assignee: '技术员',
+    }, execOf(captain)) as { task_id: string }
+    const claimed = await tool('agent_teams_claim_task').execute({ task_id: created.task_id }, execOf(member)) as { attempt_id: string }
+    await tool('agent_teams_update_task').execute({ task_id: created.task_id, status: 'in_progress', attempt_id: claimed.attempt_id }, execOf(member))
+    await tool('agent_teams_update_task').execute({ task_id: created.task_id, finding: 'B unrelated', finding_evidence: 'repro', finding_relation: 'unrelated', attempt_id: claimed.attempt_id }, execOf(member))
+    let current = (await readTeam(stateRoot, 'workflow-team'))!.tasks[0]!
+    expect(current.scopeContract).toMatchObject({ originalAcceptance: 'A checks pass', investigationsUsed: 1, awaitingCaptain: false })
+    expect(current.scopeContract?.findings[0]?.disposition).toBe('deferred')
+    await tool('agent_teams_update_task').execute({ task_id: created.task_id, finding: 'B blocks A', finding_evidence: 'A test fails', finding_relation: 'blocks-acceptance', attempt_id: claimed.attempt_id }, execOf(member))
+    current = (await readTeam(stateRoot, 'workflow-team'))!.tasks[0]!
+    expect(current.scopeContract?.awaitingCaptain).toBe(true)
+    await expect(tool('agent_teams_update_task').execute({ task_id: created.task_id, status: 'completed', attempt_id: claimed.attempt_id }, execOf(member))).rejects.toThrow(/awaits captain/)
+    await expect(tool('agent_teams_triage_finding').execute({ task_id: created.task_id, finding_index: 0, decision: 'approve', reason: 'not blocking' }, execOf(captain))).rejects.toThrow(/pending captain decision/)
+    await tool('agent_teams_triage_finding').execute({ task_id: created.task_id, finding_index: 1, decision: 'approve', reason: 'minimal fix needed' }, execOf(captain))
+    await expect(tool('agent_teams_update_task').execute({ task_id: created.task_id, status: 'completed', attempt_id: claimed.attempt_id }, execOf(member))).rejects.toThrow(/awaits captain/)
+    // Budget exhaustion is permanent for this attempt; finish must be a new
+    // explicitly scoped task, never an unbounded B→C continuation inside A.
+    current = (await readTeam(stateRoot, 'workflow-team'))!.tasks[0]!
+    expect(current.status).toBe('in_progress')
+    expect(current.scopeContract?.originalAcceptance).toBe('A checks pass')
+  })
+
+  it('A acceptance met stops any C finding in the same task', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    const captain = agent(workspace, CAPTAIN_ID)
+    const member = agent(workspace, ENGINEER_ID)
+    const created = await tool('agent_teams_create_task').execute({ subject: 'A', acceptance: 'A passes', max_investigations: 2, assignee: '技术员' }, execOf(captain)) as { task_id: string }
+    const claimed = await tool('agent_teams_claim_task').execute({ task_id: created.task_id }, execOf(member)) as { attempt_id: string }
+    await tool('agent_teams_update_task').execute({ task_id: created.task_id, status: 'in_progress', attempt_id: claimed.attempt_id }, execOf(member))
+    await tool('agent_teams_update_task').execute({ task_id: created.task_id, original_acceptance_met: true, attempt_id: claimed.attempt_id }, execOf(member))
+    await expect(tool('agent_teams_update_task').execute({ task_id: created.task_id, finding: 'C after A', finding_evidence: 'new', finding_relation: 'unrelated', attempt_id: claimed.attempt_id }, execOf(member))).rejects.toThrow(/original acceptance was met/)
+    await tool('agent_teams_update_task').execute({ task_id: created.task_id, status: 'completed', output: 'A passes', attempt_id: claimed.attempt_id }, execOf(member))
+    const completed = (await readTeam(stateRoot, 'workflow-team'))!.tasks[0]!
+    expect(completed.status).toBe('completed')
+    expect(completed.scopeContract?.findings).toEqual([])
+  })
+
+  it('investigation limit cannot be renewed by captain defer in the same attempt', async () => {
+    await writeTeamToDisk(stateRoot, team())
+    const captain = agent(workspace, CAPTAIN_ID)
+    const member = agent(workspace, ENGINEER_ID)
+    const created = await tool('agent_teams_create_task').execute({ subject: 'A', acceptance: 'A passes', max_investigations: 1, assignee: '技术员' }, execOf(captain)) as { task_id: string }
+    const claimed = await tool('agent_teams_claim_task').execute({ task_id: created.task_id }, execOf(member)) as { attempt_id: string }
+    await tool('agent_teams_update_task').execute({ task_id: created.task_id, status: 'in_progress', attempt_id: claimed.attempt_id }, execOf(member))
+    await tool('agent_teams_update_task').execute({ task_id: created.task_id, finding: 'B', finding_evidence: 'observed', finding_relation: 'unrelated', attempt_id: claimed.attempt_id }, execOf(member))
+    await tool('agent_teams_triage_finding').execute({ task_id: created.task_id, finding_index: 0, decision: 'defer', reason: 'separate backlog' }, execOf(captain))
+    const task = (await readTeam(stateRoot, 'workflow-team'))!.tasks[0]!
+    expect(task.scopeContract).toMatchObject({ investigationsUsed: 1, awaitingCaptain: true })
+    await expect(tool('agent_teams_update_task').execute({ task_id: created.task_id, finding: 'C', finding_evidence: 'more', finding_relation: 'unrelated', attempt_id: claimed.attempt_id }, execOf(member))).rejects.toThrow(/awaits captain|budget exhausted/)
+  })
+
   it('rejects duplicate active writers including normalized root files and terminal releases lock', async () => {
     await writeTeamToDisk(stateRoot, team())
     const captain = agent(workspace, CAPTAIN_ID)

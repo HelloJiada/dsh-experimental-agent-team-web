@@ -162,6 +162,7 @@ function taskOwnerId(team: TeamState, task: TeamTask): string | undefined {
  * 等队长 input_answered 清除后才可派发(claim_task 同规则拦截)。 */
 export function nextReadyTask(tasks: readonly TeamTask[], memberName: string): TeamTask | undefined {
   const ready = tasks.filter(task => task.status === 'pending'
+    && task.scopeContract?.awaitingCaptain !== true
     && task.reassigning !== true
     && !taskAwaitingInput(task)
     && unsatisfiedDependencies([...tasks], task.dependencies).length === 0)
@@ -191,6 +192,7 @@ export function isHelppableTask(
   stallThresholdMs: number,
 ): boolean {
   if (task.status !== 'claimed' && task.status !== 'in_progress') return false
+  if (task.scopeContract?.awaitingCaptain === true) return false
   if (taskAwaitingInput(task)) return false
   if (task.assignee === undefined || task.assignee === helperName || task.assignee === CAPTAIN_KEY) return false
   if (task.helper !== undefined) return false
