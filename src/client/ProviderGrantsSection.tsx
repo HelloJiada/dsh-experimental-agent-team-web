@@ -1038,6 +1038,9 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
 
 /** 卡片三:自成长(t10)——经验库计数 + 最近条目,克制展示(不搞图表/趋势)。 */
 function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
+  // Host currently exposes no authenticated per-user/workspace principal to
+  // this route. Do not offer mutation controls on the strength of a boot token.
+  const governanceWritable = false
   const [workspaces, setWorkspaces] = useState<readonly PracticeWorkspace[]>([])
   const [workspace, setWorkspace] = useState('')
   const [entries, setEntries] = useState<readonly PracticeEntry[]>([])
@@ -1115,7 +1118,7 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
           {expanded ? '收起' : '查看全部'}
         </button>
       </header>
-      <p className={styles.growthMeta}>仅影响后续成员；经验按明确选择的工作区查看和管理。</p>
+      <p className={styles.growthMeta}>当前仅可查看：宿主尚未提供可验证的用户/工作区身份，纠错、撤销与恢复写入已关闭。经验按明确选择的工作区查看。</p>
       {expanded && <div className={styles.growthControls}>
         <label className={styles.growthMeta}>工作区
           <select className={styles.select} value={workspace} onChange={event => chooseWorkspace(event.target.value)}>
@@ -1141,7 +1144,7 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
         <p><b>适用条件：</b>{(selected.appliesWhen ?? []).join('；') || '未填写'}</p>
         <p><b>反例：</b>{(selected.counterexamples ?? []).map(value => `${value.context}：${value.reason}`).join('；') || '未填写'}</p>
         <p><b>状态：</b>{selected.disabledAt ? `已撤销：${selected.disabledReason ?? ''}` : selected.verdict} · revision {selected.revision}</p>
-        {!editing ? <div className={styles.growthActions}>
+        {governanceWritable && (!editing ? <div className={styles.growthActions}>
           <label>操作原因<textarea value={draft.reason} onChange={event => setDraft(d => ({ ...d, reason: event.target.value }))} /></label>
           <button type="button" disabled={!workspace} onClick={() => beginEdit(selected)}>纠错/编辑</button>
           {selected.disabledAt
@@ -1154,7 +1157,7 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
           <label>过期日期<input type="date" value={draft.expiresAt} onChange={event => setDraft(d => ({ ...d, expiresAt: event.target.value }))} /></label>
           <label>修改原因<textarea value={draft.reason} onChange={event => setDraft(d => ({ ...d, reason: event.target.value }))} /></label>
           <div className={styles.growthActions}><button type="button" disabled={busy} onClick={() => setEditing(false)}>取消</button><button type="button" disabled={busy} onClick={() => { if (window.confirm('提交修改？修改将重新进入待审核状态。')) void mutate('edit') }}>{busy ? '提交中…' : '保存修改'}</button></div>
-        </div>}
+        </div>)}
         {error && <p role="alert" className={styles.growthError}>{error}</p>}
       </div>}
     </section>

@@ -87,24 +87,23 @@ describe('practice HTTP route: authorization, registered root, persistence', () 
     expect((selected.data as { entries: unknown[] }).entries).toHaveLength(1)
   })
 
-  it('soft-disable persists, blocks new-member selection, conflicts on stale revision, restoration needs re-review', async () => {
+  it('valid boot token and registered workspace cannot write without verified principal', async () => {
     root = await mkdtemp(join(tmpdir(), 'practice-http-'))
     const dir = join(root, '.agent-team-web')
     await writeBestPractices(dir, [entry('a'), entry('b')])
     const disable = response()
     const input = { ...mutation('a', 'disable'), workspace: root }
     await handlePractices(registry(root), '.agent-team-web', req('POST', '/plugins/agent-team-web/practices', input), disable, auth)
-    expect(disable.code).toBe(200)
-    const after = await readBestPractices(dir)
-    expect(after.find(item => item.id === 'a')).toMatchObject({ disabledReason: '人工确认原因', revision: 1 })
-    expect(selectBestPracticesForRole(after, 'engineer')).toHaveLength(0)
-    const stale = response()
-    await handlePractices(registry(root), '.agent-team-web', req('POST', '/plugins/agent-team-web/practices', input), stale, auth)
-    expect(stale.code).toBe(409)
-    const restore = response()
-    await handlePractices(registry(root), '.agent-team-web', req('POST', '/plugins/agent-team-web/practices', { ...mutation('a', 'restore', { expectedRevision: 1 }), workspace: root }), restore, auth)
-    expect(restore.code).toBe(200)
-    expect((await readBestPractices(dir)).find(item => item.id === 'a')).toMatchObject({ verdict: 'pending', revision: 2 })
-    expect((await readFile(join(dir, 'best-practices.json'), 'utf8'))).toContain('reviewHistory')
+    expect(disable.code).toBe(403)
+    expect(disable.data).toEqual({ error: 'workspace identity authorization unavailable' })
+    expect(await readBestPractices(dir)).toEqual([entry('a'), entry('b')])
+    for (const action of ['edit', 'restore'] as const) {
+      const attempt = response()
+      await handlePractices(registry(root), '.agent-team-web', req('POST', '/plugins/agent-team-web/practices', {
+        ...mutation('a', action, action === 'edit' ? { patch: { practice: '改进' } } : {}), workspace: root,
+      }), attempt, auth)
+      expect(attempt.code).toBe(403)
+    }
+    expect(JSON.parse(await readFile(join(dir, 'best-practices.json'), 'utf8'))).toEqual([entry('a'), entry('b')])
   })
 })

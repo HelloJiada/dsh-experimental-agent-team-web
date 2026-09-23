@@ -5,10 +5,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAbsolute, join, resolve } from 'node:path'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import {
-  mutateBestPractices, readBestPractices,
+  readBestPractices,
   type BestPracticeEntry, type BestPracticeCounterexample,
 } from './best-practices.ts'
-import { readJsonBody } from './close-route.ts'
 import { webRequestAuthorized } from './web-auth.ts'
 
 export interface PracticesRouteAuth { readonly token: string; readonly trustedHosts: readonly string[] }
@@ -131,17 +130,11 @@ export async function handlePractices(
       send(res, 200, { workspace, entries: entries.map(practiceView) }); return
     }
     if (req.method !== 'POST') throw new PracticeError(405, 'method not allowed')
-    const mutation = parsePracticeMutation(await readJsonBody(req, 16 * 1024))
-    const workspace = locate(mutation.workspace)
-    if (workspace === undefined) throw new PracticeError(403, 'unregistered workspace')
-    let updated: BestPracticeEntry | undefined
-    await mutateBestPractices(join(workspace, stateDir), entries => {
-      const index = entries.findIndex(entry => entry.id === mutation.id)
-      if (index < 0) throw new PracticeError(404, 'practice not found')
-      updated = applyPracticeMutation(entries[index]!, mutation, Date.now())
-      return entries.map((entry, at) => at === index ? updated! : entry)
-    })
-    send(res, 200, practiceView(updated!))
+    // The boot token grants access to this local page, NOT a verified user,
+    // captain, or workspace principal. Until the host exposes an unforgeable
+    // identity bridge, the sensitive write surface must fail closed even for
+    // a valid token and registered workspace. Do not add a config bypass.
+    throw new PracticeError(403, 'workspace identity authorization unavailable')
   } catch (error) {
     const status = error instanceof PracticeError ? error.status : 500
     send(res, status, { error: status === 500 ? 'practice operation failed' : (error as Error).message })
