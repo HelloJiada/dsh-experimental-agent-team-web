@@ -67,14 +67,14 @@ describe('practice governance: validated revisioned transitions', () => {
 })
 
 describe('practice HTTP route: authorization, registered root, persistence', () => {
-  it('requires boot token and explicit registered workspace; listing never returns entries', async () => {
+  it('even a valid boot token cannot enumerate workspace paths or read entries without a principal', async () => {
     root = await mkdtemp(join(tmpdir(), 'practice-http-'))
     const dir = join(root, '.agent-team-web')
     await writeBestPractices(dir, [entry('a')])
     const listing = response()
     await handlePractices(registry(root), '.agent-team-web', req('GET', '/plugins/agent-team-web/practices'), listing, auth)
-    expect(listing.code).toBe(200)
-    expect(listing.data).toEqual({ workspaces: [{ path: root, title: 'Only workspace' }] })
+    expect(listing.code).toBe(403)
+    expect(listing.data).toEqual({ error: 'workspace identity authorization unavailable' })
     const denied = response()
     await handlePractices(registry(root), '.agent-team-web', req('GET', `/plugins/agent-team-web/practices?workspace=${encodeURIComponent(root)}`, undefined, 'wrong'), denied, auth)
     expect(denied.code).toBe(403)
@@ -83,8 +83,8 @@ describe('practice HTTP route: authorization, registered root, persistence', () 
     expect(other.code).toBe(403)
     const selected = response()
     await handlePractices(registry(root), '.agent-team-web', req('GET', `/plugins/agent-team-web/practices?workspace=${encodeURIComponent(root)}`), selected, auth)
-    expect(selected.code).toBe(200)
-    expect((selected.data as { entries: unknown[] }).entries).toHaveLength(1)
+    expect(selected.code).toBe(403)
+    expect(selected.data).toEqual({ error: 'workspace identity authorization unavailable' })
   })
 
   it('valid boot token and registered workspace cannot write without verified principal', async () => {

@@ -3,7 +3,7 @@
  * No source-task body or evidence excerpts are returned over this API. */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace';
-import { type BestPracticeEntry, type BestPracticeCounterexample } from './best-practices.ts';
+import type { BestPracticeEntry, BestPracticeCounterexample } from './best-practices.ts';
 export interface PracticesRouteAuth {
     readonly token: string;
     readonly trustedHosts: readonly string[];

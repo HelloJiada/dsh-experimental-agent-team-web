@@ -2,12 +2,9 @@
  * browser operator capability; a workspace path must match a registered root.
  * No source-task body or evidence excerpts are returned over this API. */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute } from 'node:path'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
-import {
-  readBestPractices,
-  type BestPracticeEntry, type BestPracticeCounterexample,
-} from './best-practices.ts'
+import type { BestPracticeEntry, BestPracticeCounterexample } from './best-practices.ts'
 import { webRequestAuthorized } from './web-auth.ts'
 
 export interface PracticesRouteAuth { readonly token: string; readonly trustedHosts: readonly string[] }
@@ -117,26 +114,10 @@ export async function handlePractices(
   if (!webRequestAuthorized(req, auth.token, auth.trustedHosts)) {
     send(res, 403, { error: 'unauthorized' }); return
   }
-  const workspaces = registry.list().map(row => ({ path: resolve(row.path), title: row.title }))
-  const locate = (path: string): string | undefined => workspaces.find(row => row.path === path)?.path
-  try {
-    if (req.method === 'GET') {
-      const url = new URL(req.url ?? '/', 'http://localhost')
-      const requested = url.searchParams.get('workspace')
-      if (requested === null) { send(res, 200, { workspaces }); return }
-      const workspace = locate(requested)
-      if (workspace === undefined) throw new PracticeError(403, 'unregistered workspace')
-      const entries = await readBestPractices(join(workspace, stateDir))
-      send(res, 200, { workspace, entries: entries.map(practiceView) }); return
-    }
-    if (req.method !== 'POST') throw new PracticeError(405, 'method not allowed')
-    // The boot token grants access to this local page, NOT a verified user,
-    // captain, or workspace principal. Until the host exposes an unforgeable
-    // identity bridge, the sensitive write surface must fail closed even for
-    // a valid token and registered workspace. Do not add a config bypass.
-    throw new PracticeError(403, 'workspace identity authorization unavailable')
-  } catch (error) {
-    const status = error instanceof PracticeError ? error.status : 500
-    send(res, status, { error: status === 500 ? 'practice operation failed' : (error as Error).message })
-  }
+  // The per-boot token is a local page capability, NOT a user or workspace
+  // principal. GET would reveal every registered workspace path and experience
+  // text; POST would change it. Neither operation is authorized until the host
+  // supplies an unforgeable identity with per-workspace grants. Reject before
+  // enumerating registry.list(), parsing a path or reading any library file.
+  send(res, 403, { error: 'workspace identity authorization unavailable' })
 }

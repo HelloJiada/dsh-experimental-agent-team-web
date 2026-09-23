@@ -1063,7 +1063,7 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
       setError(cause instanceof Error && cause.message === 'http-403' ? '无权访问此工作区的经验' : '加载经验失败，请重试')
     } finally { setLoading(false) }
   }
-  useEffect(() => { void load() }, [])
+  useEffect(() => { if (governanceWritable) void load() }, [])
   const chooseWorkspace = (path: string): void => {
     setWorkspace(path); setEntries([]); setSelected(undefined); setEditing(false); setNotice(''); setError('')
     if (path !== '') void load(path)
@@ -1114,12 +1114,12 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
     <section className={styles.card} aria-label={t('settings.agentTeam.growth')}>
       <header className={styles.head}>
         <span className={styles.title}>{t('settings.agentTeam.growth')}</span>
-        <button type="button" className={styles.resetBtn} onClick={() => { setExpanded(value => !value); if (!expanded && workspaces.length === 0) void load() }}>
+        {governanceWritable && <button type="button" className={styles.resetBtn} onClick={() => { setExpanded(value => !value); if (!expanded && workspaces.length === 0) void load() }}>
           {expanded ? '收起' : '查看全部'}
-        </button>
+        </button>}
       </header>
-      <p className={styles.growthMeta}>当前仅可查看：宿主尚未提供可验证的用户/工作区身份，纠错、撤销与恢复写入已关闭。经验按明确选择的工作区查看。</p>
-      {expanded && <div className={styles.growthControls}>
+      <p className={styles.growthMeta}>自成长经验治理暂不可用：宿主尚未提供可验证的用户/工作区身份。工作区枚举、经验详情及写入均已关闭。</p>
+      {governanceWritable && expanded && <div className={styles.growthControls}>
         <label className={styles.growthMeta}>工作区
           <select className={styles.select} value={workspace} onChange={event => chooseWorkspace(event.target.value)}>
             <option value="">请选择工作区</option>
@@ -1137,7 +1137,7 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
           </li>)}
         </ul>
       </div>}
-      {selected && <div className={styles.growthDetail} role="dialog" aria-label="经验详情">
+      {governanceWritable && selected && <div className={styles.growthDetail} role="dialog" aria-label="经验详情">
         <div className={styles.growthDetailHead}><strong>经验详情</strong><button type="button" onClick={() => { setSelected(undefined); setEditing(false) }}>关闭</button></div>
         <p><b>实践：</b>{selected.practice}</p>
         <p><b>来源：</b>{selected.sourceTeamId} · {selected.sourceTaskSubject} · {selected.role}</p>
