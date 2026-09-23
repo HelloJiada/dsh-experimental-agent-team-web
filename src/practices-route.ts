@@ -2,12 +2,26 @@
  * browser operator capability; a workspace path must match a registered root.
  * No source-task body or evidence excerpts are returned over this API. */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isAbsolute } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
-import type { BestPracticeEntry, BestPracticeCounterexample } from './best-practices.ts'
+import {
+  mutateBestPractices, readBestPractices,
+  type BestPracticeEntry, type BestPracticeCounterexample,
+} from './best-practices.ts'
+import { readJsonBody } from './close-route.ts'
 import { webRequestAuthorized } from './web-auth.ts'
 
-export interface PracticesRouteAuth { readonly token: string; readonly trustedHosts: readonly string[] }
+export interface OperatorPeer { readonly id: string }
+export interface OperatorAdmission {
+  admit(request: IncomingMessage): { readonly peer: OperatorPeer } | { readonly rejection: 401 | 403 }
+  readonly operator: OperatorPeer
+}
+export interface PracticesRouteAuth {
+  readonly token: string
+  readonly trustedHosts: readonly string[]
+  /** Host Connection's authenticated operator. No admission => fail closed. */
+  readonly connection?: OperatorAdmission
+}
 export interface PracticePatch {
   readonly practice?: string
   readonly appliesWhen?: readonly string[]
@@ -74,7 +88,7 @@ export function practiceView(entry: BestPracticeEntry): Record<string, unknown> 
 }
 
 /** Pure transition used under the best-practices lock; changing guidance requires re-review. */
-export function applyPracticeMutation(entry: BestPracticeEntry, mutation: PracticeMutation, now: number): BestPracticeEntry {
+export function applyPracticeMutation(entry: BestPracticeEntry, mutation: PracticeMutation, now: number, actor = 'local-browser-operator'): BestPracticeEntry {
   if ((entry.revision ?? 0) !== mutation.expectedRevision) throw new PracticeError(409, 'revision conflict')
   const history = [...entry.reviewHistory ?? []]
   const changed: Record<string, unknown> = {}
@@ -98,7 +112,7 @@ export function applyPracticeMutation(entry: BestPracticeEntry, mutation: Practi
   }
   return {
     ...entry, ...changed, revision: (entry.revision ?? 0) + 1, updatedAt: now,
-    reviewHistory: [...history, { actor: 'local-browser-operator', action: mutation.action, at: now, summary: mutation.reason }],
+    reviewHistory: [...history, { actor, action: mutation.action, at: now, summary: mutation.reason }],
   }
 }
 
@@ -114,10 +128,42 @@ export async function handlePractices(
   if (!webRequestAuthorized(req, auth.token, auth.trustedHosts)) {
     send(res, 403, { error: 'unauthorized' }); return
   }
-  // The per-boot token is a local page capability, NOT a user or workspace
-  // principal. GET would reveal every registered workspace path and experience
-  // text; POST would change it. Neither operation is authorized until the host
-  // supplies an unforgeable identity with per-workspace grants. Reject before
-  // enumerating registry.list(), parsing a path or reading any library file.
-  send(res, 403, { error: 'workspace identity authorization unavailable' })
+  // The per-boot token alone is not identity. Connection authenticates the
+  // signed browser cookie and Host/Origin and assigns its one operator Peer.
+  // Product policy: this single local operator owns every REGISTERED workspace.
+  const admission = auth.connection?.admit(req)
+  if (admission === undefined || !('peer' in admission) || admission.peer !== auth.connection?.operator) {
+    send(res, 'rejection' in (admission ?? {}) ? (admission as { rejection: 401 | 403 }).rejection : 403,
+      { error: 'operator authentication required' })
+    return
+  }
+  const operator = admission.peer
+  const workspaces = registry.list().map(row => ({ path: resolve(row.path), title: row.title }))
+  const locate = (path: string): string | undefined => workspaces.find(row => row.path === path)?.path
+  try {
+    if (req.method === 'GET') {
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      const requested = url.searchParams.get('workspace')
+      if (requested === null) { send(res, 200, { workspaces }); return }
+      const workspace = locate(requested)
+      if (workspace === undefined) throw new PracticeError(403, 'unregistered workspace')
+      const entries = await readBestPractices(join(workspace, stateDir))
+      send(res, 200, { workspace, entries: entries.map(practiceView) }); return
+    }
+    if (req.method !== 'POST') throw new PracticeError(405, 'method not allowed')
+    const mutation = parsePracticeMutation(await readJsonBody(req, 16 * 1024))
+    const workspace = locate(mutation.workspace)
+    if (workspace === undefined) throw new PracticeError(403, 'unregistered workspace')
+    let updated: BestPracticeEntry | undefined
+    await mutateBestPractices(join(workspace, stateDir), entries => {
+      const index = entries.findIndex(entry => entry.id === mutation.id)
+      if (index < 0) throw new PracticeError(404, 'practice not found')
+      updated = applyPracticeMutation(entries[index]!, mutation, Date.now(), String(operator.id))
+      return entries.map((entry, at) => at === index ? updated! : entry)
+    })
+    send(res, 200, practiceView(updated!))
+  } catch (error) {
+    const status = error instanceof PracticeError ? error.status : 500
+    send(res, status, { error: status === 500 ? 'practice operation failed' : (error as Error).message })
+  }
 }

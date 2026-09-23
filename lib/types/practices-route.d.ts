@@ -3,10 +3,23 @@
  * No source-task body or evidence excerpts are returned over this API. */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace';
-import type { BestPracticeEntry, BestPracticeCounterexample } from './best-practices.ts';
+import { type BestPracticeEntry, type BestPracticeCounterexample } from './best-practices.ts';
+export interface OperatorPeer {
+    readonly id: string;
+}
+export interface OperatorAdmission {
+    admit(request: IncomingMessage): {
+        readonly peer: OperatorPeer;
+    } | {
+        readonly rejection: 401 | 403;
+    };
+    readonly operator: OperatorPeer;
+}
 export interface PracticesRouteAuth {
     readonly token: string;
     readonly trustedHosts: readonly string[];
+    /** Host Connection's authenticated operator. No admission => fail closed. */
+    readonly connection?: OperatorAdmission;
 }
 export interface PracticePatch {
     readonly practice?: string;
@@ -26,6 +39,6 @@ export declare function parsePracticeMutation(input: unknown): PracticeMutation;
 /** Restricted projection: do not expose arbitrary evidence excerpts or task output. */
 export declare function practiceView(entry: BestPracticeEntry): Record<string, unknown>;
 /** Pure transition used under the best-practices lock; changing guidance requires re-review. */
-export declare function applyPracticeMutation(entry: BestPracticeEntry, mutation: PracticeMutation, now: number): BestPracticeEntry;
+export declare function applyPracticeMutation(entry: BestPracticeEntry, mutation: PracticeMutation, now: number, actor?: string): BestPracticeEntry;
 export declare function handlePractices(registry: WorkspaceRegistry, stateDir: string, req: IncomingMessage, res: ServerResponse, auth: PracticesRouteAuth): Promise<void>;
 //# sourceMappingURL=practices-route.d.ts.map

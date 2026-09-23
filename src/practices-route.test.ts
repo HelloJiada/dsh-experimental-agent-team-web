@@ -33,7 +33,11 @@ function response(): ServerResponse & { code: number; data: unknown } {
 function registry(path: string): WorkspaceRegistry {
   return { list: () => [{ path, title: 'Only workspace' }] } as unknown as WorkspaceRegistry
 }
-const auth = { token: 'secret', trustedHosts: [] }
+const operator = { id: 'host-operator-peer' }
+const auth = { token: 'secret', trustedHosts: [], connection: {
+  operator,
+  admit: () => ({ peer: operator }),
+} }
 
 describe('practice governance: validated revisioned transitions', () => {
   it('rejects invalid patch shapes and missing reasons', () => {
@@ -67,14 +71,17 @@ describe('practice governance: validated revisioned transitions', () => {
 })
 
 describe('practice HTTP route: authorization, registered root, persistence', () => {
-  it('even a valid boot token cannot enumerate workspace paths or read entries without a principal', async () => {
+  it('valid operator admission permits only registered workspaces; boot token alone is insufficient', async () => {
     root = await mkdtemp(join(tmpdir(), 'practice-http-'))
     const dir = join(root, '.agent-team-web')
     await writeBestPractices(dir, [entry('a')])
     const listing = response()
     await handlePractices(registry(root), '.agent-team-web', req('GET', '/plugins/agent-team-web/practices'), listing, auth)
-    expect(listing.code).toBe(403)
-    expect(listing.data).toEqual({ error: 'workspace identity authorization unavailable' })
+    expect(listing.code).toBe(200)
+    expect(listing.data).toEqual({ workspaces: [{ path: root, title: 'Only workspace' }] })
+    const noOperator = response()
+    await handlePractices(registry(root), '.agent-team-web', req('GET', '/plugins/agent-team-web/practices'), noOperator, { token: 'secret', trustedHosts: [] })
+    expect(noOperator.code).toBe(403)
     const denied = response()
     await handlePractices(registry(root), '.agent-team-web', req('GET', `/plugins/agent-team-web/practices?workspace=${encodeURIComponent(root)}`, undefined, 'wrong'), denied, auth)
     expect(denied.code).toBe(403)
@@ -83,27 +90,45 @@ describe('practice HTTP route: authorization, registered root, persistence', () 
     expect(other.code).toBe(403)
     const selected = response()
     await handlePractices(registry(root), '.agent-team-web', req('GET', `/plugins/agent-team-web/practices?workspace=${encodeURIComponent(root)}`), selected, auth)
-    expect(selected.code).toBe(403)
-    expect(selected.data).toEqual({ error: 'workspace identity authorization unavailable' })
+    expect(selected.code).toBe(200)
+    expect((selected.data as { entries: unknown[] }).entries).toHaveLength(1)
   })
 
-  it('valid boot token and registered workspace cannot write without verified principal', async () => {
+  it('rejects missing browser admission, rejected cookies and a foreign peer without reading workspaces', async () => {
+    root = await mkdtemp(join(tmpdir(), 'practice-http-'))
+    let enumerations = 0
+    const watched = { list: () => { enumerations++; return [{ path: root, title: 'Only workspace' }] } } as unknown as WorkspaceRegistry
+    for (const connection of [undefined, { operator, admit: () => ({ rejection: 401 as const }) },
+      { operator, admit: () => ({ peer: { id: 'foreign' } }) }]) {
+      const denied = response()
+      await handlePractices(watched, '.agent-team-web', req('GET', '/plugins/agent-team-web/practices'), denied,
+        { token: 'secret', trustedHosts: [], connection })
+      expect(denied.code).toBe(connection === undefined ? 403 : connection.admit().hasOwnProperty('rejection') ? 401 : 403)
+    }
+    expect(enumerations).toBe(0)
+  })
+
+  it('authenticated operator can soft-disable and restore, stale revisions conflict', async () => {
     root = await mkdtemp(join(tmpdir(), 'practice-http-'))
     const dir = join(root, '.agent-team-web')
     await writeBestPractices(dir, [entry('a'), entry('b')])
     const disable = response()
     const input = { ...mutation('a', 'disable'), workspace: root }
     await handlePractices(registry(root), '.agent-team-web', req('POST', '/plugins/agent-team-web/practices', input), disable, auth)
-    expect(disable.code).toBe(403)
-    expect(disable.data).toEqual({ error: 'workspace identity authorization unavailable' })
-    expect(await readBestPractices(dir)).toEqual([entry('a'), entry('b')])
-    for (const action of ['edit', 'restore'] as const) {
-      const attempt = response()
-      await handlePractices(registry(root), '.agent-team-web', req('POST', '/plugins/agent-team-web/practices', {
-        ...mutation('a', action, action === 'edit' ? { patch: { practice: '改进' } } : {}), workspace: root,
-      }), attempt, auth)
-      expect(attempt.code).toBe(403)
-    }
-    expect(JSON.parse(await readFile(join(dir, 'best-practices.json'), 'utf8'))).toEqual([entry('a'), entry('b')])
+    expect(disable.code).toBe(200)
+    const after = await readBestPractices(dir)
+    expect(after.find(item => item.id === 'a')).toMatchObject({ disabledReason: '人工确认原因', revision: 1 })
+    expect(after.find(item => item.id === 'a')?.reviewHistory?.at(-1)?.actor).toBe(operator.id)
+    expect(selectBestPracticesForRole(after, 'engineer')).toHaveLength(0)
+    const stale = response()
+    await handlePractices(registry(root), '.agent-team-web', req('POST', '/plugins/agent-team-web/practices', input), stale, auth)
+    expect(stale.code).toBe(409)
+    const restore = response()
+    await handlePractices(registry(root), '.agent-team-web', req('POST', '/plugins/agent-team-web/practices', {
+      ...mutation('a', 'restore', { expectedRevision: 1 }), workspace: root,
+    }), restore, auth)
+    expect(restore.code).toBe(200)
+    expect((await readBestPractices(dir)).find(item => item.id === 'a')).toMatchObject({ verdict: 'pending', revision: 2 })
+    expect(await readFile(join(dir, 'best-practices.json'), 'utf8')).toContain('reviewHistory')
   })
 })

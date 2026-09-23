@@ -57,6 +57,11 @@ import { assertTrustedAuthority, createWebToken, webRequestAuthorized } from './
  * builds: the beta transition renames the service without changing the route
  * registration shape.
  */
+interface OperatorAdmission {
+  readonly operator: { readonly id: string }
+  admit(request: IncomingMessage): { readonly peer: { readonly id: string } } | { readonly rejection: 401 | 403 }
+}
+
 interface WebRouteHost {
   register(route: {
     kind: 'exact' | 'prefix'
@@ -407,14 +412,16 @@ export function apply(ctx: Context, config: Config): void {
     }),
   }), 'agent-teams: model-grant route')
 
-  // Governed experience edits require an explicit registered workspace, boot
-  // token, revision fence and atomic library mutation.
+  // One Host operator owns all registered workspaces in explicit single-user
+  // mode. Resolve Connection at request time (a sibling service can bind later),
+  // and fail closed while it is absent; the boot token alone is never identity.
   ctx.effect(() => webServer.register({
     kind: 'exact',
     path: '/plugins/agent-team-web/practices',
     handler: (req, res) => handlePractices(workspaceRegistry, resolved.stateDir, req, res, {
       token: webToken,
       trustedHosts,
+      connection: ctx.get('connection') as OperatorAdmission | undefined,
     }),
   }), 'agent-teams: practices route')
 

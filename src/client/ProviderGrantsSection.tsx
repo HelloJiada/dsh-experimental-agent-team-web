@@ -1038,9 +1038,10 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
 
 /** 卡片三:自成长(t10)——经验库计数 + 最近条目,克制展示(不搞图表/趋势)。 */
 function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
-  // Host currently exposes no authenticated per-user/workspace principal to
-  // this route. Do not offer mutation controls on the strength of a boot token.
-  const governanceWritable = false
+  // DSH Web's authenticated operator owns all registered workspaces in this
+  // explicit single-operator mode. The Host enforces Cookie + token admission.
+  const governanceWritable = true
+  const [available, setAvailable] = useState(false)
   const [workspaces, setWorkspaces] = useState<readonly PracticeWorkspace[]>([])
   const [workspace, setWorkspace] = useState('')
   const [entries, setEntries] = useState<readonly PracticeEntry[]>([])
@@ -1057,10 +1058,13 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
     setLoading(true); setError('')
     try {
       const result = await fetchPractices(path)
-      if (path === undefined) setWorkspaces(result.workspaces ?? [])
+      if (path === undefined) { setWorkspaces(result.workspaces ?? []); setAvailable(true) }
       else setEntries(result.entries ?? [])
     } catch (cause) {
-      setError(cause instanceof Error && cause.message === 'http-403' ? '无权访问此工作区的经验' : '加载经验失败，请重试')
+      if (path === undefined) setAvailable(false)
+      setError(cause instanceof Error && (cause.message === 'http-401' || cause.message === 'http-403')
+        ? '经验治理不可用：请确认当前浏览器已通过 DSH operator 登录'
+        : '加载经验失败，请重试')
     } finally { setLoading(false) }
   }
   useEffect(() => { if (governanceWritable) void load() }, [])
@@ -1073,7 +1077,7 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
     setDraft({ practice: entry.practice, appliesWhen: (entry.appliesWhen ?? []).join('\n'), counterexamples: (entry.counterexamples ?? []).map(item => `${item.context} | ${item.reason}`).join('\n'), expiresAt: entry.expiresAt == null ? '' : new Date(entry.expiresAt).toISOString().slice(0, 10), reason: '' })
   }
   const mutate = async (action: 'edit' | 'disable' | 'restore'): Promise<void> => {
-    if (!workspace || !selected || busy) return
+    if (!available || !workspace || !selected || busy) return
     if (draft.reason.trim().length < 3) { setError('请填写至少 3 个字符的原因'); return }
     if (action === 'edit') {
       const validation = validatePracticePatch(draft)
@@ -1118,7 +1122,7 @@ function GrowthCard({ t }: { readonly t: AgentTeamsTranslate }): ReactNode {
           {expanded ? '收起' : '查看全部'}
         </button>}
       </header>
-      <p className={styles.growthMeta}>自成长经验治理暂不可用：宿主尚未提供可验证的用户/工作区身份。工作区枚举、经验详情及写入均已关闭。</p>
+      <p className={styles.growthMeta}>单机单 operator 模式：已登录本机 DSH 的操作者可管理所有已注册工作区；变更仅影响后续新成员。</p>
       {governanceWritable && expanded && <div className={styles.growthControls}>
         <label className={styles.growthMeta}>工作区
           <select className={styles.select} value={workspace} onChange={event => chooseWorkspace(event.target.value)}>
