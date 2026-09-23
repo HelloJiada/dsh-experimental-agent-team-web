@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 // Pull the renderer-owned ctx.slots service augmentation into ClientContext.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section'
-// entry) and the ctx.settingsScope augmentation (settings-namespace scope).
+// entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { ActivityPanel } from './ActivityPanel.tsx'
@@ -42,12 +42,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Required services: conversation nodes, slots, sessions navigation, locale,
- * and the settings-namespace scope (Provider 授权设置页卡片读写命名空间)。
- * `settingsScope` 必须显式声明——cordis 服务代理守卫在未 inject 时访问会抛
- * "cannot get property 'settingsScope' without inject",渲染期崩溃被错误边界
- * 吞掉导致 content 区空白(t11 根因)。 */
-export const inject = ['uiConversation', 'slots', 'sessions', 'uiWorkspace', 'locale', 'settingsScope']
+/** Required services: conversation nodes, slots, sessions navigation, locale.
+ * DSH 0.1.7 replaced the ui-settings namespace-scope binding with
+ * `ctx.configForms`, so the settings section below renders as a read-only
+ * overview. Declaring the removed `settingsScope` here would leave this client
+ * fiber pending forever and the GUI would report "waiting for activation". */
+export const inject = ['uiConversation', 'slots', 'sessions', 'uiWorkspace', 'locale']
 
 /** The replayed user message is the canonical transcript entry. */
 function HiddenAgentTeamsCommand(): null {
