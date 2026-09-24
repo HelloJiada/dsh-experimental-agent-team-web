@@ -95,6 +95,11 @@ export interface MemberLlmSelectionCandidate {
   readonly request: MemberLlmSelectionRequest
   /** Explicit user intent is fail-closed; it never falls through. */
   readonly explicit?: boolean
+  /** Inherit-the-captain candidate: the captain's own live route is always
+   * admissible, so an all-grants-off configuration still creates members on the
+   * session model. Only the enabled gate is skipped; the ceiling and the adapter
+   * validation still apply. */
+  readonly implicit?: boolean
 }
 
 /** One model's policy ceiling. Absence of max permits only adapter default. */
@@ -180,10 +185,16 @@ export async function resolveMemberLlmCandidates(
       // capability snapshot. Never read enabledModels and modelCapabilities
       // through separate volatile references: revocation could race between them.
       const capability = capabilityFor?.(route.provider, route.model)
-      if (capabilityFor !== undefined) {
-        if (capability?.enabled !== true) throw new Error(`model ${route.provider}/${route.model} is not authorized`)
-      } else if (!isGranted(route.provider, route.model)) {
-        throw new Error(`model ${route.provider}/${route.model} is not authorized`)
+      // The captain's own live route is not a grant decision: inheriting the
+      // session model must keep working after every grant is switched off. Only
+      // the authorization gate is skipped for that candidate; the ceiling below
+      // and the adapter validation still apply.
+      if (candidate.implicit !== true) {
+        if (capabilityFor !== undefined) {
+          if (capability?.enabled !== true) throw new Error(`model ${route.provider}/${route.model} is not authorized`)
+        } else if (!isGranted(route.provider, route.model)) {
+          throw new Error(`model ${route.provider}/${route.model} is not authorized`)
+        }
       }
       // Route choice is independent of legacy role presets. New model metadata
       // always owns the effort vocabulary for the chosen exact route.

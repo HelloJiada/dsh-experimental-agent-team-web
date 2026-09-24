@@ -5,8 +5,8 @@
  * AgentTeamSettingsAccess.setModelGrant(apply 期捕获 settings scope 的写面
  * 闭包)写 settings 命名空间。覆盖：R-17/H-1 鉴权围栏（无 auth/错 token/
  * 非可信 Host → 403）、有界 JSON body(400)、provider/model 必填(400)、
- * 写面缺席(503)、授权/撤销经写面落 settings(200)、写面抛错(500)、
- * deepseek-official 名下隐式恒授权不落盘。
+ * 写面缺席(503)、授权/撤销经写面落 settings(200)、写面抛错(500)。
+ * 没有隐式恒授权:deepseek-official 与其它 provider 走同一写面。
  * @module dsh-agent-team-web/provider-grant-route.test
  */
 
@@ -163,12 +163,13 @@ describe('handleProviderGrant — 授权/撤销经写面落 settings', () => {
     expect(writes).toEqual([{ provider: 'kimi-coding', model: 'kimi-k2.7-code', enabled: false }])
   })
 
-  it('deepseek-official 名下模型授权请求 → 200 但不调用写面(隐式恒授权,永不落盘)', async () => {
+  it('deepseek-official 也能撤销 → 200 且经写面落盘(无隐式恒授权)', async () => {
     const writes: Array<{ provider: string; model: string; enabled: boolean }> = []
     const { res, state } = response()
-    await handleProviderGrant(accessWith(writes), authorizedPost('{"provider":"deepseek-official","model":"deepseek-v4-flash","enabled":true}'), res, auth)
+    await handleProviderGrant(accessWith(writes), authorizedPost('{"provider":"deepseek-official","model":"deepseek-v4-flash","enabled":false}'), res, auth)
     expect(state.status).toBe(200)
-    expect(writes).toHaveLength(0)
+    expect(JSON.parse(state.body)).toEqual({ provider: 'deepseek-official', model: 'deepseek-v4-flash', enabled: false })
+    expect(writes).toEqual([{ provider: 'deepseek-official', model: 'deepseek-v4-flash', enabled: false }])
   })
 
   it('enabled 缺失 → 视为撤销(false)', async () => {

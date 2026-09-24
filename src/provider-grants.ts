@@ -1,9 +1,10 @@
 /**
  * AgentTeam 设置中心 —— settings 命名空间域(t13 重构)。
  *
- * 设计(t12 拍板):Provider 授权粒度从 provider 升到 model——授权 key 为
- * `${provider}/${model}` 复合键(避免跨 provider 同名模型撞车);deepseek
- * -official 名下模型恒授权(回退不死路);仅显式路由才拦。命名空间更名
+ * 设计(t12/t27):Provider 授权粒度从 provider 升到 model——授权 key 为
+ * `${provider}/${model}` 复合键(避免跨 provider 同名模型撞车);**没有
+ * provider 是隐式恒授权的**(含 deepseek-official,全部关闭是合法状态),
+ * 显式路由按授权表拦,继承队长路由由 implicit 候选单独放行。命名空间更名
  * agent-team-web(schema 扩 enabledModels + roleDefaults),旧
  * agent-team-web-providers/enabledProviders 废弃(provider 粒度无法无损迁
  * 到 model 粒度,弃旧取新;profile.roleLlmDefaults 保留作 fallback/初始值)。
@@ -161,15 +162,17 @@ export interface SettingsScope {
   replace(section: object): Promise<void>
 }
 
-/** 模型授权判定(基于 apply 期 Config 的 enabledModels):deepseek-official
- * 名下模型恒授权(回退不死路);其余看 enabledModels[`${provider}/${model}`]。 */
+/** 模型授权判定(基于 apply 期 Config):新策略 `modelCapabilities[key].enabled`
+ * 优先,否则回落旧 `enabledModels[key]`。**没有任何 provider 是隐式恒授权的**——
+ * 全部关掉是合法状态:成员默认继承队长当前路由,那条路由由
+ * `resolveMemberLlmCandidates` 的隐式继承候选单独放行,不经过本函数。 */
 export function modelCapabilityFromValue(
   value: AgentTeamSettingsValue | undefined, provider: string, model: string,
 ): ResolvedModelCapability {
   const key = modelKey(provider, model)
   const configured = value?.modelCapabilities?.[key]
-  if (configured !== undefined) return provider === 'deepseek-official' ? { ...configured, enabled: true } : configured
-  return { enabled: provider === 'deepseek-official' || value?.enabledModels?.[key] === true, legacy: true }
+  if (configured !== undefined) return configured
+  return { enabled: value?.enabledModels?.[key] === true, legacy: true }
 }
 
 export function modelGrantedFromValue(
@@ -196,7 +199,7 @@ export function resolveRoleDefault(
 
 /** 设置中心的工具侧/写面共享访问对象（apply 期接线写入，作用域释放清空）。 */
 export interface AgentTeamSettingsAccess {
-  /** spawn 校验模型授权(tools.ts 读)；undefined → 仅 deepseek-official 恒授权。 */
+  /** spawn 校验模型授权(tools.ts 用于显式路由)；undefined → 全部未授权。 */
   modelGrantedFor?: (provider: string, model: string) => boolean
   /** 角色档位三源链解析(tools.ts 读)；undefined → 走 profile → DEFAULT_ROLE_LLM。 */
   roleDefaultsFor?: (roleKey: string) => RoleLlmDefaultValue | undefined
@@ -269,7 +272,6 @@ export function wireAgentTeamSettings(settingsCtx: unknown, access: AgentTeamSet
   const settings = (settingsCtx as { settings?: SettingsSurface }).settings
   if (settings === undefined) return
   access.setModelGrant = async (provider: string, model: string, enabled: boolean): Promise<void> => {
-    if (provider === 'deepseek-official') return // 隐式恒授权,永不落盘
     const current = access.enabledModels?.() ?? {}
     const key = modelKey(provider, model)
     const capabilities = { ...(access.modelCapabilities?.() ?? {}) }

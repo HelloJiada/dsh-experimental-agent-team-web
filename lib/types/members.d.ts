@@ -57,6 +57,11 @@ export interface MemberLlmSelectionCandidate {
     readonly request: MemberLlmSelectionRequest;
     /** Explicit user intent is fail-closed; it never falls through. */
     readonly explicit?: boolean;
+    /** Inherit-the-captain candidate: the captain's own live route is always
+     * admissible, so an all-grants-off configuration still creates members on the
+     * session model. Only the enabled gate is skipped; the ceiling and the adapter
+     * validation still apply. */
+    readonly implicit?: boolean;
 }
 /** One model's policy ceiling. Absence of max permits only adapter default. */
 export interface MemberModelCapability {

@@ -9,8 +9,8 @@
  *
  * 处理顺序：R-17/H-1 token + Host 围栏最先（未授权一律 403，不读 body）→
  * 有界 JSON body(400) → provider/model 必填(400) → 写面可用性(503,
- * settings 缺席) → setModelGrant(成功 200,失败 500)。deepseek-official
- * 名下模型由写面隐式恒授权,不会落盘。
+ * settings 缺席) → setModelGrant(成功 200,失败 500)。任何 provider(含
+ * deepseek-official)都走同一写面,授权全部关闭是合法状态。
  * @module dsh-agent-team-web/provider-grant-route
  */
 
@@ -64,12 +64,6 @@ export async function handleProviderGrant(
   if (provider === '' || model === '') {
     res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify({ error: 'provider and model are required' }))
-    return
-  }
-  // deepseek-official 名下模型隐式恒授权,永不落盘(路由层契约;写面闭包另有同守卫)。
-  if (provider === 'deepseek-official') {
-    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
-    res.end(JSON.stringify({ provider, model, enabled: payload.enabled === true }))
     return
   }
   if (access.setModelGrant === undefined) {

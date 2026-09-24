@@ -527,6 +527,15 @@
   line-height: 16px;
 }
 
+.roleBox { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 42%, transparent); }
+.roleBoxHead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.roleBoxTitle { color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 650; line-height: 20px; }
+.roleBoxId { overflow: hidden; color: var(--dsw-alias-label-tertiary); font: 10px/16px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.roleBoxDescription { display: -webkit-box; overflow: hidden; margin: 0; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 17px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.roleBoxActions { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 6px; }
+.roleDutyLink { padding: 3px 0; border: 0; background: transparent; color: var(--dsw-alias-state-business-primary); font: inherit; font-size: 11px; cursor: pointer; }
+.roleDutyLink:hover { text-decoration: underline; }
+.roleBoxActions .viewBtn { margin-left: auto; }
 .modelHelp { margin: 0; padding: 0 10px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 17px; }
 .modelPresetReference { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 8px; }
 .modelProvider { display: flex; flex-direction: column; gap: 4px; }

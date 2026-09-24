@@ -103,8 +103,8 @@ export interface Config {
      * the parent preset instead of inheriting the parent agent scope.
      */
     registration?: 'lazy' | 'eager';
-    /** 模型调度授权(key `${provider}/${model}` → true 授权)。设置页写面字段,
-     * 必须 volatile;缺省 = 空 map(仅 deepseek-official 恒授权)。 */
+    /** 旧模型授权表(key `${provider}/${model}` → true)。设置页写面字段,必须
+     * volatile;缺省 = 空 map(未配置即未授权,没有 provider 是恒授权的)。 */
     enabledModels?: Record<string, boolean>;
     /** Legacy role routes retained for read-only migration display. */
     roleDefaults?: Record<string, MemberLlmDefaults>;

@@ -565,12 +565,18 @@ describe('agent_teams_add_member — 添加成员', () => {
       { role: 'qa', provider: 'xiaomi', model: 'xiaomi-m1' },
       execOf(agent(workspace, CAPTAIN_ID)),
     )).rejects.toThrow(/explicit member route explicit rejected.*not authorized/)
-    // deepseek-official 恒授权,不走 scope 判定。
-    const builtin = await execTool('agent_teams_add_member').execute(
+    // 没有隐式恒授权:未配置的 deepseek 路由同样被拒(显式请求 fail-closed)。
+    await expect(execTool('agent_teams_add_member').execute(
       { role: 'researcher', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
       execOf(agent(workspace, CAPTAIN_ID)),
-    ) as { member_name: string; provider: string }
-    expect(builtin.provider).toBe('deepseek-official')
+    )).rejects.toThrow(/explicit member route explicit rejected.*not authorized/)
+    // 但"继承队长路由"不是授权决策:全部关掉时仍可用队长自己的会话模型。
+    const inherited = await execTool('agent_teams_add_member').execute(
+      { role: 'researcher' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    ) as { member_name: string; provider: string; model: string }
+    expect(inherited.provider).toBe('p')
+    expect(inherited.model).toBe('m')
   })
 
   it('R-26:spawn(网络)在锁外——add_member 进行中,同队 status 不被阻塞', async () => {

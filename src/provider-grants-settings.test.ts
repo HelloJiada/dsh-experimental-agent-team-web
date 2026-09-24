@@ -96,14 +96,20 @@ describe('modelCapabilities — exact route policy and legacy fallback', () => {
     expect(modelGrantedFromValue(settings, 'cc-switch', 'gpt-6-sol')).toBe(false)
     expect(modelCapabilityFromValue(settings, 'cc-switch', 'gpt-6-sol')).toEqual({ enabled: false, maxReasoningEffort: 'low' })
     expect(modelCapabilityFromValue({ enabledModels: { 'cc-switch/gpt-6-sol': true } }, 'cc-switch', 'gpt-6-sol')).toEqual({ enabled: true, legacy: true })
-    expect(modelGrantedFromValue({ modelCapabilities: { 'deepseek-official/deepseek-flash': { enabled: false } } }, 'deepseek-official', 'deepseek-flash')).toBe(true)
+    // 没有隐式恒授权:deepseek-official 的显式策略同样生效。
+    expect(modelGrantedFromValue({ modelCapabilities: { 'deepseek-official/deepseek-flash': { enabled: false } } }, 'deepseek-official', 'deepseek-flash')).toBe(false)
+    expect(modelGrantedFromValue({}, 'deepseek-official', 'deepseek-flash')).toBe(false)
   })
 })
 
 describe('modelGrantedFromValue — 复合 key 模型授权判定', () => {
-  it('deepseek-official 名下模型恒授权(不看 config)', () => {
-    expect(modelGrantedFromValue({}, 'deepseek-official', 'deepseek-v4-flash')).toBe(true)
-    expect(modelGrantedFromValue(undefined, 'deepseek-official', 'deepseek-v4-flash')).toBe(true)
+  it('deepseek-official 不再恒授权:未配置即未授权,显式条目才生效', () => {
+    expect(modelGrantedFromValue({}, 'deepseek-official', 'deepseek-v4-flash')).toBe(false)
+    expect(modelGrantedFromValue(undefined, 'deepseek-official', 'deepseek-v4-flash')).toBe(false)
+    expect(modelGrantedFromValue({ modelCapabilities: { 'deepseek-official/deepseek-v4-flash': { enabled: true } } }, 'deepseek-official', 'deepseek-v4-flash')).toBe(true)
+    // 旧 enabledModels 的 deepseek 授权仍可读(兼容),只有显式新条目才能压过它。
+    expect(modelGrantedFromValue({ enabledModels: { 'deepseek-official/deepseek-v4-flash': true } }, 'deepseek-official', 'deepseek-v4-flash')).toBe(true)
+    expect(modelGrantedFromValue({ enabledModels: { 'deepseek-official/deepseek-v4-flash': true }, modelCapabilities: { 'deepseek-official/deepseek-v4-flash': { enabled: false } } }, 'deepseek-official', 'deepseek-v4-flash')).toBe(false)
   })
 
   it('其余 provider 按 `${provider}/${model}` 复合 key(跨 provider 同名不撞车)', () => {
@@ -149,7 +155,8 @@ describe('settingsAccessFromConfig — 读访问直接来自 apply 期 config', 
     })
     expect(access.modelGrantedFor?.('cc-switch', 'gpt-5.6-terra')).toBe(true)
     expect(access.modelGrantedFor?.('cc-switch', 'gpt-5.6-luna')).toBe(false)
-    expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-pro')).toBe(true)
+    // 没有隐式恒授权:未配置的 deepseek 模型同样是未授权。
+    expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-pro')).toBe(false)
     expect(access.enabledModels?.()).toEqual({ 'cc-switch/gpt-5.6-terra': true })
     expect(access.roleDefaultsFor?.('engineer')).toEqual({ provider: 'cc-switch', model: 'gpt-5.6-terra' })
     expect(access.roleDefaults?.()).toEqual({ engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra' } })
@@ -171,7 +178,7 @@ describe('settingsAccessFromConfig — 读访问直接来自 apply 期 config', 
     expect(access.roleDefaults?.()).toEqual(roles)
   })
 
-  it('缺省 config → 空 map 且仅 deepseek 恒授权', () => {
+  it('缺省 config → 空 map,任何 provider 都未授权', () => {
     const access = settingsAccessFromConfig({})
     expect(access.enabledModels?.()).toEqual({})
     expect(access.roleDefaults?.()).toEqual({})
@@ -183,7 +190,7 @@ describe('settingsAccessFromConfig — 读访问直接来自 apply 期 config', 
 })
 
 describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)', () => {
-  it('授权/撤销与角色覆盖写入都落到命名空间,deepseek 为 no-op', async () => {
+  it('授权/撤销与角色覆盖写入都落到命名空间(deepseek 与其它 provider 同等落盘)', async () => {
     const calls: Array<{ ns: string; patch: object }> = []
     let disposer: (() => void) | undefined
     const settingsCtx = {
@@ -202,28 +209,34 @@ describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)'
       patch: { enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'cc-switch/gpt-5.6-terra': true }, modelCapabilities: { 'cc-switch/gpt-5.6-terra': { enabled: true } } },
     })
 
-    // deepseek 名下隐式恒授权 → 不落盘
-    await access.setModelGrant?.('deepseek-official', 'deepseek-v4-flash', true)
-    expect(calls).toHaveLength(1)
+    // deepseek 也没有隐式恒授权:与其它 provider 一样落盘
+    await access.setModelGrant?.('deepseek-official', 'deepseek-v4-flash', false)
+    expect(calls[1]).toEqual({
+      ns: 'agent-team-web',
+      patch: {
+        enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'deepseek-official/deepseek-v4-flash': false },
+        modelCapabilities: { 'deepseek-official/deepseek-v4-flash': { enabled: false } },
+      },
+    })
 
     // 撤销 = 写 false(键保留,语义显式)
     await access.setModelGrant?.('cc-switch', 'gpt-5.6-terra', false)
-    expect(calls[1]?.patch).toEqual({
+    expect(calls[2]?.patch).toEqual({
       enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'cc-switch/gpt-5.6-terra': false },
       modelCapabilities: { 'cc-switch/gpt-5.6-terra': { enabled: false } },
     })
 
     // 角色覆盖写 + 「默认」删覆盖
     await access.setRoleDefault?.('engineer', { model: 'gpt-5.6-terra' })
-    expect(calls[2]?.patch).toEqual({ roleDefaults: { engineer: { model: 'gpt-5.6-terra' } } })
+    expect(calls[3]?.patch).toEqual({ roleDefaults: { engineer: { model: 'gpt-5.6-terra' } } })
     await access.setRoleDefault?.('engineer', undefined)
-    expect(calls[3]?.patch).toEqual({ roleDefaults: {} })
+    expect(calls[4]?.patch).toEqual({ roleDefaults: {} })
 
     // 释放:写面清空(读访问由 config 闭包持有,不随之清空)
     disposer?.()
     expect(access.setModelGrant).toBeUndefined()
     expect(access.setRoleDefault).toBeUndefined()
-    expect(access.modelGrantedFor?.('deepseek-official', 'x')).toBe(true)
+    expect(access.modelGrantedFor?.('deepseek-official', 'x')).toBe(false)
   })
 
   it('settings 服务缺席(headless)→ 写面保持缺席,读访问不受影响', () => {
@@ -231,7 +244,7 @@ describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)'
     wireAgentTeamSettings({}, access)
     expect(access.setModelGrant).toBeUndefined()
     expect(access.setRoleDefault).toBeUndefined()
-    expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-pro')).toBe(true)
+    expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-pro')).toBe(false)
   })
 })
 

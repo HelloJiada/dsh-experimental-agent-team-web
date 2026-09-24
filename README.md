@@ -8,7 +8,7 @@
 
 ## DSH compatibility
 
-Version 0.1.31 uses the package's self-contained AgentTeams kernel and is tested
+Version 0.1.32 uses the package's self-contained AgentTeams kernel and is tested
 against the public DSH `0.1.7-rc.1` package line. It does **not** require the
 unpublished official experimental Agent Teams package or a local DSH checkout.
 
@@ -42,10 +42,10 @@ It provides:
 
 DSH Settings hosts an **AgentTeam** section (`settings.section` slot, with a dedicated nav board glyph): one card for role duties and one for model selection.
 
-- **Role presets** (first card): **duties only**. One row per role (display name + mono id); a row-level **view button** (eye glyph, matching the DSH Agent-preset interaction) opens a role-duty dialog — slogan + working order + deliverable + key rules (full Chinese copy, source `client/roles.ts` ROLE_DUTY). The card has no model or reasoning-effort dropdown and no "apply preset" entry: a role's duty never chooses a member's model.
-- **Model selection** (second card): lets the Agent choose models for subagents — a per-`${provider}/${model}` switch (`modelCapabilities[key].enabled`) plus an optional **maximum reasoning effort** per model (`maxReasoningEffort`, which must be an effort id that model's adapter advertises). The dropdown lists `reasoning.efforts` from `ctx.llm.resolveModelInfo` in adapter order; a model without reasoning capability renders no effort control and the server never invents one. `deepseek-official` stays implicitly granted (locked pill) while its ceiling remains configurable. The card's **model preset reference** is read-only and writes nothing.
-- **Legacy configuration stays readable**: `enabledModels` (old grant table) and `roleDefaults` / profile `roleLlmDefaults` / built-in `DEFAULT_ROLE_LLM` (old role-route chain) are still read and never auto-deleted, but they **no longer participate in new-member routing**; the role card only shows them as "legacy route record (compatibility display)".
-- **New-member routing**: without an explicit `provider`/`model` a member **inherits the captain's current route**; an explicit route is validated exactly (ungranted, unknown effort, or above the ceiling fails instead of silently falling back).
+- **Role presets** (first card): **duties only**. One card per role (display name + mono id + duty summary in the DSH built-in-preset box style); the **duty link / view button** (eye glyph, matching the DSH Agent-preset interaction) opens a role-duty dialog — slogan + working order + deliverable + key rules (full Chinese copy, source `client/roles.ts` ROLE_DUTY). The card has no model or reasoning-effort dropdown and no "apply preset" entry: a role's duty never chooses a member's model.
+- **Model selection** (second card): lets the Agent choose models for subagents — a per-`${provider}/${model}` switch (`modelCapabilities[key].enabled`) plus an optional **maximum reasoning effort** per model (`maxReasoningEffort`, which must be an effort id that model's adapter advertises). The dropdown lists `reasoning.efforts` from `ctx.llm.resolveModelInfo` in adapter order; a model without reasoning capability renders no effort control and the server never invents one. No provider is implicitly granted — every model, `deepseek-official` included, has a real switch and can be turned off, so "no grants at all" is a valid configuration. The card's **model preset reference** is read-only and writes nothing.
+- **Legacy configuration stays readable**: `enabledModels` (old grant table) and `roleDefaults` / profile `roleLlmDefaults` / built-in `DEFAULT_ROLE_LLM` (old role-route chain) are still read and never auto-deleted, but they **no longer participate in new-member routing** and are no longer rendered in the settings card.
+- **New-member routing**: without an explicit `provider`/`model` a member **inherits the captain's current route**, which is not a grant decision — it stays usable after every grant is switched off. An explicit route is validated against the grants exactly (ungranted, unknown effort, or above the ceiling fails instead of silently falling back).
 
 ## Self-growing framework
 
@@ -163,7 +163,7 @@ The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.31.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -220,4 +220,4 @@ page for the current asset name.)
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.31.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz`

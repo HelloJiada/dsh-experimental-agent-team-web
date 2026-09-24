@@ -58,7 +58,7 @@ import {
   modelEnabled,
   toggleModelCapability,
   mergeRoleDefaults,
-  roleRouteNotice,
+  roleDutyDescription,
   MEMBER_PRESET_ROLES,
   modelKeyOf,
   providerGrantRows,
@@ -102,18 +102,20 @@ describe('model capability allowlist UI contract', () => {
   it('keeps missing caps unset, clears cap on explicit default, and locks only built-in grant', () => {
     expect(toggleModelCapability({ modelCapabilities: { 'p/routed-model': { enabled: true, maxReasoningEffort: 'high' } } }, 'p', model, true, '')).toEqual({ 'p/routed-model': { enabled: true } })
     expect(toggleModelCapability(undefined, 'p', model, true, 'imaginary')).toEqual({ 'p/routed-model': { enabled: true } })
-    expect(modelEnabled('deepseek-official', { id: 'd' }, undefined)).toBe(true)
+    expect(modelEnabled('deepseek-official', { id: 'd' }, undefined)).toBe(false)
+    expect(modelEnabled('deepseek-official', { id: 'd' }, { modelCapabilities: { 'deepseek-official/d': { enabled: true } } })).toBe(true)
+    expect(toggleModelCapability(undefined, 'deepseek-official', { id: 'd' }, false)).toEqual({ 'deepseek-official/d': { enabled: false } })
   })
 })
 
 describe('providerGrantRows — provider 粒度行(t14)', () => {
-  it('4 provider 各一行(无模型子列表);deepseek-official 恒锁定恒启用', () => {
+  it('4 provider 各一行;DeepSeek 授权由显式 grant 决定且可关闭', () => {
     const rows = providerGrantRows(PROVIDERS, {})
     expect(rows).toEqual([
-      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, locked: true },
-      { id: 'kimi-coding', name: 'Kimi Coding', enabled: false, locked: false },
-      { id: 'xiaomi', name: 'Xiaomi', enabled: false, locked: false },
-      { id: 'cc-switch', name: 'CC Switch', enabled: false, locked: false },
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: false },
+      { id: 'kimi-coding', name: 'Kimi Coding', enabled: false },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: false },
+      { id: 'cc-switch', name: 'CC Switch', enabled: false },
     ])
   })
 
@@ -176,13 +178,10 @@ describe('role preset duties survive empty legacy routing data', () => {
     expect(rows.map(row => row.role)).toEqual([...MEMBER_PRESET_ROLES])
     expect(rows.map(row => row.role)).toEqual(['researcher', 'engineer', 'qa', 'designer', 'data', 'docs', 'security', 'reviewer', 'commissar'])
   })
-  it('shows old route only when present and otherwise explains captain inheritance', () => {
-    const rows = mergeRoleDefaults({ engineer: { provider: 'legacy-provider', model: 'legacy-model' } }, {})
-    const translate = (key: string, params?: Record<string, unknown>): string => key === 'settings.agentTeam.legacyRoute'
-      ? `旧路由记录：${params?.provider} / ${params?.model}（仅兼容展示）`
-      : key === 'settings.agentTeam.providerMissing' ? 'provider 未记录' : '新成员默认继承队长路由'
-    expect(roleRouteNotice(rows.find(row => row.role === 'engineer')!, translate)).toBe('旧路由记录：legacy-provider / legacy-model（仅兼容展示）')
-    expect(roleRouteNotice(rows.find(row => row.role === 'qa')!, translate)).toBe('新成员默认继承队长路由')
+  it('uses duty slogan and neutral text for legacy-only roles', () => {
+    const translate = (key: string): string => key === 'settings.agentTeam.roleDutyUnavailable' ? '暂无职责说明。' : key
+    expect(roleDutyDescription('engineer', translate)).toBe(ROLE_DUTY.engineer?.slogan)
+    expect(roleDutyDescription('custom-legacy', translate)).toBe('暂无职责说明。')
   })
   it('preserves legacy-only role ids after preset roles', () => {
     expect(mergeRoleDefaults({}, { 'custom-legacy': { model: 'old-model' } }).map(row => row.role)).toContain('custom-legacy')

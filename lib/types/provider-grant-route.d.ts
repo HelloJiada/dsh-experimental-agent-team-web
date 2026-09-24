@@ -9,8 +9,8 @@
  *
  * 处理顺序：R-17/H-1 token + Host 围栏最先（未授权一律 403，不读 body）→
  * 有界 JSON body(400) → provider/model 必填(400) → 写面可用性(503,
- * settings 缺席) → setModelGrant(成功 200,失败 500)。deepseek-official
- * 名下模型由写面隐式恒授权,不会落盘。
+ * settings 缺席) → setModelGrant(成功 200,失败 500)。任何 provider(含
+ * deepseek-official)都走同一写面,授权全部关闭是合法状态。
  * @module dsh-agent-team-web/provider-grant-route
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';

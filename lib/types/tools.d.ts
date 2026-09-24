@@ -37,9 +37,9 @@ export interface ToolsConfig {
         model?: string;
         reasoningEffort?: string;
     }>;
-    /** 模型授权判定(t13,settings scope 闭包):`${provider}/${model}` 复合 key,
-     * deepseek-official 名下恒授权;undefined(无 settings 服务)→ 仅 deepseek
-     * 授权。 */
+    /** 模型授权判定(t13,settings scope 闭包):`${provider}/${model}` 复合 key。
+     * 没有 provider 是隐式恒授权的;undefined(无 settings 服务)→ 仅队长自身
+     * 路由可被继承(见 memberRouteCandidates 的 implicit 候选)。 */
     modelGrantedFor?: (provider: string, model: string) => boolean;
     /** Legacy role-route settings retained for display/migration only. */
     roleDefaultsFor?: (roleKey: string) => {

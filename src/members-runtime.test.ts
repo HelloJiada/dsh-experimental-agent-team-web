@@ -268,6 +268,31 @@ describe('resolveMemberLlmCandidates — portable route admission', () => {
     expect(calls).toBe(0)
   })
 
+  it('admits the implicit inherited captain route even when every grant is off', async () => {
+    const ctx = baseCtx({ llm: {
+      resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model,
+        reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }),
+      resolveCallConfig: async (config: { provider: string; model: string }) => config,
+    } })
+    // 全部授权关闭:capability.enabled === false,但继承队长路由的隐式候选仍放行,
+    // 且上限策略照旧生效(此处未配上限 → 用 adapter 默认 effort)。
+    const selection = await resolveMemberLlmCandidates(ctx, captain('/ws'), [
+      { label: 'captain route', request: {}, implicit: true },
+    ], () => false, undefined, () => ({ enabled: false }))
+    expect(selection).toMatchObject({ provider: 'p', model: 'm' })
+    expect(selection.reasoningEffort).toBe('low')
+  })
+
+  it('still rejects the same route when it is requested explicitly', async () => {
+    const ctx = baseCtx({ llm: {
+      resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+      resolveCallConfig: async (config: { provider: string; model: string }) => config,
+    } })
+    await expect(resolveMemberLlmCandidates(ctx, captain('/ws'), [
+      { label: 'explicit', explicit: true, request: { provider: 'p', model: 'm' } },
+    ], () => false, undefined, () => ({ enabled: false }))).rejects.toThrow(/explicit member route explicit rejected.*not authorized/)
+  })
+
   it('admits only the captain route when no explicit provider/model is selected', async () => {
     const ctx = baseCtx({ llm: {
       resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),

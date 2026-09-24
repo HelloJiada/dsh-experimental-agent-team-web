@@ -128,9 +128,9 @@ export interface ToolsConfig {
   maxExecPerRoleByRole?: Record<string, number>
   /** Legacy per-role model routing; retained only for migration diagnostics. */
   roleLlmDefaults?: Record<string, { provider?: string; model?: string; reasoningEffort?: string }>
-  /** 模型授权判定(t13,settings scope 闭包):`${provider}/${model}` 复合 key,
-   * deepseek-official 名下恒授权;undefined(无 settings 服务)→ 仅 deepseek
-   * 授权。 */
+  /** 模型授权判定(t13,settings scope 闭包):`${provider}/${model}` 复合 key。
+   * 没有 provider 是隐式恒授权的;undefined(无 settings 服务)→ 仅队长自身
+   * 路由可被继承(见 memberRouteCandidates 的 implicit 候选)。 */
   modelGrantedFor?: (provider: string, model: string) => boolean
   /** Legacy role-route settings retained for display/migration only. */
   roleDefaultsFor?: (roleKey: string) => { provider?: string; model?: string; reasoningEffort?: string } | undefined
@@ -182,13 +182,11 @@ function stateRootOf(workspace: string, config: ToolsConfig): string {
 }
 
 /**
- * Build portable route candidates in precedence order. Partial role presets are
- * intentionally skipped: a model-only preset must never be paired with the
- * captain's provider (provider/model are an inseparable route tuple).
+ * Build portable route candidates in precedence order: the explicit request
+ * (fail-closed) followed by the inherited captain route (implicit). Role presets
+ * never contribute a candidate — a role describes work, not a model.
  */
 function memberRouteCandidates(
-  config: ToolsConfig,
-  roleKey: string,
   explicit: { provider?: string; model?: string; reasoningEffort?: string },
 ): MemberLlmSelectionCandidate[] {
   const candidates: MemberLlmSelectionCandidate[] = []
@@ -200,8 +198,10 @@ function memberRouteCandidates(
     })
   }
   // Role presets describe work, not routing. New members inherit the captain
-  // route unless the captain explicitly chooses another provider/model.
-  candidates.push({ label: 'captain route', request: {} })
+  // route unless the captain explicitly chooses another provider/model. That
+  // inherited candidate is implicit: the captain's own live route stays usable
+  // even when every model grant is switched off.
+  candidates.push({ label: 'captain route', request: {}, implicit: true })
   return candidates
 }
 
@@ -611,14 +611,13 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
             const captainRoute = captain.session.requestHeader()?.config
             const grant = (provider: string, model: string): boolean => {
               if (config.modelGrantedFor !== undefined) return config.modelGrantedFor(provider, model)
-              return provider === 'deepseek-official'
-                || (provider === (captainRoute?.provider ?? captain.options.provider)
-                  && model === (captainRoute?.model ?? captain.options.model))
+              return provider === (captainRoute?.provider ?? captain.options.provider)
+                && model === (captainRoute?.model ?? captain.options.model)
             }
             const commissarSelection = await resolveMemberLlmCandidates(
               ctx,
               captain,
-              memberRouteCandidates(config, 'commissar', {}),
+              memberRouteCandidates({}),
               grant,
               exec.signal,
               config.modelCapabilitiesFor,
@@ -770,17 +769,16 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       const grant = (provider: string, model: string): boolean => {
         if (config.modelGrantedFor !== undefined) return config.modelGrantedFor(provider, model)
         // Without the optional settings service, the captain's already-live
-        // route is the only non-DeepSeek route we can safely inherit.
-        return provider === 'deepseek-official'
-          || (provider === (captainRoute?.provider ?? captain.options.provider)
-            && model === (captainRoute?.model ?? captain.options.model))
+        // route is the only route we can safely inherit.
+        return provider === (captainRoute?.provider ?? captain.options.provider)
+          && model === (captainRoute?.model ?? captain.options.model)
       }
       // Candidate admission is fail-closed. The captain route is not bypassed
       // by role templates; explicit route requests never silently fallback.
       const effectiveSelection = await resolveMemberLlmCandidates(
         ctx,
         captain,
-        memberRouteCandidates(config, roleKey, {
+        memberRouteCandidates({
           provider: args.provider,
           model: args.model,
           reasoningEffort: args.reasoning_effort,
@@ -1011,14 +1009,13 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         const captainRoute = captain.session.requestHeader()?.config
         const grant = (provider: string, model: string): boolean => {
           if (config.modelGrantedFor !== undefined) return config.modelGrantedFor(provider, model)
-          return provider === 'deepseek-official'
-            || (provider === (captainRoute?.provider ?? captain.options.provider)
-              && model === (captainRoute?.model ?? captain.options.model))
+          return provider === (captainRoute?.provider ?? captain.options.provider)
+            && model === (captainRoute?.model ?? captain.options.model)
         }
         const selection = await resolveMemberLlmCandidates(
           ctx,
           captain,
-          memberRouteCandidates(config, 'commissar', {}),
+          memberRouteCandidates({}),
           grant,
           exec.signal,
           config.modelCapabilitiesFor,

@@ -92,11 +92,9 @@ export declare const zh: {
     'settings.agentTeam.modelPresetReference': string;
     'settings.agentTeam.modelPresetReferenceHelp': string;
     'settings.agentTeam.modelPresetReadOnly': string;
-    'settings.agentTeam.legacyRoute': string;
-    'settings.agentTeam.providerMissing': string;
-    'settings.agentTeam.inheritCaptainRoute': string;
+    'settings.agentTeam.roleDutyLink': string;
+    'settings.agentTeam.roleDutyUnavailable': string;
     'settings.agentTeam.rolePreset': string;
-    'settings.agentTeam.locked': string;
     'settings.agentTeam.toggleAria': string;
     'settings.agentTeam.modelAria': string;
     'settings.agentTeam.effortAria': string;
@@ -447,11 +445,9 @@ export declare const en: {
     'settings.agentTeam.modelPresetReference': string;
     'settings.agentTeam.modelPresetReferenceHelp': string;
     'settings.agentTeam.modelPresetReadOnly': string;
-    'settings.agentTeam.legacyRoute': string;
-    'settings.agentTeam.providerMissing': string;
-    'settings.agentTeam.inheritCaptainRoute': string;
+    'settings.agentTeam.roleDutyLink': string;
+    'settings.agentTeam.roleDutyUnavailable': string;
     'settings.agentTeam.rolePreset': string;
-    'settings.agentTeam.locked': string;
     'settings.agentTeam.toggleAria': string;
     'settings.agentTeam.modelAria': string;
     'settings.agentTeam.effortAria': string;

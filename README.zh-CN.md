@@ -8,7 +8,7 @@
 
 ## DSH 兼容性
 
-版本 0.1.31 使用本包自包含的 AgentTeams 内核，已针对公开 DSH `0.1.7-rc.1` 包线完成验证；不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
+版本 0.1.32 使用本包自包含的 AgentTeams 内核，已针对公开 DSH `0.1.7-rc.1` 包线完成验证；不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
 
 在 `0.1.5-rc.2` 上请设置 `registration: eager`（详见 `docs/compatibility.md`）：该 harness 让子 agent 加入**父的 preset**、而不是继承**父 agent 的 scope**，按需加载无法把团队工具交付给成员。`eager` 把整面注册进全局层（v0.1.14 形态），代价是每个会话约 4.9k tokens/请求。
 
@@ -32,10 +32,10 @@
 
 DSH 设置页内置 **AgentTeam** section(`settings.section` 槽位,含导航专属棋盘图标),两张卡片分别管理角色职责与模型选择:
 
-- **角色预设**(第一张卡):**只描述职责**。每角色一行(中文名 + mono id),行右侧**查看按钮**(眼睛图标,对齐 DSH Agent 预设交互)弹出角色职责说明——slogan + 工作方式 + 交付物 + 核心准则(中文全量版,数据源 `client/roles.ts` ROLE_DUTY)。卡片不再有模型/思考档位下拉,也不再有「套用预设」入口:角色职责不决定成员用哪个模型。
-- **模型选择**(第二张卡):允许 Agent 为 Subagent 选择模型——按 `${provider}/${model}` 逐模型开关(`modelCapabilities[key].enabled`),并为每个模型限制**最高思考档位**(`maxReasoningEffort`,必须是该模型 adapter 提供的档位 id)。档位选项原序来自 `ctx.llm.resolveModelInfo` 的 `reasoning.efforts`;模型没有 reasoning 能力时不渲染档位控件,服务端也不会替它造一个。deepseek-official 恒授权(锁定徽),但其最高档位仍可限制。卡片内的**模型预设参考**只作查阅,不写入任何配置。
-- **旧配置只读兼容**:`enabledModels`(旧授权表)与 `roleDefaults` / profile `roleLlmDefaults` / 内置 `DEFAULT_ROLE_LLM`(旧角色档位链)仍可读、不会被自动删除,但**不再参与任何新成员选路**;角色卡只把它们作为「旧路由记录(仅兼容展示)」显示。
-- **新成员路由**:未显式指定 `provider`/`model` 时**继承队长当前路由**;队长显式指定时按该精确路由校验(未授权/无档位/超上限一律失败,不静默回退)。
+- **角色预设**(第一张卡):**只描述职责**。每角色一个盒子(中文名 + mono id + 职责摘要,排版对齐 DSH 内置预设卡),盒内**职责说明链接与查看按钮**(眼睛图标)弹出角色职责说明——slogan + 工作方式 + 交付物 + 核心准则(中文全量版,数据源 `client/roles.ts` ROLE_DUTY)。卡片不再有模型/思考档位下拉,也不再有「套用预设」入口:角色职责不决定成员用哪个模型。
+- **模型选择**(第二张卡):允许 Agent 为 Subagent 选择模型——按 `${provider}/${model}` 逐模型开关(`modelCapabilities[key].enabled`),并为每个模型限制**最高思考档位**(`maxReasoningEffort`,必须是该模型 adapter 提供的档位 id)。档位选项原序来自 `ctx.llm.resolveModelInfo` 的 `reasoning.efforts`;模型没有 reasoning 能力时不渲染档位控件,服务端也不会替它造一个。没有任何 provider 是隐式恒授权的——包括 deepseek-official 在内的每个模型都有真实开关、都可以关闭,因此"一个都不授权"是合法配置。卡片内的**模型预设参考**只作查阅,不写入任何配置。
+- **旧配置只读兼容**:`enabledModels`(旧授权表)与 `roleDefaults` / profile `roleLlmDefaults` / 内置 `DEFAULT_ROLE_LLM`(旧角色档位链)仍可读、不会被自动删除,但**不再参与任何新成员选路**,角色卡也不再渲染这些旧记录。
+- **新成员路由**:未显式指定 `provider`/`model` 时**继承队长当前路由**——继承不是授权决策,全部关闭后依然可用;队长显式指定时按该精确路由校验授权(未授权/无档位/超上限一律失败,不静默回退)。
 
 ## 自成长框架
 
@@ -97,7 +97,7 @@ AgentTeams 假设**单个 harness 进程**独占一个 workspace 的团队状态
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.31.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz
 ```
 
 开发者/协作者也可用 git 或本地路径安装——仓库已提交 `lib/` 构建产物,无需构建:
@@ -150,4 +150,4 @@ tarball,无需改 URL。(若上面文件名仍带旧版本号,到
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.31.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz`

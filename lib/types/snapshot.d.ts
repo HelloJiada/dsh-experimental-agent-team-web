@@ -13,8 +13,9 @@ import type { BestPracticeEntry } from './best-practices.ts';
 import type { EstimateLevel, MemberStatus, TaskRetro, TaskSignals, TeamState } from './types.ts';
 /**
  * 全局 provider 列表(t13:模型粒度授权——每 provider 合并其模型列表
- * (advisory),授权状态看 enabledModels 复合 key `${provider}/${model}`;
- * provider 级 enabled = 存在任一已授权模型)。deepseek-official 恒启用。
+ * (advisory),provider 级 enabled = 旧 enabledModels 里存在任一复合 key
+ * `${provider}/${model}`(仅展示口径;授权判定走 modelCapabilities,见
+ * provider-grants.ts)。
  * /state 顶层与每个团队快照共用此 helper(异步:listModels 逐 provider)。
  */
 export declare function collectProviders(ctx: Context, enabledModels?: () => Record<string, boolean>): Promise<TeamProviderView[]>;
@@ -120,7 +121,7 @@ export interface TeamActivitySnapshot {
     /** 自成长:本团队已完成任务的 (角色×等级) 校准统计。 */
     readonly calibration?: TeamCalibrationView;
     /** LLM provider 授权中心:DSH 已注册的 provider + 面板 switch 授权状态。
-     * 每个快照携带全量列表(全局, profile 级),deepseek-official 恒启用。 */
+     * 每个快照携带全量列表(全局, profile 级)。 */
     readonly providers?: readonly TeamProviderView[];
 }
 /** Provider 授权中心的一行(设置页/快照):models 为 advisory 列表。 */
@@ -159,7 +160,9 @@ export interface TeamSnapshotOptions {
     /** Archived teams have no meaningful live activity after their sessions stop. */
     readonly historic?: boolean;
     /** AgentTeam 设置中心(t13):settings 命名空间 enabledModels 快照读取
-     * 函数(apply 期捕获 scope 的闭包);undefined → 非 deepseek 全未授权。 */
+     * 函数(apply 期捕获 scope 的闭包);undefined → 全部未授权。注意:provider
+     * 级 `enabled` 徽标只按这份旧表计,新授权策略以 `modelCapabilities` 为准
+     * (逐模型开关);两者由写面同步,但徽标是展示口径,不参与授权判定。 */
     readonly enabledModels?: () => Record<string, boolean>;
     /** Host-computed canonical workspace token (never read from team.json). */
     readonly workspaceId?: string;

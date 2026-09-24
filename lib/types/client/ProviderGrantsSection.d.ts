@@ -1,9 +1,11 @@
 /**
  * AgentTeam 设置中心 section(t13 重构)——一个 settings.section 两张卡。
  *
- * 卡片一 ModelGrantCard:模型调度授权——每 provider 的每模型一行 + switch
- * (key `${provider}/${model}` 复合);deepseek-official 名下模型恒授权锁定。
- * 卡片二 RolePresetCard:角色预设——每角色一行 + 预设模型/思考深度选择 +
+ * 卡片一 RolePresetCard:角色预设——每角色一个职责盒子(名称 + mono id +
+ * 职责摘要 + 职责说明/查看入口),不含任何模型或档位控件。
+ * 卡片二 ModelGrantCard(模型选择):每 provider 的每模型一行 + 真实 switch
+ * (key `${provider}/${model}` 复合,deepseek-official 同样可开关) + 最高
+ * 思考档位(由 adapter reasoning 能力驱动) + 只读模型预设参考。
  * 「默认」(删 settings 覆盖,回落到 profile.roleLlmDefaults → DEFAULT_ROLE_LLM)。
  *
  * 数据流:模型/角色列表 = /state 顶层(providers 含 advisory models,
@@ -93,7 +95,6 @@ export interface ProviderGrantRow {
     readonly id: string;
     readonly name: string;
     readonly enabled: boolean;
-    readonly locked: boolean;
 }
 /** 角色预设行(t17:合并视图直接透传,模型选项改由全 provider 分组提供)。 */
 export type RolePresetRow = RolePresetView;
@@ -144,7 +145,7 @@ export declare function modelKeyOf(provider: string, model: string): string;
 /**
  * 纯函数(t14):provider 粒度行——只列 provider,无模型子列表。
  * 行 enabled = 该 provider 下所有模型均已授权(开关态语义:全开/全关);
- * deepseek-official 恒锁定恒启用(「默认」徽,无 switch)。 */
+ * 没有 provider 是恒授权的(deepseek-official 也可全关)。 */
 export declare function providerGrantRows(providers: readonly ProviderWithModels[], enabledModels: Readonly<Record<string, boolean>> | undefined): readonly ProviderGrantRow[];
 /**
  * 纯函数(t14):provider 行 switch 联动该 provider 全部模型——
@@ -197,8 +198,8 @@ export declare function autoAssignRoleDefaults(current: Readonly<Record<string, 
  * ?? base(/state 的 profile ?? DEFAULT,不含覆盖);overridden 由实时覆盖
  * 判定(驱动「恢复默认」disabled 态与选中回显)。 */
 export declare const MEMBER_PRESET_ROLES: readonly ["researcher", "engineer", "qa", "designer", "data", "docs", "security", "reviewer", "commissar"];
+export declare function roleDutyDescription(role: string, t: AgentTeamsTranslate): string;
 export declare function mergeRoleDefaults(base: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, overrides: Readonly<Record<string, RoleLlmDefaultValue>> | undefined): readonly RolePresetView[];
-export declare function roleRouteNotice(row: RolePresetView, t: AgentTeamsTranslate): string;
 /** 纯函数(t25):是否存在任一档位表目标模型已授权(初始化分配的前提——
  * 有目标可分配才写,避免无谓覆盖/写入)。 */
 export declare function autoAssignHasTarget(enabledModels: Readonly<Record<string, boolean>> | undefined, table?: Readonly<Record<string, RoleAutoAssignEntry>>): boolean;
