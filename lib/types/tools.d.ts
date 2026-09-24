@@ -31,8 +31,7 @@ export interface ToolsConfig {
     maxExecPerRole?: number;
     /** Per-role cap overrides keyed by canonical role (e.g. `{ engineer: 2 }`). */
     maxExecPerRoleByRole?: Record<string, number>;
-    /** Per-role default LLM selection for members (auto-assign model + effort),
-     * overriding the built-in DEFAULT_ROLE_LLM table. */
+    /** Legacy per-role model routing; retained only for migration diagnostics. */
     roleLlmDefaults?: Record<string, {
         provider?: string;
         model?: string;
@@ -42,12 +41,16 @@ export interface ToolsConfig {
      * deepseek-official 名下恒授权;undefined(无 settings 服务)→ 仅 deepseek
      * 授权。 */
     modelGrantedFor?: (provider: string, model: string) => boolean;
-    /** 角色档位覆盖(t13,settings scope 闭包):settings.roleDefaults[roleKey]
-     * 存在即覆盖;undefined → 走 profile.roleLlmDefaults → DEFAULT_ROLE_LLM。 */
+    /** Legacy role-route settings retained for display/migration only. */
     roleDefaultsFor?: (roleKey: string) => {
         provider?: string;
         model?: string;
         reasoningEffort?: string;
+    } | undefined;
+    modelCapabilitiesFor?: (provider: string, model: string) => {
+        enabled: boolean;
+        maxReasoningEffort?: string;
+        legacy?: true;
     } | undefined;
     /** A member-owned open task is "stalled" (helppable) after this many ms. */
     stallThresholdMs: number;

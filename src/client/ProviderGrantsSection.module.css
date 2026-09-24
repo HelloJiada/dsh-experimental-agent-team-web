@@ -526,3 +526,11 @@
   font-size: 10px;
   line-height: 16px;
 }
+
+.modelHelp { margin: 0; padding: 0 10px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 17px; }
+.modelPresetReference { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 8px; }
+.modelProvider { display: flex; flex-direction: column; gap: 4px; }
+.modelProviderTitle { display: flex; align-items: center; gap: 8px; margin: 4px 0; color: var(--dsw-alias-label-primary); font-size: 12px; }
+.modelRow { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 10px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 35%, transparent); }
+.modelName { flex: 1; min-width: 0; overflow: hidden; color: var(--dsw-alias-label-primary); font: 11px/16px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; }
+.modelEffort { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary); font-size: 10px; }

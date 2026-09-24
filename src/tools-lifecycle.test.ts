@@ -92,6 +92,12 @@ function harness(
     persona?: boolean
     toolFilter?: boolean
     resolveCallConfig?: (config: { provider?: string; model?: string; reasoningEffort?: string }) => Promise<{ provider: string; model: string; reasoningEffort?: string }>
+    resolveModelInfo?: (provider: string, model: string) => Promise<{
+      provider: string
+      id: string
+      name: string
+      reasoning?: { efforts: readonly { id: string; name: string }[]; defaultEffort?: string }
+    }>
   } = {},
   spawnRequests: Array<{ request: { persona: string; toolFilter: { deny: readonly string[] } } }> = [],
   toolConfig: Partial<ToolsConfig> = {},
@@ -112,6 +118,11 @@ function harness(
         : undefined,
     },
     llm: {
+      // DSH 0.1.7-rc.1 LlmService owns resolveModelInfo; production member
+      // selection reads its reasoning metadata, so every stub must expose it.
+      // Default: exact route with no advertised reasoning vocabulary.
+      resolveModelInfo: providerOverrides.resolveModelInfo
+        ?? (async (provider: string, model: string) => ({ provider, id: model, name: model })),
       resolveCallConfig: providerOverrides.resolveCallConfig ?? (async () => ({ provider: 'p', model: 'm' })),
     },
     logger: { warn: () => undefined, debug: () => undefined },
@@ -310,7 +321,10 @@ describe('agent_teams_add_member — 添加成员', () => {
       logger: { warn: () => undefined, debug: () => undefined },
       on: () => undefined,
       effect: () => () => undefined,
-      llm: { resolveCallConfig: async (args: { provider?: string }) => ({ provider: args.provider ?? 'p', model: 'm' }) },
+      llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+        resolveCallConfig: async (args: { provider?: string }) => ({ provider: args.provider ?? 'p', model: 'm' }),
+      },
       subagents: {
         registerContinuableSetup: () => undefined,
         followup: async () => undefined,
@@ -354,9 +368,12 @@ describe('agent_teams_add_member — 添加成员', () => {
       logger: { warn: () => undefined, debug: () => undefined },
       on: () => undefined,
       effect: () => () => undefined,
-      llm: { resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
-        provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
-      }) },
+      llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+        resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
+          provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
+        }),
+      },
       subagents: {
         registerContinuableSetup: () => undefined,
         followup: async () => undefined,
@@ -413,7 +430,7 @@ describe('agent_teams_add_member — 添加成员', () => {
     expect(persisted?.members.filter(member => member.role === 'engineer')).toHaveLength(0)
   })
 
-  it('falls back from an ungranted complete profile role route to captain and spawns', async () => {
+  it('legacy profile role route is not a candidate: the member lands on the captain route', async () => {
     const spawned: Array<{ request: { persona: string; toolFilter: { deny: readonly string[] } } }> = []
     const tools = harness(new Set(), {}, spawned, {
       roleLlmDefaults: { engineer: { provider: 'foreign', model: 'blocked-model' } },
@@ -423,7 +440,7 @@ describe('agent_teams_add_member — 添加成员', () => {
     expect(spawned).toHaveLength(1)
   })
 
-  it('model-only role defaults do not cross-pair, and role plus captain adapter failures leave no member', async () => {
+  it('legacy role routes never participate: a captain-route adapter failure leaves no member', async () => {
     const spawned: Array<{ request: { persona: string; toolFilter: { deny: readonly string[] } } }> = []
     const tools = harness(new Set(), {
       resolveCallConfig: async (route) => {
@@ -431,18 +448,19 @@ describe('agent_teams_add_member — 添加成员', () => {
         return { provider: route.provider ?? 'p', model: route.model ?? 'm' }
       },
     }, spawned, {
-      // model-only engineer default must be skipped; complete qa route then
-      // captain are both admitted and rejected by the adapter.
+      // Neither a model-only nor a complete legacy role route may be admitted:
+      // the captain route is the only implicit candidate, so its adapter
+      // failure is terminal for the spawn.
       roleLlmDefaults: {
         engineer: { model: 'role-model' },
         qa: { provider: 'p', model: 'role-model' },
       },
       modelGrantedFor: (provider, model) => provider === 'p' && (model === 'role-model' || model === 'm'),
     })
-    await expect(tools('agent_teams_add_member').execute({ role: 'qa' }, execOf(agent(workspace, CAPTAIN_ID))))
-      .rejects.toThrow(/profile role default:.*captain route:/)
-    await expect(tools('agent_teams_add_member').execute({ role: 'engineer' }, execOf(agent(workspace, CAPTAIN_ID))))
-      .rejects.toThrow(/captain route:.*adapter rejected m/)
+    for (const role of ['qa', 'engineer']) {
+      await expect(tools('agent_teams_add_member').execute({ role }, execOf(agent(workspace, CAPTAIN_ID))))
+        .rejects.toThrow(/no authorized member LLM route is usable \(captain route:.*adapter rejected m\)/)
+    }
     expect(spawned).toHaveLength(0)
     const persisted = await readTeam(stateRoot, 'team-tools')
     expect(persisted?.members.filter(member => member.role === 'qa' || member.role === 'engineer')).toHaveLength(0)
@@ -458,9 +476,12 @@ describe('agent_teams_add_member — 添加成员', () => {
       logger: { warn: () => undefined, debug: () => undefined },
       on: () => undefined,
       effect: () => () => undefined,
-      llm: { resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
-        provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
-      }) },
+      llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+        resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
+          provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
+        }),
+      },
       subagents: {
         registerContinuableSetup: () => undefined,
         followup: async () => undefined,
@@ -505,9 +526,12 @@ describe('agent_teams_add_member — 添加成员', () => {
       logger: { warn: () => undefined, debug: () => undefined },
       on: () => undefined,
       effect: () => () => undefined,
-      llm: { resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
-        provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
-      }) },
+      llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+        resolveCallConfig: async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
+          provider: args.provider ?? 'p', model: args.model ?? 'm', reasoningEffort: args.reasoningEffort,
+        }),
+      },
       subagents: {
         registerContinuableSetup: () => undefined,
         followup: async () => undefined,
@@ -564,7 +588,10 @@ describe('agent_teams_add_member — 添加成员', () => {
           ? { id, status: 'running', whenIdle: async () => undefined }
           : undefined,
       },
-      llm: { resolveCallConfig: async () => ({ provider: 'p', model: 'm' }) },
+      llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+        resolveCallConfig: async () => ({ provider: 'p', model: 'm' }),
+      },
       logger: { warn: () => undefined, debug: () => undefined },
       on: () => undefined,
       effect: () => () => undefined,
@@ -844,7 +871,10 @@ describe('R-31 — 调度扇出不占工具关键路径(kick fire-and-forget)', 
             ? { id, status: 'idle', whenIdle: async () => undefined }
             : undefined,
         },
-        llm: { resolveCallConfig: async () => ({ provider: 'p', model: 'm' }) },
+        llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+        resolveCallConfig: async () => ({ provider: 'p', model: 'm' }),
+      },
         logger: { warn: () => undefined, debug: () => undefined },
         on: () => undefined,
         effect: () => () => undefined,
@@ -925,7 +955,10 @@ describe('R-17: scheduler kick 真链路(解除 stub running 短路,验证自动
             ? { id, status: 'idle', whenIdle: async () => undefined }
             : undefined,
         },
-        llm: { resolveCallConfig: async () => ({ provider: 'p', model: 'm' }) },
+        llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+        resolveCallConfig: async () => ({ provider: 'p', model: 'm' }),
+      },
         logger: { warn: () => undefined, debug: () => undefined },
         on: () => undefined,
         effect: () => () => undefined,

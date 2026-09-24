@@ -41,9 +41,10 @@ export interface MemberLlmSelectionRequest {
     defaultModel?: string;
     /** Explicit reasoning effort; "default" selects the target model's default effort. */
     reasoningEffort?: string;
-    /** Role-based default (auto-assign): provider/model/effort for the member's
-     * canonical role, consulted when no explicit route is given. Absent fields
-     * inside it fall through to the captain-inherit path below. */
+    /** Legacy role-based route/effort record. It remains readable so old settings
+     * keep type-checking, but it never selects a route or an effort: role presets
+     * describe duties, not models. Absent fields fall through to the
+     * captain-inherit path below. */
     roleDefaults?: Readonly<{
         provider?: string;
         model?: string;
@@ -57,19 +58,29 @@ export interface MemberLlmSelectionCandidate {
     /** Explicit user intent is fail-closed; it never falls through. */
     readonly explicit?: boolean;
 }
+/** One model's policy ceiling. Absence of max permits only adapter default. */
+export interface MemberModelCapability {
+    readonly enabled: boolean;
+    readonly maxReasoningEffort?: string;
+    readonly legacy?: true;
+}
+export interface MemberModelReasoningInfo {
+    readonly reasoning?: {
+        readonly efforts: readonly {
+            readonly id: string;
+        }[];
+        readonly defaultEffort?: string;
+    };
+}
 /** Resolve portable candidates with authorization before adapter validation. */
-export declare function resolveMemberLlmCandidates(ctx: Context, captain: Agent, candidates: readonly MemberLlmSelectionCandidate[], isGranted: (provider: string, model: string) => boolean, signal?: AbortSignal): Promise<MemberLlmSelection>;
+export declare function resolveMemberLlmCandidates(ctx: Context, captain: Agent, candidates: readonly MemberLlmSelectionCandidate[], isGranted: (provider: string, model: string) => boolean, signal?: AbortSignal, capabilityFor?: (provider: string, model: string) => MemberModelCapability | undefined): Promise<MemberLlmSelection>;
 /** Process-local bridge between spawn admission and synchronous child setup. */
 export interface MemberSelectionRuntime {
     /** Make one selection visible while Harness materializes the fresh child. */
     withPending<T>(parentSessionId: string, label: string, selection: MemberLlmSelection, operation: () => Promise<T>): Promise<T>;
 }
-/**
- * Built-in per-role default LLM selection (auto-assign model + effort).
- * Consulted when add_member carries no explicit provider/model and the
- * profile has no `roleLlmDefaults` entry for the role. Roles absent here
- * inherit the captain's route (existing behavior).
- */
+/** Legacy route map retained as a migration/display reference. Runtime member
+ * selection deliberately does not consult role presets or this table. */
 export declare const DEFAULT_ROLE_LLM: Readonly<Record<string, Readonly<{
     provider?: string;
     model?: string;

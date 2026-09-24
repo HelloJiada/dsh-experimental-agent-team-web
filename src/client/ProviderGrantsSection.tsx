@@ -16,7 +16,7 @@
  * @module dsh-agent-team-web/client/provider-grants-section
  */
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { IconBrowseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -51,15 +51,40 @@ export const PROVIDER_GRANTS_NAMESPACE = 'agent-team-web'
 
 /** 命名空间 resolved value 形状(与 host AgentTeamSettingsSchema 对齐)。 */
 export interface ProviderGrantsSectionValue {
+  /** New per-model allowlist and supported effort ceiling. */
+  readonly modelCapabilities?: Record<string, { enabled: boolean; maxReasoningEffort?: string }>
+  /** Legacy fields remain readable and are never auto-deleted. */
   readonly enabledModels?: Record<string, boolean>
   readonly roleDefaults?: Record<string, { provider?: string; model?: string; reasoningEffort?: string }>
 }
 
 /** /state 顶层 providers 条目(t13:含 advisory 模型列表)。 */
+export interface ProviderModelCapability {
+  readonly id: string
+  /** Adapter-provided capabilities in its original preferred order. */
+  readonly reasoning?: { readonly efforts: readonly { readonly id: string; readonly name: string; readonly description?: string }[]; readonly defaultEffort?: string }
+}
 export interface ProviderWithModels {
   readonly id: string
   readonly name: string
-  readonly models?: readonly string[]
+  readonly models?: readonly (ProviderModelCapability | string)[]
+}
+
+function modelId(model: ProviderModelCapability | string): string { return typeof model === 'string' ? model : model.id }
+function normalizedModels(provider: ProviderWithModels): readonly ProviderModelCapability[] { return (provider.models ?? []).map(model => typeof model === 'string' ? { id: model } : model) }
+
+export function modelCapabilityEntries(providers: readonly ProviderWithModels[]): readonly { provider: string; model: ProviderModelCapability }[] {
+  return providers.flatMap(provider => (provider.models ?? []).map(item => ({
+    provider: provider.id,
+    model: typeof item === 'string' ? { id: item } : item,
+  })))
+}
+
+export function modelCapabilityValue(value: ProviderGrantsSectionValue | undefined, provider: string, model: string): { enabled: boolean; maxReasoningEffort?: string } {
+  const key = modelKeyOf(provider, model)
+  const current = value?.modelCapabilities?.[key]
+  if (current !== undefined) return current
+  return { enabled: value?.enabledModels?.[key] === true }
 }
 
 /** /state 顶层角色档位合并视图(三源链 + overridden 标记)。 */
@@ -364,7 +389,7 @@ export function providerGrantRows(
     name: provider.name,
     enabled: provider.id === 'deepseek-official'
       || ((provider.models?.length ?? 0) > 0
-        && (provider.models ?? []).every(model => enabledModels?.[modelKeyOf(provider.id, model)] === true)),
+        && normalizedModels(provider).every(model => enabledModels?.[modelKeyOf(provider.id, model.id)] === true)),
     locked: provider.id === 'deepseek-official',
   }))
 }
@@ -377,16 +402,40 @@ export function providerGrantRows(
 export function toggleProviderModels(
   current: Readonly<Record<string, boolean>> | undefined,
   provider: string,
-  models: readonly string[] | undefined,
+  models: readonly (ProviderModelCapability | string)[] | undefined,
   nextEnabled: boolean,
 ): Record<string, boolean> {
   const next = { ...(current ?? {}) }
-  for (const model of models ?? []) {
-    const key = modelKeyOf(provider, model)
+  for (const item of models ?? []) {
+    const key = modelKeyOf(provider, modelId(item))
     if (nextEnabled) next[key] = true
     else delete next[key]
   }
   return next
+}
+
+export function toggleModelCapability(
+  current: ProviderGrantsSectionValue | undefined,
+  provider: string,
+  model: ProviderModelCapability,
+  enabled: boolean,
+  maxReasoningEffort?: string,
+): Record<string, { enabled: boolean; maxReasoningEffort?: string }> {
+  const key = modelKeyOf(provider, model.id)
+  const capabilities = { ...(current?.modelCapabilities ?? {}) }
+  const prior = modelCapabilityValue(current, provider, model.id)
+  const allowed = new Set(model.reasoning?.efforts.map(item => item.id) ?? [])
+  const requested = maxReasoningEffort === undefined ? prior.maxReasoningEffort : maxReasoningEffort || undefined
+  const effort = requested !== undefined && allowed.has(requested) ? requested : undefined
+  capabilities[key] = {
+    enabled,
+    ...effort !== undefined && allowed.has(effort) ? { maxReasoningEffort: effort } : {},
+  }
+  return capabilities
+}
+
+export function modelEnabled(provider: string, model: ProviderModelCapability, value: ProviderGrantsSectionValue | undefined): boolean {
+  return provider === 'deepseek-official' || modelCapabilityValue(value, provider, model.id).enabled
 }
 
 /** 角色档位值(client 本地形状,与 host AgentTeamSettingsSchema 对齐;
@@ -491,11 +540,14 @@ export function autoAssignRoleDefaults(
 /** 纯函数(t20):实时合并角色档位——显示值 = 实时覆盖(scope snapshot)
  * ?? base(/state 的 profile ?? DEFAULT,不含覆盖);overridden 由实时覆盖
  * 判定(驱动「恢复默认」disabled 态与选中回显)。 */
+export const MEMBER_PRESET_ROLES = ['researcher', 'engineer', 'qa', 'designer', 'data', 'docs', 'security', 'reviewer', 'commissar'] as const
+
 export function mergeRoleDefaults(
   base: Readonly<Record<string, RoleLlmDefaultValue>> | undefined,
   overrides: Readonly<Record<string, RoleLlmDefaultValue>> | undefined,
 ): readonly RolePresetView[] {
   const roles = [...new Set([
+    ...MEMBER_PRESET_ROLES,
     ...Object.keys(base ?? {}),
     ...Object.keys(overrides ?? {}),
   ])]
@@ -504,6 +556,12 @@ export function mergeRoleDefaults(
     ...(overrides?.[role] ?? base?.[role]) ?? {},
     overridden: overrides?.[role] !== undefined,
   }))
+}
+
+export function roleRouteNotice(row: RolePresetView, t: AgentTeamsTranslate): string {
+  return row.model !== undefined && row.model !== ''
+    ? t('settings.agentTeam.legacyRoute', { provider: row.provider ?? t('settings.agentTeam.providerMissing'), model: row.model })
+    : t('settings.agentTeam.inheritCaptainRoute')
 }
 
 /** 纯函数(t25):是否存在任一档位表目标模型已授权(初始化分配的前提——
@@ -589,13 +647,13 @@ export function rolePresetModelGroups(
 ): readonly { providerId: string; models: readonly string[] }[] {
   const groups: { providerId: string; models: readonly string[] }[] = []
   for (const provider of providers) {
-    const models = provider.models ?? []
+    const models = normalizedModels(provider)
     if (models.length === 0) continue
     const allGranted = enabledModels === undefined
       || (provider.id === 'deepseek-official')
-      || models.every(model => enabledModels[modelKeyOf(provider.id, model)] === true)
+      || models.every(model => enabledModels[modelKeyOf(provider.id, model.id)] === true)
     if (!allGranted) continue
-    groups.push({ providerId: provider.id, models })
+    groups.push({ providerId: provider.id, models: models.map(model => model.id) })
   }
   return groups
 }
@@ -718,176 +776,92 @@ export async function fetchSettingsCenter(): Promise<{
 /** 卡片一:模型调度授权(t14:provider 粒度行 + switch;deepseek 锁定「默认」)。
  * provider 行 switch = 该 provider 全部模型统一授权(读写 enabledModels
  * 中该 provider 的所有 `${provider}/${model}` key)。 */
-function ModelGrantCard({ rows, providers, scope, snapshot, t }: {
-  readonly rows: readonly ProviderGrantRow[]
+function ModelGrantCard({ providers, scope, snapshot, t }: {
   readonly providers: readonly ProviderWithModels[]
   readonly scope: SettingsScope<ProviderGrantsSectionValue> | undefined
   readonly snapshot: SettingsScopeSnapshot<ProviderGrantsSectionValue>
   readonly t: AgentTeamsTranslate
 }): ReactNode {
-  const toggle = async (row: ProviderGrantRow): Promise<void> => {
-    if (scope === undefined || row.locked) return
-    const models = providers.find(p => p.id === row.id)?.models
-    // t23:授权变化 → 同一次 scope 操作链内自动重分配角色档位(写 settings
-    // 覆盖层:新授权模型用起来 / 关授权回退 deepseek;手动覆盖不动)。
-    const nextEnabled = toggleProviderModels(snapshot.value?.enabledModels, row.id, models, !row.enabled)
-    await scope.set('enabledModels', nextEnabled)
-    await scope.set('roleDefaults', autoAssignRoleDefaults(snapshot.value?.roleDefaults, nextEnabled))
+  const [failure, setFailure] = useState('')
+  const [busy, setBusy] = useState<string | undefined>()
+  const [presetOpen, setPresetOpen] = useState(false)
+  const [presetGroup, setPresetGroup] = useState<PresetGroupId>('ds')
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(rolePresetTemplatesByGroup('ds')[0]?.id ?? '')
+  const toggle = async (provider: string, model: ProviderModelCapability, enabled: boolean, effort?: string): Promise<void> => {
+    if (scope === undefined) return
+    const key = modelKeyOf(provider, model.id)
+    const next = toggleModelCapability(snapshot.value, provider, model, enabled, effort)
+    setBusy(key); setFailure('')
+    try {
+      if (!await scope.set('modelCapabilities', next)) setFailure(`${provider}/${model.id} 保存失败；设置未确认`)
+    } catch { setFailure(`${provider}/${model.id} 保存失败；请重试`) }
+    finally { setBusy(undefined) }
   }
-  if (rows.length === 0) return null
+  if (providers.length === 0) return null
   return (
-    <section className={styles.card} aria-label={t('settings.agentTeam.modelGrant')}>
-      <header className={styles.head}>
-        <span className={styles.title}>{t('settings.agentTeam.modelGrant')}</span>
-      </header>
-      <ul className={styles.list}>
-        {rows.map(row => (
-          <li key={row.id} className={styles.row} data-enabled={row.enabled}>
-            <span className={styles.nameWrap}>
-              <span className={styles.name} title={row.id}>{row.name}</span>
-              <span className={styles.rowSub}>{row.id}</span>
-            </span>
-            {row.locked
-              ? <span className={styles.pill}>{t('settings.agentTeam.locked')}</span>
-              : (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={row.enabled}
-                  aria-label={`${row.name} ${t('settings.agentTeam.toggleAria')}`}
-                  className={styles.switch}
-                  data-on={row.enabled}
-                  onClick={() => { void toggle(row) }}
-                >
-                  <span className={styles.switchThumb} />
-                </button>
-              )}
-          </li>
-        ))}
-      </ul>
+    <section className={styles.card} aria-label={t('settings.agentTeam.modelSelection')}>
+      <header className={styles.head}><span className={styles.title}>{t('settings.agentTeam.modelSelection')}</span></header>
+      <p className={styles.modelHelp}>{t('settings.agentTeam.modelSelectionHelp')}</p>
+      {failure && <p role="alert" className={styles.growthError}>{failure}</p>}
+      {providers.map(provider => <div key={provider.id} className={styles.modelProvider}>
+        <h4 className={styles.modelProviderTitle}>{provider.name}<span className={styles.rowSub}>{provider.id}</span></h4>
+        {(provider.models ?? []).map(model => {
+          const normalized = typeof model === 'string' ? { id: model } : model
+          const enabled = modelEnabled(provider.id, normalized, snapshot.value)
+          const current = modelCapabilityValue(snapshot.value, provider.id, normalized.id)
+          const efforts = normalized.reasoning?.efforts ?? []
+          const locked = provider.id === 'deepseek-official'
+          const configuredEffort = current.maxReasoningEffort && efforts.some(item => item.id === current.maxReasoningEffort)
+            ? current.maxReasoningEffort
+            : ''
+          const key = modelKeyOf(provider.id, normalized.id)
+          return <div key={normalized.id} className={styles.modelRow}>
+            <span className={styles.modelName}>{normalized.id}</span>
+            {locked ? <span className={styles.pill}>{t('settings.agentTeam.locked')}</span> : <button type="button" role="switch" aria-checked={enabled} aria-label={`${provider.id}/${normalized.id} 授权`} disabled={busy === key} className={styles.switch} data-on={enabled} onClick={() => { void toggle(provider.id, normalized, !enabled) }}><span className={styles.switchThumb} /></button>}
+            {efforts.length > 0 && <label className={styles.modelEffort}>最高思考档位
+              <select className={styles.select} aria-label={`${provider.id}/${normalized.id} 最高思考档位`} value={configuredEffort} disabled={!enabled || busy === key || scope === undefined} onChange={event => { void toggle(provider.id, normalized, enabled, event.target.value) }}>
+                <option value="">模型默认（未显式设置上限）</option>
+                {efforts.map(item => <option key={item.id} value={item.id} title={item.description}>{item.name}</option>)}
+              </select>
+            </label>}
+          </div>
+        })}
+      </div>)}
+      <div className={styles.modelPresetReference}>
+        <button type="button" className={styles.resetBtn} aria-expanded={presetOpen} onClick={() => { setPresetOpen(open => !open) }}>
+          {t('settings.agentTeam.modelPresetReference')}
+        </button>
+        <p className={styles.presetHelp}>{t('settings.agentTeam.modelPresetReferenceHelp')}</p>
+        {presetOpen && <div className={styles.presetPopover}>
+          <div className={styles.presetTabs}>
+            {(['ds', 'gpt', 'mixed'] as const).map(group => <button key={group} type="button" className={styles.presetTab} data-active={presetGroup === group} onClick={() => { setPresetGroup(group); const first = rolePresetTemplatesByGroup(group)[0]; if (first) setSelectedPresetId(first.id) }}>
+              {t(group === 'ds' ? 'settings.agentTeam.presetGroup.ds' : group === 'gpt' ? 'settings.agentTeam.presetGroup.gpt' : 'settings.agentTeam.presetGroup.mixed')}
+            </button>)}
+          </div>
+          <div className={styles.presetList}>{rolePresetTemplatesByGroup(presetGroup).map(template => <div key={template.id} className={styles.presetItem} data-active={selectedPresetId === template.id}>
+            <span className={styles.presetItemHead}><span className={styles.presetItemName}>{template.label}</span><span className={styles.presetDiffBadge}>{t('settings.agentTeam.modelPresetReadOnly')}</span></span>
+            <span className={styles.presetMetaRow}><span className={styles.presetMetaChip}>{`成本：${template.cost}`}</span><span className={styles.presetMetaChip}>{`速度：${template.speed}`}</span><span className={styles.presetMetaChip}>{`质量：${template.quality}`}</span></span>
+            <span className={styles.presetItemDesc}>{template.description}</span>
+            <span className={styles.presetItemDesc}>{Object.entries(template.roleDefaults).map(([role, route]) => `${role}: ${route.provider ?? ''}/${route.model ?? ''}${route.reasoningEffort ? ` · ${route.reasoningEffort}` : ''}`).join('；')}</span>
+          </div>)}</div>
+        </div>}
+      </div>
     </section>
   )
 }
 
-/** 卡片二:角色预设(t17 方案甲——无表头/无职位列/无默认按钮列;
- * 右上「恢复默认」;模型下拉按 provider 分组)。 */
-function RolePresetCard({ rows, groups, scope, snapshot, t }: {
+/** 卡片一:角色预设仅保留职责与旧路由兼容提示，不管理新成员选路。 */
+function RolePresetCard({ rows, t }: {
   readonly rows: readonly RolePresetRow[]
-  readonly groups: readonly { providerId: string; models: readonly string[] }[]
-  readonly scope: SettingsScope<ProviderGrantsSectionValue> | undefined
-  readonly snapshot: SettingsScopeSnapshot<ProviderGrantsSectionValue>
   readonly t: AgentTeamsTranslate
 }): ReactNode {
-  // t9:当前查看职责的角色(undefined = 弹窗关闭)。
   const [viewing, setViewing] = useState<RolePresetRow | undefined>(undefined)
-  const [presetOpen, setPresetOpen] = useState(false)
-  const [presetGroup, setPresetGroup] = useState<PresetGroupId>('ds')
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(rolePresetTemplatesByGroup('ds')[0]?.id ?? '')
-  const write = async (role: string, value: { provider?: string; model?: string; reasoningEffort?: string } | undefined): Promise<void> => {
-    if (scope === undefined) return
-    await scope.set('roleDefaults', roleDefaultsMap(snapshot.value?.roleDefaults, role, value))
-  }
-  const resetAll = async (): Promise<void> => {
-    if (scope === undefined) return
-    await scope.set('roleDefaults', resetRoleDefaults())
-  }
-  const applyPreset = async (): Promise<void> => {
-    if (scope === undefined) return
-    const template = rolePresetTemplatesByGroup(presetGroup).find(entry => entry.id === selectedPresetId)
-    if (template === undefined) return
-    await scope.set('roleDefaults', applyRolePresetTemplate(template))
-    setPresetOpen(false)
-  }
   if (rows.length === 0) return null
   const viewedRole = viewing?.role
   const viewedDuty = viewedRole === undefined ? undefined : ROLE_DUTY[viewedRole]
-  const presetTemplates = rolePresetTemplatesByGroup(presetGroup)
-  const selectedPreset = presetTemplates.find(entry => entry.id === selectedPresetId) ?? presetTemplates[0]
   return (
     <section className={styles.card} aria-label={t('settings.agentTeam.rolePreset')}>
-      <header className={styles.head}>
-        <span className={styles.title}>{t('settings.agentTeam.rolePreset')}</span>
-        <button
-          type="button"
-          className={styles.resetBtn}
-          disabled={!rows.some(row => row.overridden)}
-          onClick={() => { void resetAll() }}
-        >
-          {t('settings.agentTeam.reset')}
-        </button>
-        <button
-          type="button"
-          className={styles.resetBtn}
-          onClick={() => {
-            const nextOpen = !presetOpen
-            setPresetOpen(nextOpen)
-            if (nextOpen) {
-              const first = rolePresetTemplatesByGroup(presetGroup)[0]
-              if (first !== undefined) setSelectedPresetId(first.id)
-            }
-          }}
-        >
-          {t('settings.agentTeam.applyPreset')}
-        </button>
-      </header>
-      {presetOpen && (
-        <div className={styles.presetPopover}>
-          <div className={styles.presetTitle}>{t('settings.agentTeam.presetTitle')}</div>
-          <p className={styles.presetHelp}>{t('settings.agentTeam.presetHelp')}</p>
-          <p className={styles.presetHelp}>成本、速度、质量为未实测参考分级；Astra 待评估。套用预设不改变队长模型。</p>
-          <div className={styles.presetTabs}>
-            {(['ds', 'gpt', 'mixed'] as const).map(group => (
-              <button
-                key={group}
-                type="button"
-                className={styles.presetTab}
-                data-active={presetGroup === group}
-                onClick={() => {
-                  setPresetGroup(group)
-                  const first = rolePresetTemplatesByGroup(group)[0]
-                  if (first !== undefined) setSelectedPresetId(first.id)
-                }}
-              >
-                {group === 'ds'
-                  ? t('settings.agentTeam.presetGroup.ds')
-                  : group === 'gpt'
-                    ? t('settings.agentTeam.presetGroup.gpt')
-                    : t('settings.agentTeam.presetGroup.mixed')}
-              </button>
-            ))}
-          </div>
-          <div className={styles.presetList}>
-            {presetTemplates.map(template => (
-              <button
-                key={template.id}
-                type="button"
-                className={styles.presetItem}
-                data-active={selectedPreset?.id === template.id}
-                onClick={() => { setSelectedPresetId(template.id) }}
-              >
-                <span className={styles.presetItemHead}>
-                  <span className={styles.presetItemName}>{template.label}</span>
-                  <span className={styles.presetDiffBadge}>{`${t('settings.agentTeam.preset.diff')} ${presetDiffCount(rows, template)}`}</span>
-                </span>
-                <span className={styles.presetMetaRow}>
-                  <span className={styles.presetMetaChip}>{`成本：${template.cost}`}</span>
-                  <span className={styles.presetMetaChip}>{`速度：${template.speed}`}</span>
-                  <span className={styles.presetMetaChip}>{`质量：${template.quality}`}</span>
-                </span>
-                <span className={styles.presetItemDesc}>{template.description}</span>
-              </button>
-            ))}
-          </div>
-          <div className={styles.presetActions}>
-            <button type="button" className={styles.presetActionGhost} onClick={() => { setPresetOpen(false) }}>
-              {t('settings.agentTeam.preset.cancel')}
-            </button>
-            <button type="button" className={styles.presetActionPrimary} onClick={() => { void applyPreset() }}>
-              {t('settings.agentTeam.preset.apply')}
-            </button>
-          </div>
-        </div>
-      )}
+      <header className={styles.head}><span className={styles.title}>{t('settings.agentTeam.rolePreset')}</span></header>
       <ul className={styles.list}>
         {rows.map(row => (
           <li key={row.role} className={styles.row} data-overridden={row.overridden}>
@@ -895,89 +869,12 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
               <span className={styles.name} title={row.role}>{roleTitle(row.role, t)}</span>
               <span className={styles.rowSub}>{row.role}</span>
             </span>
-            <select
-              className={styles.select}
-              aria-label={`${row.role} ${t('settings.agentTeam.modelAria')}`}
-              value={row.model ?? ''}
-              onChange={(event) => {
-                const model = event.target.value
-                if (model === '') {
-                  // 继承:删覆盖,回落三源链。
-                  void write(row.role, undefined)
-                  return
-                }
-                // 选中模型所属组 → 写 {provider: 组 provider, model}(旧 provider
-                // 不保留);t8:目标组不支持 reasoning effort(GPT-5.6 等)时
-                // **不保留旧 effort**——写 {provider, model} 无 effort 字段;
-                // 其他组保留当前 reasoningEffort(切模型不丢思考等级)。
-                const group = groups.find(g => g.models.includes(model))
-                void write(row.role, {
-                  provider: group?.providerId,
-                  model,
-                  ...group?.providerId !== undefined && supportsReasoningEffort(group.providerId)
-                    ? { reasoningEffort: row.reasoningEffort }
-                    : {},
-                })
-              }}
-            >
-              <option value="">{t('settings.agentTeam.inherit')}</option>
-              {groups.map(group => (
-                <optgroup key={group.providerId} label={group.providerId}>
-                  {group.models.map(model => (
-                    <option
-                      key={`${group.providerId}/${model}`}
-                      value={model}
-                    >
-                      {model}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              {/* t22 边界:当前选中模型所在组被授权过滤(先选后关)→ 补占位 option,
-                  保证 select 不空白、用户可感知需先授权;onChange 行为不变。 */}
-              {row.model !== undefined && row.model !== ''
-                && !groups.some(group => group.models.includes(row.model as string)) && (
-                  <option value={row.model}>{`${row.model}（${t('settings.agentTeam.unauthorized')}）`}</option>
-                )}
-            </select>
-              <select
-                className={styles.select}
-                aria-label={`${row.role} ${t('settings.agentTeam.effortAria')}`}
-                // t21:删「继承」选项;极端空值(无生效 effort)fallback 到
-                // EFFORT_OPTIONS[0],避免 select 无匹配显示空白。
-                // t8:当前模型 provider 不支持 reasoning effort(GPT-5.6 等)→
-                // 禁用 effort 下拉(选 effort 无意义;覆盖写面也不再落 effort)。
-                disabled={!supportsReasoningEffort(row.provider)}
-                value={EFFORT_OPTIONS.includes(row.reasoningEffort as (typeof EFFORT_OPTIONS)[number])
-                  ? row.reasoningEffort
-                  : EFFORT_OPTIONS[0]}
-                onChange={(event) => {
-                  const effort = event.target.value
-                  // 次因①:只写三字段(provider/model/effort),不 spread 整个 row
-                  // (避免 role/overridden 落入 settings.roleDefaults)。
-                  void write(row.role, {
-                    provider: row.provider,
-                    model: row.model,
-                    reasoningEffort: effort === '' ? undefined : effort,
-                  })
-                }}
-              >
-                {EFFORT_OPTIONS.map(effort => <option key={effort} value={effort}>{effort}</option>)}
-              </select>
-
-              {/* t9:查看职责按钮——纯眼睛图标,对齐 DSH Agent 预设交互。 */}
-              <button
-                type="button"
-                className={styles.viewBtn}
-                aria-label={`${t('settings.agentTeam.viewAria')}: ${row.role}`}
-                title={`${t('settings.agentTeam.viewAria')}: ${row.role}`}
-                onClick={() => { setViewing(row) }}
-              >
-                <IconBrowseOutlineRegular />
-              </button>
-            </li>
-          )
-        )}
+            <span className={styles.growthMeta}>{roleRouteNotice(row, t)}</span>
+            <button type="button" className={styles.viewBtn} aria-label={`${t('settings.agentTeam.viewAria')}: ${row.role}`} title={`${t('settings.agentTeam.viewAria')}: ${row.role}`} onClick={() => { setViewing(row) }}>
+              <IconBrowseOutlineRegular />
+            </button>
+          </li>
+        ))}
       </ul>
       {/* t9:职责说明弹窗(对齐 DSH Agent 预设的只读 viewer)。 */}
       {viewing !== undefined && (
@@ -1025,10 +922,8 @@ function RolePresetCard({ rows, groups, scope, snapshot, t }: {
                 </div>
               )}
             <p className={styles.modalSectionTitle} style={{ marginTop: 14, borderTop: '1px dashed rgba(255,255,255,0.1)', paddingTop: 10 }}>
-              {t('settings.agentTeam.viewCurrent')}
+              职责预设不设置新成员模型；新成员默认继承队长路由。
             </p>
-            <div className={styles.modalKv}><span className={styles.modalK}>{t('settings.agentTeam.modelAria')}</span><span className={styles.modalV}>{viewing.provider ?? ''}{viewing.provider !== undefined && viewing.model !== undefined ? ' / ' : ''}{viewing.model ?? ''}</span></div>
-            <div className={styles.modalKv}><span className={styles.modalK}>{t('settings.agentTeam.effortAria')}</span><span className={styles.modalV}>{viewing.reasoningEffort ?? t('settings.agentTeam.modelDefault')}</span></div>
           </div>
         </div>
       )}
@@ -1197,32 +1092,16 @@ export function ProviderGrantsSection(props: ProviderGrantsSectionProps): ReactN
   // 预开启 cc-switch 时无 toggle 事件,t23 的触发式重分配不会跑)。条件:
   // center 加载完 + scope snapshot 就绪 + 存在已授权目标模型;幂等(无变更
   // 不写);ref 一次性保险(写 roleDefaults 不改变授权,天然不循环)。
-  const initAssignRef = useRef(false)
-  useEffect(() => {
-    if (initAssignRef.current) return
-    if (loading) return
-    const value = snapshot.value
-    if (value === undefined) return
-    initAssignRef.current = true
-    if (scope === undefined) return
-    if (!autoAssignHasTarget(value.enabledModels)) return // 无目标可分配 → 不写
-    if (!autoAssignDiffers(value.roleDefaults, value.enabledModels)) return // 幂等
-    void scope.set('roleDefaults', autoAssignRoleDefaults(value.roleDefaults, value.enabledModels))
-  }, [loading, snapshot.value, scope])
-  const providerRows = providerGrantRows(center.providers, snapshot.value?.enabledModels)
-  // t20 主因修复:实时合并——显示值 = 实时覆盖(scope snapshot) ?? base(/state)。
+  // Role duties always drive rows; merge base/settings values only for compatibility display of legacy routes.
   const roleRows = mergeRoleDefaults(center.roleDefaultsBase, snapshot.value?.roleDefaults)
-  // t22:授权联动——groups 传实时授权 snapshot(开关切换后 scope.set →
-  // snapshot 更新 → uSES 重渲染 → 角色预设下拉即时增删 provider 组)。
-  const modelGroups = rolePresetModelGroups(center.providers, snapshot.value?.enabledModels)
   return (
     <div className={styles.section} data-provider-grants data-loading={loading}>
-      {providerRows.length === 0 && roleRows.length === 0
+      {center.providers.length === 0 && roleRows.length === 0
         ? <p className={styles.empty}>{t(loading ? 'settings.agentTeam.loading' : 'settings.agentTeam.empty')}</p>
         : (
           <>
-            <ModelGrantCard rows={providerRows} providers={center.providers} scope={scope} snapshot={snapshot} t={t} />
-            <RolePresetCard rows={roleRows} groups={modelGroups} scope={scope} snapshot={snapshot} t={t} />
+            <RolePresetCard rows={roleRows} t={t} />
+            <ModelGrantCard providers={center.providers} scope={scope} snapshot={snapshot} t={t} />
           </>
         )}
       {/* t10:自成长卡独立于前两卡(provider 为空也展示——经验库是全局积累)。 */}

@@ -34,20 +34,46 @@ export interface RoleLlmDefaultValue {
     readonly reasoningEffort?: string;
 }
 /** 命名空间 resolved value(t13 schema)。 */
+export interface ModelCapabilityValue {
+    readonly enabled: boolean;
+    /** Opaque adapter effort id; a model-specific ceiling that limits explicit request selection. */
+    readonly maxReasoningEffort?: string;
+}
+export interface ResolvedModelCapability extends ModelCapabilityValue {
+    /** Legacy grant or implicit DeepSeek before a new policy entry was saved. */
+    readonly legacy?: true;
+}
+export interface ModelReasoningEffort {
+    readonly id: string;
+    readonly name: string;
+    readonly description?: string;
+}
+export interface ModelReasoningCapability {
+    readonly efforts: readonly ModelReasoningEffort[];
+    readonly defaultEffort?: string;
+}
+export interface ProviderModelCapability {
+    readonly id: string;
+    readonly reasoning?: ModelReasoningCapability;
+}
 export interface AgentTeamSettingsValue {
-    /** 模型授权开关:key = `${provider}/${model}`,true = 授权。 */
+    /** Legacy authorization map retained for old profile layers. */
     readonly enabledModels?: Record<string, boolean>;
-    /** 角色默认档位覆盖:roleKey → 档位;缺失 = 走 profile.roleLlmDefaults → DEFAULT_ROLE_LLM。 */
+    /** Per-route authorization and ceiling keyed by `${provider}/${model}`. */
+    readonly modelCapabilities?: Record<string, ModelCapabilityValue>;
+    /** Legacy role-route entries, retained for display/migration but not selection. */
     readonly roleDefaults?: Record<string, RoleLlmDefaultValue>;
 }
 declare const liveEnabledModelsSchema: z<Record<string, boolean>>;
 declare const liveRoleDefaultsSchema: z<Record<string, RoleLlmDefaultValue>>;
+declare const liveModelCapabilitiesSchema: z<Record<string, ModelCapabilityValue>>;
 /** 两个设置字段的 schema 片段。宿主插件把它们并入自己的 `Config`
  * (组合 entry id = 命名空间 `agent-team-web`),标记因此只有一处定义。
  * 显式类型注解避免声明发射引用深层 pnpm 路径(TS2742)。 */
 export declare const AgentTeamSettingsFields: {
     enabledModels: typeof liveEnabledModelsSchema;
     roleDefaults: typeof liveRoleDefaultsSchema;
+    modelCapabilities: typeof liveModelCapabilitiesSchema;
 };
 /** 设置页字段的合成视图(类型消费者与测试用)。 */
 export declare const AgentTeamSettingsSchema: z<AgentTeamSettingsValue>;
@@ -82,6 +108,7 @@ export interface SettingsScope {
 }
 /** 模型授权判定(基于 apply 期 Config 的 enabledModels):deepseek-official
  * 名下模型恒授权(回退不死路);其余看 enabledModels[`${provider}/${model}`]。 */
+export declare function modelCapabilityFromValue(value: AgentTeamSettingsValue | undefined, provider: string, model: string): ResolvedModelCapability;
 export declare function modelGrantedFromValue(value: AgentTeamSettingsValue | undefined, provider: string, model: string): boolean;
 /** 角色档位解析(config 覆盖 → profile.roleLlmDefaults → DEFAULT_ROLE_LLM
  * 三源链):config.roleDefaults[roleKey] 存在即用之(「默认」= 删覆盖);
@@ -95,8 +122,11 @@ export interface AgentTeamSettingsAccess {
     roleDefaultsFor?: (roleKey: string) => RoleLlmDefaultValue | undefined;
     /** 当前 enabledModels 快照(快照透出/设置页初始值)；undefined → 空 map。 */
     enabledModels?: () => Record<string, boolean>;
-    /** 当前 roleDefaults 覆盖快照(设置页 RolePresetCard)；undefined → 空 map。 */
+    /** 当前 roleDefaults 覆盖快照(历史只读迁移视图)；undefined → 空 map。 */
     roleDefaults?: () => Record<string, RoleLlmDefaultValue>;
+    /** New exact-route policy. Undefined entry falls back to legacy enabledModels. */
+    modelCapabilities?: () => Record<string, ModelCapabilityValue>;
+    modelCapabilityFor?: (provider: string, model: string) => ResolvedModelCapability;
     /** 模型授权写入(HTTP 路由第二写面)；undefined → 写面不可用(settings 缺席)。 */
     setModelGrant?: (provider: string, model: string, enabled: boolean) => Promise<void>;
     /** 角色档位覆盖写入(设置页 RolePresetCard)；value=undefined → 删覆盖回「默认」。 */
@@ -119,6 +149,7 @@ export declare function unwrapVolatile<T>(value: unknown): T | undefined;
 export interface AgentTeamSettingsSource {
     readonly enabledModels?: unknown;
     readonly roleDefaults?: unknown;
+    readonly modelCapabilities?: unknown;
 }
 /** 从 apply 期 Config 构造读访问对象。
  *

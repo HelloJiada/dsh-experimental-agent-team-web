@@ -37,11 +37,16 @@ function harness(spawned: unknown[] = [], overrides: HarnessOverrides = {}, inte
     logger: { warn: () => undefined, debug: () => undefined },
     on: () => undefined,
     effect: () => () => undefined,
-    llm: { resolveCallConfig: overrides.resolveCallConfig ?? (async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
-      provider: args.provider ?? 'deepseek-official',
-      model: args.model ?? 'deepseek-v4-flash',
-      reasoningEffort: args.reasoningEffort,
-    })) },
+    llm: {
+      // DSH 0.1.7-rc.1 LlmService owns resolveModelInfo; the commissar spawn
+      // reads its reasoning metadata, so this stub must expose it.
+      resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+      resolveCallConfig: overrides.resolveCallConfig ?? (async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
+        provider: args.provider ?? 'deepseek-official',
+        model: args.model ?? 'deepseek-v4-flash',
+        reasoningEffort: args.reasoningEffort,
+      })),
+    },
     subagents: {
       registerContinuableSetup: () => undefined,
       followup: async () => undefined,

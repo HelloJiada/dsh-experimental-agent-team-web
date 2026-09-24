@@ -41,6 +41,12 @@ import type { AgentTeamsTranslate } from './locales.ts';
 export declare const PROVIDER_GRANTS_NAMESPACE = "agent-team-web";
 /** 命名空间 resolved value 形状(与 host AgentTeamSettingsSchema 对齐)。 */
 export interface ProviderGrantsSectionValue {
+    /** New per-model allowlist and supported effort ceiling. */
+    readonly modelCapabilities?: Record<string, {
+        enabled: boolean;
+        maxReasoningEffort?: string;
+    }>;
+    /** Legacy fields remain readable and are never auto-deleted. */
     readonly enabledModels?: Record<string, boolean>;
     readonly roleDefaults?: Record<string, {
         provider?: string;
@@ -49,11 +55,31 @@ export interface ProviderGrantsSectionValue {
     }>;
 }
 /** /state 顶层 providers 条目(t13:含 advisory 模型列表)。 */
+export interface ProviderModelCapability {
+    readonly id: string;
+    /** Adapter-provided capabilities in its original preferred order. */
+    readonly reasoning?: {
+        readonly efforts: readonly {
+            readonly id: string;
+            readonly name: string;
+            readonly description?: string;
+        }[];
+        readonly defaultEffort?: string;
+    };
+}
 export interface ProviderWithModels {
     readonly id: string;
     readonly name: string;
-    readonly models?: readonly string[];
+    readonly models?: readonly (ProviderModelCapability | string)[];
 }
+export declare function modelCapabilityEntries(providers: readonly ProviderWithModels[]): readonly {
+    provider: string;
+    model: ProviderModelCapability;
+}[];
+export declare function modelCapabilityValue(value: ProviderGrantsSectionValue | undefined, provider: string, model: string): {
+    enabled: boolean;
+    maxReasoningEffort?: string;
+};
 /** /state 顶层角色档位合并视图(三源链 + overridden 标记)。 */
 export interface RolePresetView {
     readonly role: string;
@@ -125,7 +151,12 @@ export declare function providerGrantRows(providers: readonly ProviderWithModels
  * 开启 = 全部模型授权(写各自 `${provider}/${model}` key);关闭 = 全部撤销
  * (删除该 provider 全部模型 key)。设计决策:provider 粒度展示,授权数据仍
  * 模型粒度(enabledModels 复合 key)不变。 */
-export declare function toggleProviderModels(current: Readonly<Record<string, boolean>> | undefined, provider: string, models: readonly string[] | undefined, nextEnabled: boolean): Record<string, boolean>;
+export declare function toggleProviderModels(current: Readonly<Record<string, boolean>> | undefined, provider: string, models: readonly (ProviderModelCapability | string)[] | undefined, nextEnabled: boolean): Record<string, boolean>;
+export declare function toggleModelCapability(current: ProviderGrantsSectionValue | undefined, provider: string, model: ProviderModelCapability, enabled: boolean, maxReasoningEffort?: string): Record<string, {
+    enabled: boolean;
+    maxReasoningEffort?: string;
+}>;
+export declare function modelEnabled(provider: string, model: ProviderModelCapability, value: ProviderGrantsSectionValue | undefined): boolean;
 /** 角色档位值(client 本地形状,与 host AgentTeamSettingsSchema 对齐;
  * 不导入 host provider-grants.ts 以保 client bundle 纯净)。
  * auto 标记(t23):系统自动分配标识,使下次授权变化可重算(区别于手动覆盖)。 */
@@ -165,7 +196,9 @@ export declare function autoAssignRoleDefaults(current: Readonly<Record<string, 
 /** 纯函数(t20):实时合并角色档位——显示值 = 实时覆盖(scope snapshot)
  * ?? base(/state 的 profile ?? DEFAULT,不含覆盖);overridden 由实时覆盖
  * 判定(驱动「恢复默认」disabled 态与选中回显)。 */
+export declare const MEMBER_PRESET_ROLES: readonly ["researcher", "engineer", "qa", "designer", "data", "docs", "security", "reviewer", "commissar"];
 export declare function mergeRoleDefaults(base: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, overrides: Readonly<Record<string, RoleLlmDefaultValue>> | undefined): readonly RolePresetView[];
+export declare function roleRouteNotice(row: RolePresetView, t: AgentTeamsTranslate): string;
 /** 纯函数(t25):是否存在任一档位表目标模型已授权(初始化分配的前提——
  * 有目标可分配才写,避免无谓覆盖/写入)。 */
 export declare function autoAssignHasTarget(enabledModels: Readonly<Record<string, boolean>> | undefined, table?: Readonly<Record<string, RoleAutoAssignEntry>>): boolean;

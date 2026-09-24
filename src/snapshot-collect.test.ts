@@ -165,22 +165,22 @@ describe('collectArchivedTeamsActivity — 归档团队采集', () => {
 
 describe('collectTeamsActivity — providers 快照透出(AgentTeam 设置中心数据源)', () => {
   /** ctx 桩携带 llm.listProviders/listModels,模拟 DSH 已注册 provider 路由。 */
-  function llmContext(providers: readonly { id: string; name: string; models: string[] }[]): Context {
+  function llmContext(providers: readonly { id: string; name: string; models: readonly { id: string }[] }[]): Context {
     return {
       agents: { get: () => undefined },
       logger: { warn: () => undefined, debug: () => undefined },
       llm: {
         listProviders: () => providers.map(({ id, name }) => ({ id, name })),
         listModels: async (providerId: string) =>
-          providers.find(p => p.id === providerId)?.models.map(model => ({ id: model })) ?? [],
+          providers.find(p => p.id === providerId)?.models ?? [],
       },
     } as unknown as Context
   }
 
   const REGISTERED = [
-    { id: 'deepseek-official', name: 'DeepSeek Official', models: ['deepseek-v4-flash'] },
-    { id: 'kimi-coding', name: 'Kimi Coding', models: ['kimi-k2.7-code'] },
-    { id: 'xiaomi', name: 'Xiaomi', models: ['xiaomi-m1'] },
+    { id: 'deepseek-official', name: 'DeepSeek Official', models: [{ id: 'deepseek-v4-flash' }] },
+    { id: 'kimi-coding', name: 'Kimi Coding', models: [{ id: 'kimi-k2.7-code' }] },
+    { id: 'xiaomi', name: 'Xiaomi', models: [{ id: 'xiaomi-m1' }] },
   ]
 
   it('t13:透出全部注册 provider(含 advisory models);deepseek 恒 enabled,其余按 enabledModels 复合 key', async () => {
@@ -193,9 +193,9 @@ describe('collectTeamsActivity — providers 快照透出(AgentTeam 设置中心
     )
     const snapshot = snapshots.find(s => s.teamId === 'team-prov')
     expect(snapshot?.providers).toEqual([
-      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: ['deepseek-v4-flash'] },
-      { id: 'kimi-coding', name: 'Kimi Coding', enabled: true, models: ['kimi-k2.7-code'] },
-      { id: 'xiaomi', name: 'Xiaomi', enabled: false, models: ['xiaomi-m1'] },
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: [{ id: 'deepseek-v4-flash' }] },
+      { id: 'kimi-coding', name: 'Kimi Coding', enabled: true, models: [{ id: 'kimi-k2.7-code' }] },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: false, models: [{ id: 'xiaomi-m1' }] },
     ])
   })
 
@@ -208,8 +208,8 @@ describe('collectTeamsActivity — providers 快照透出(AgentTeam 设置中心
       () => ({ 'xiaomi/xiaomi-m1': true }),
     )
     expect(granted.find(s => s.teamId === 'team-prov2')?.providers).toEqual([
-      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: ['deepseek-v4-flash'] },
-      { id: 'xiaomi', name: 'Xiaomi', enabled: true, models: ['xiaomi-m1'] },
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: [{ id: 'deepseek-v4-flash' }] },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: true, models: [{ id: 'xiaomi-m1' }] },
     ])
 
     // settings 未接线(reader undefined)→ 非 deepseek 全部未授权(单通道默认)。
@@ -218,9 +218,27 @@ describe('collectTeamsActivity — providers 快照透出(AgentTeam 设置中心
       [{ workspace, stateRoot }],
     )
     expect(noSettings.find(s => s.teamId === 'team-prov2')?.providers).toEqual([
-      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: ['deepseek-v4-flash'] },
-      { id: 'xiaomi', name: 'Xiaomi', enabled: false, models: ['xiaomi-m1'] },
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: [{ id: 'deepseek-v4-flash' }] },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: false, models: [{ id: 'xiaomi-m1' }] },
     ])
+  })
+
+  it('per-route adapter reasoning metadata is exposed without inventing missing capability', async () => {
+    const ctx = {
+      llm: {
+        listProviders: () => [{ id: 'p', name: 'P' }],
+        listModels: async () => [{ id: 'reasoning' }, { id: 'plain' }],
+        resolveModelInfo: async (_provider: string, model: string) => model === 'reasoning'
+          ? { reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }], defaultEffort: 'high' } }
+          : {},
+      },
+    } as unknown as Context
+    expect(await collectProviders(ctx, () => ({ 'p/reasoning': true }))).toEqual([{
+      id: 'p', name: 'P', enabled: true, models: [
+        { id: 'reasoning', reasoning: { efforts: [{ id: 'off', name: 'Off' }, { id: 'high', name: 'High' }], defaultEffort: 'high' } },
+        { id: 'plain' },
+      ],
+    }])
   })
 
   it('ctx 无 llm(头部/非 web 环境)→ providers 空数组,快照不崩', async () => {
@@ -236,16 +254,16 @@ describe('collectTeamsActivity — providers 快照透出(AgentTeam 设置中心
       () => ({ 'xiaomi/xiaomi-m1': true }),
     )
     expect(providers).toEqual([
-      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: ['deepseek-v4-flash'] },
-      { id: 'kimi-coding', name: 'Kimi Coding', enabled: false, models: ['kimi-k2.7-code'] },
-      { id: 'xiaomi', name: 'Xiaomi', enabled: true, models: ['xiaomi-m1'] },
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: [{ id: 'deepseek-v4-flash' }] },
+      { id: 'kimi-coding', name: 'Kimi Coding', enabled: false, models: [{ id: 'kimi-k2.7-code' }] },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: true, models: [{ id: 'xiaomi-m1' }] },
     ])
     // settings 缺席(reader undefined)→ 非 deepseek 全未授权。
     const noSettings = await collectProviders(llmContext(REGISTERED))
     expect(noSettings).toEqual([
-      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: ['deepseek-v4-flash'] },
-      { id: 'kimi-coding', name: 'Kimi Coding', enabled: false, models: ['kimi-k2.7-code'] },
-      { id: 'xiaomi', name: 'Xiaomi', enabled: false, models: ['xiaomi-m1'] },
+      { id: 'deepseek-official', name: 'DeepSeek Official', enabled: true, models: [{ id: 'deepseek-v4-flash' }] },
+      { id: 'kimi-coding', name: 'Kimi Coding', enabled: false, models: [{ id: 'kimi-k2.7-code' }] },
+      { id: 'xiaomi', name: 'Xiaomi', enabled: false, models: [{ id: 'xiaomi-m1' }] },
     ])
   })
 })

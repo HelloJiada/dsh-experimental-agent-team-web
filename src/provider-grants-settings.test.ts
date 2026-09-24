@@ -16,6 +16,7 @@ import {
   AgentTeamSettingsFields,
   AgentTeamSettingsSchema,
   modelGrantedFromValue,
+  modelCapabilityFromValue,
   modelKey,
   resolveRoleDefault,
   settingsAccessFromConfig,
@@ -56,9 +57,13 @@ describe('设置字段 schema', () => {
     const parsed = AgentTeamSettingsSchema({
       enabledModels: { 'cc-switch/gpt-5.6-terra': true },
       roleDefaults: { engineer: { provider: 'cc-switch', model: 'gpt-5.6-terra' } },
+      modelCapabilities: { 'cc-switch/gpt-6-sol': { enabled: true, maxReasoningEffort: 'high' } },
     })
     const models = parsed.enabledModels as unknown as { get(): Record<string, boolean> }
     const roles = parsed.roleDefaults as unknown as { get(): Record<string, { provider?: string; model?: string }> }
+    const capabilities = parsed.modelCapabilities as unknown as { get(): Record<string, { enabled: boolean; maxReasoningEffort?: string }> }
+    expect(typeof capabilities.get).toBe('function')
+    expect(capabilities.get()['cc-switch/gpt-6-sol']).toEqual({ enabled: true, maxReasoningEffort: 'high' })
     expect(typeof models.get).toBe('function')
     expect(typeof roles.get).toBe('function')
     const access = settingsAccessFromConfig(parsed)
@@ -66,17 +71,32 @@ describe('设置字段 schema', () => {
     expect(access.roleDefaultsFor?.('engineer')).toEqual({ provider: 'cc-switch', model: 'gpt-5.6-terra' })
     expect((AgentTeamSettingsSchema({}).enabledModels as unknown as { get(): object }).get()).toEqual({})
     expect((AgentTeamSettingsSchema({}).roleDefaults as unknown as { get(): object }).get()).toEqual({})
+    expect((AgentTeamSettingsSchema({}).modelCapabilities as unknown as { get(): object }).get()).toEqual({})
   })
 
   it('两个字段都是 volatile —— 否则宿主不暴露表单且拒绝写入', () => {
     expect(volatileOf(AgentTeamSettingsFields.enabledModels)).toBe(true)
     expect(volatileOf(AgentTeamSettingsFields.roleDefaults)).toBe(true)
+    expect(volatileOf(AgentTeamSettingsFields.modelCapabilities)).toBe(true)
     expect(volatileOf(AgentTeamSettingsSchema.dict?.enabledModels)).toBe(true)
     expect(volatileOf(AgentTeamSettingsSchema.dict?.roleDefaults)).toBe(true)
+    expect(volatileOf(AgentTeamSettingsSchema.dict?.modelCapabilities)).toBe(true)
   })
 
   it('命名空间与组合 entry id 一致(宿主以 entry id 作为设置命名空间)', () => {
     expect(String(AGENT_TEAM_SETTINGS_NS)).toBe('agent-team-web')
+  })
+})
+
+describe('modelCapabilities — exact route policy and legacy fallback', () => {
+  it('new grant overrides legacy grant and preserves per-route ceiling', () => {
+    const settings = { enabledModels: { 'cc-switch/gpt-6-sol': true }, modelCapabilities: {
+      'cc-switch/gpt-6-sol': { enabled: false, maxReasoningEffort: 'low' },
+    } }
+    expect(modelGrantedFromValue(settings, 'cc-switch', 'gpt-6-sol')).toBe(false)
+    expect(modelCapabilityFromValue(settings, 'cc-switch', 'gpt-6-sol')).toEqual({ enabled: false, maxReasoningEffort: 'low' })
+    expect(modelCapabilityFromValue({ enabledModels: { 'cc-switch/gpt-6-sol': true } }, 'cc-switch', 'gpt-6-sol')).toEqual({ enabled: true, legacy: true })
+    expect(modelGrantedFromValue({ modelCapabilities: { 'deepseek-official/deepseek-flash': { enabled: false } } }, 'deepseek-official', 'deepseek-flash')).toBe(true)
   })
 })
 
@@ -109,7 +129,7 @@ describe('resolveRoleDefault — 三源链(config 覆盖 → profile → builtin
 
   it('config 覆盖优先;无覆盖 → profile;无 profile → builtin;都无 → undefined', () => {
     const withOverride = { roleDefaults: { engineer: { model: 'custom-m1', reasoningEffort: 'low' } } }
-    expect(resolveRoleDefault(withOverride, profile, builtin, 'engineer')).toEqual({ model: 'custom-m1', reasoningEffort: 'low' })
+    expect(resolveRoleDefault(withOverride, profile, builtin, 'engineer')).toEqual({ model: 'custom-m1', reasoningEffort: 'low' }) // read-only legacy migration view
     expect(resolveRoleDefault({}, profile, builtin, 'engineer')).toEqual({ model: 'deepseek-v4-flash' })
     expect(resolveRoleDefault({}, {}, builtin, 'researcher')).toEqual({ model: 'deepseek-v4-pro' })
     expect(resolveRoleDefault({}, {}, {}, 'unknown-role')).toBeUndefined()
@@ -179,7 +199,7 @@ describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)'
     await access.setModelGrant?.('cc-switch', 'gpt-5.6-terra', true)
     expect(calls[0]).toEqual({
       ns: 'agent-team-web',
-      patch: { enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'cc-switch/gpt-5.6-terra': true } },
+      patch: { enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'cc-switch/gpt-5.6-terra': true }, modelCapabilities: { 'cc-switch/gpt-5.6-terra': { enabled: true } } },
     })
 
     // deepseek 名下隐式恒授权 → 不落盘
@@ -190,6 +210,7 @@ describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)'
     await access.setModelGrant?.('cc-switch', 'gpt-5.6-terra', false)
     expect(calls[1]?.patch).toEqual({
       enabledModels: { 'kimi-coding/kimi-k2.7-code': true, 'cc-switch/gpt-5.6-terra': false },
+      modelCapabilities: { 'cc-switch/gpt-5.6-terra': { enabled: false } },
     })
 
     // 角色覆盖写 + 「默认」删覆盖

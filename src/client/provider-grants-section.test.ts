@@ -53,7 +53,13 @@ import {
   autoAssignDiffers,
   autoAssignHasTarget,
   autoAssignRoleDefaults,
+  modelCapabilityEntries,
+  modelCapabilityValue,
+  modelEnabled,
+  toggleModelCapability,
   mergeRoleDefaults,
+  roleRouteNotice,
+  MEMBER_PRESET_ROLES,
   modelKeyOf,
   providerGrantRows,
   resetRoleDefaults,
@@ -75,6 +81,30 @@ const PROVIDERS = [
   { id: 'xiaomi', name: 'Xiaomi', models: ['xiaomi-m1'] },
   { id: 'cc-switch', name: 'CC Switch', models: ['cc-model-1'] },
 ]
+
+describe('model capability allowlist UI contract', () => {
+  const model = { id: 'routed-model', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }
+  it('uses exact adapter-provided effort ids and does not invent effort when absent', () => {
+    expect(modelCapabilityEntries([{ id: 'p', name: 'Provider', models: [model, { id: 'plain' }] }])).toEqual([
+      { provider: 'p', model }, { provider: 'p', model: { id: 'plain' } },
+    ])
+    expect(toggleModelCapability(undefined, 'p', model, true)).toEqual({ 'p/routed-model': { enabled: true } })
+    expect(toggleModelCapability(undefined, 'p', { id: 'plain' }, true)).toEqual({ 'p/plain': { enabled: true } })
+  })
+  it('reads legacy boolean grants without deleting them and prefers explicit new value', () => {
+    const legacy = { enabledModels: { 'p/routed-model': true }, roleDefaults: { engineer: { model: 'old' } } }
+    expect(modelCapabilityValue(legacy, 'p', 'routed-model')).toEqual({ enabled: true })
+    expect(modelEnabled('p', model, legacy)).toBe(true)
+    expect(toggleModelCapability(legacy, 'p', model, false)).toEqual({ 'p/routed-model': { enabled: false } })
+    expect(legacy.enabledModels).toEqual({ 'p/routed-model': true })
+    expect(legacy.roleDefaults).toEqual({ engineer: { model: 'old' } })
+  })
+  it('keeps missing caps unset, clears cap on explicit default, and locks only built-in grant', () => {
+    expect(toggleModelCapability({ modelCapabilities: { 'p/routed-model': { enabled: true, maxReasoningEffort: 'high' } } }, 'p', model, true, '')).toEqual({ 'p/routed-model': { enabled: true } })
+    expect(toggleModelCapability(undefined, 'p', model, true, 'imaginary')).toEqual({ 'p/routed-model': { enabled: true } })
+    expect(modelEnabled('deepseek-official', { id: 'd' }, undefined)).toBe(true)
+  })
+})
 
 describe('providerGrantRows — provider 粒度行(t14)', () => {
   it('4 provider 各一行(无模型子列表);deepseek-official 恒锁定恒启用', () => {
@@ -140,6 +170,25 @@ describe('toggleProviderModels — provider 行 switch 联动全部模型(t14)',
   })
 })
 
+describe('role preset duties survive empty legacy routing data', () => {
+  it('uses every member duty role in stable preset order with empty base/overrides', () => {
+    const rows = mergeRoleDefaults({}, {})
+    expect(rows.map(row => row.role)).toEqual([...MEMBER_PRESET_ROLES])
+    expect(rows.map(row => row.role)).toEqual(['researcher', 'engineer', 'qa', 'designer', 'data', 'docs', 'security', 'reviewer', 'commissar'])
+  })
+  it('shows old route only when present and otherwise explains captain inheritance', () => {
+    const rows = mergeRoleDefaults({ engineer: { provider: 'legacy-provider', model: 'legacy-model' } }, {})
+    const translate = (key: string, params?: Record<string, unknown>): string => key === 'settings.agentTeam.legacyRoute'
+      ? `旧路由记录：${params?.provider} / ${params?.model}（仅兼容展示）`
+      : key === 'settings.agentTeam.providerMissing' ? 'provider 未记录' : '新成员默认继承队长路由'
+    expect(roleRouteNotice(rows.find(row => row.role === 'engineer')!, translate)).toBe('旧路由记录：legacy-provider / legacy-model（仅兼容展示）')
+    expect(roleRouteNotice(rows.find(row => row.role === 'qa')!, translate)).toBe('新成员默认继承队长路由')
+  })
+  it('preserves legacy-only role ids after preset roles', () => {
+    expect(mergeRoleDefaults({}, { 'custom-legacy': { model: 'old-model' } }).map(row => row.role)).toContain('custom-legacy')
+  })
+})
+
 describe('mergeRoleDefaults — 实时合并(t20 主因修复)', () => {
   const base = {
     engineer: { model: 'deepseek-v4-flash', reasoningEffort: 'high' },
@@ -148,19 +197,17 @@ describe('mergeRoleDefaults — 实时合并(t20 主因修复)', () => {
 
   it('显示值 = 实时覆盖 ?? base;overridden 由实时覆盖判定', () => {
     const rows = mergeRoleDefaults(base, { engineer: { model: 'custom-m1' } })
-    expect(rows).toEqual([
-      { role: 'engineer', model: 'custom-m1', overridden: true },
-      { role: 'qa', model: 'deepseek-v4-flash', overridden: false },
-    ])
+    expect(rows.find(row => row.role === 'engineer')).toEqual({ role: 'engineer', model: 'custom-m1', overridden: true })
+    expect(rows.find(row => row.role === 'qa')).toEqual({ role: 'qa', model: 'deepseek-v4-flash', overridden: false })
   })
 
   it('删覆盖后回落 base(overridden 翻 false);base 缺失安全', () => {
     const rows = mergeRoleDefaults(base, {})
     expect(rows.find(r => r.role === 'engineer')).toMatchObject({ model: 'deepseek-v4-flash', reasoningEffort: 'high', overridden: false })
-    expect(mergeRoleDefaults(undefined, { engineer: { model: 'm' } })).toEqual([
+    expect(mergeRoleDefaults(undefined, { engineer: { model: 'm' } }).find(row => row.role === 'engineer')).toEqual(
       { role: 'engineer', model: 'm', overridden: true },
-    ])
-    expect(mergeRoleDefaults(undefined, undefined)).toEqual([])
+    )
+    expect(mergeRoleDefaults(undefined, undefined)).toHaveLength(MEMBER_PRESET_ROLES.length)
   })
 })
 

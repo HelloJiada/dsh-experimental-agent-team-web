@@ -165,9 +165,10 @@ export interface Config {
   /** 模型调度授权(key `${provider}/${model}` → true 授权)。设置页写面字段,
    * 必须 volatile;缺省 = 空 map(仅 deepseek-official 恒授权)。 */
   enabledModels?: Record<string, boolean>
-  /** 角色档位覆盖(roleKey → 档位)。设置页写面字段,必须 volatile;缺省回落到
-   * profile.roleLlmDefaults → 内置 DEFAULT_ROLE_LLM。 */
+  /** Legacy role routes retained for read-only migration display. */
   roleDefaults?: Record<string, MemberLlmDefaults>
+  /** Per-provider/model grant and maximum adapter-owned reasoning effort. */
+  modelCapabilities?: Record<string, { enabled: boolean; maxReasoningEffort?: string }>
 }
 
 export const Config: z<Config> = z.object({
@@ -194,6 +195,7 @@ export const Config: z<Config> = z.object({
   // 字段与 AgentTeamSettingsFields 共用同一份 volatile schema。
   enabledModels: AgentTeamSettingsFields.enabledModels,
   roleDefaults: AgentTeamSettingsFields.roleDefaults,
+  modelCapabilities: AgentTeamSettingsFields.modelCapabilities,
 })
 
 export function apply(ctx: Context, config: Config): void {
@@ -242,6 +244,7 @@ export function apply(ctx: Context, config: Config): void {
     modelGrantedFor: (provider, model) => settingsAccess.modelGrantedFor?.(provider, model)
       ?? (provider === 'deepseek-official'),
     roleDefaultsFor: (roleKey) => settingsAccess.roleDefaultsFor?.(roleKey),
+    modelCapabilitiesFor: (provider, model) => settingsAccess.modelCapabilityFor?.(provider, model),
   }
 
   // 两半分开装——这是本插件 token 成本的关键分界:

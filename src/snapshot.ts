@@ -36,12 +36,27 @@ function listProvidersSafe(ctx: Context): LlmProviderInfo[] {
 }
 
 /** provider 的模型列表(advisory,非权威全集),ctx.llm 缺失/抛错时容空。 */
-async function listModelsSafe(ctx: Context, providerId: string): Promise<string[]> {
+async function listModelsSafe(ctx: Context, providerId: string): Promise<{ id: string; reasoning?: { efforts: { id: string; name: string; description?: string }[]; defaultEffort?: string } }[]> {
   try {
-    const llm = (ctx as unknown as { llm?: { listModels(provider: string): Promise<readonly { id: string }[]> } }).llm
+    const llm = (ctx as unknown as { llm?: {
+      listModels(provider: string): Promise<readonly { id: string }[]>
+      resolveModelInfo?(provider: string, model: string): Promise<{ reasoning?: {
+        efforts: readonly { id: string; name: string; description?: string }[]; defaultEffort?: string
+      } }>
+    } }).llm
     if (llm?.listModels === undefined) return []
     const models = await llm.listModels(providerId)
-    return models.map(model => model.id)
+    return Promise.all(models.map(async model => {
+      try {
+        const info = await llm.resolveModelInfo?.(providerId, model.id)
+        const reasoning = info?.reasoning
+        return { id: model.id, ...reasoning === undefined ? {} : {
+          reasoning: { efforts: reasoning.efforts.map(effort => ({ id: String(effort.id), name: effort.name,
+            ...effort.description === undefined ? {} : { description: effort.description } })),
+          ...reasoning.defaultEffort === undefined ? {} : { defaultEffort: String(reasoning.defaultEffort) } },
+        } }
+      } catch { return { id: model.id } }
+    }))
   } catch {
     return []
   }
@@ -63,7 +78,7 @@ export async function collectProviders(
   for (const provider of providers) {
     const models = await listModelsSafe(ctx, provider.id)
     const grantedAny = provider.id === 'deepseek-official'
-      || models.some(model => enabledMap[`${provider.id}/${model}`] === true)
+      || models.some(model => enabledMap[`${provider.id}/${model.id}`] === true)
       || Object.keys(enabledMap).some(key => key.startsWith(`${provider.id}/`) && enabledMap[key] === true)
     views.push({
       id: provider.id,
@@ -190,8 +205,8 @@ export interface TeamProviderView {
   readonly id: string
   readonly name: string
   readonly enabled: boolean
-  /** 该 provider 的模型列表(advisory,ctx.llm.listModels 容空)。 */
-  readonly models?: readonly string[]
+  /** Models are advisory; reasoning levels come from exact adapter metadata. */
+  readonly models?: readonly { id: string; reasoning?: { efforts: readonly { id: string; name: string; description?: string }[]; defaultEffort?: string } }[]
 }
 
 /** 自成长校准统计的快照视图(面板展示用,复用 retro.ts 纯函数)。 */

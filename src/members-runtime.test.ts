@@ -115,7 +115,10 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
       options: { provider: 'p', model: 'm' },
     } as unknown as Agent)
     const ctx = baseCtx({
-      llm: { resolveCallConfig: async (config: { provider: string; model: string }) => ({ ...config }) },
+      llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model, reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' } }),
+        resolveCallConfig: async (config: { provider: string; model: string }) => ({ ...config }),
+      },
     })
     const selection = await resolveMemberLlmSelection(ctx, cap, {})
     expect(selection.provider).toBe('p')
@@ -129,7 +132,10 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
 
   it('显式 provider+model 且 effort="default" → 目标模型默认 effort(不传 effort)', async () => {
     const ctx = baseCtx({
-      llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
+      llm: {
+        resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model, reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'high' } }),
+        resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }),
+      },
     })
     const selection = await resolveMemberLlmSelection(ctx, captain('/ws'), {
       provider: 'other', model: 'm2', reasoningEffort: 'default',
@@ -144,7 +150,7 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
       .rejects.toThrow(/member LLM provider must not be empty/)
   })
 
-  it('roleDefaults:无显式路由时按角色档位取 provider/model/effort(自动分配)', async () => {
+  it('旧 roleDefaults 不再指定新成员路由；无显式选择时继承队长路由', async () => {
     const cap = captain('/ws', {
       session: {
         header: { cwd: '/ws', id: 'session-captain' },
@@ -156,13 +162,13 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     const ctx = baseCtx({
       llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
     })
-    // security 角色默认档位:pro + max,覆盖队长继承的 flash + high。
+    // Legacy route/effort remain readable but do not pin new-member routing.
     const selection = await resolveMemberLlmSelection(ctx, cap, {
       roleDefaults: { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' },
     })
     expect(selection.provider).toBe('deepseek-official')
-    expect(selection.model).toBe('deepseek-v4-pro')
-    expect(selection.reasoningEffort).toBe('max')
+    expect(selection.model).toBe('deepseek-v4-flash')
+    expect(selection.reasoningEffort).toBe('high')
   })
 
   it('roleDefaults:显式 provider/model 永远优先于角色档位', async () => {
@@ -206,7 +212,7 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     expect(selection.reasoningEffort).toBe('high') // 同会话路由继承 effort
   })
 
-  it('roleDefaults:档位仅 model 无 provider(内置档位)时 model 不跨 provider 取——回退队长路由(同源配对修复)', async () => {
+  it('roleDefaults:档位仅 model 无 provider(内置档位)时也不参与路由——仍取队长路由', async () => {
     const cap = captain('/ws', {
       session: {
         header: { cwd: '/ws', id: 'session-captain' },
@@ -218,9 +224,9 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     const ctx = baseCtx({
       llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
     })
-    // DEFAULT_ROLE_LLM 内置档位只有 deepseek model 无 provider;队长会话是
-    // cc-switch → 同源配对:model 只在 provider 也来自档位时取档位,绝不产生
-    // `cc-switch + deepseek-v4-*` 错配,model 回退队长会话的 gpt。
+    // Provider and model form one inseparable route; a legacy record that names
+    // only a model can never cross-pair with the captain's provider, and since
+    // role presets no longer route at all the captain route wins outright.
     const selection = await resolveMemberLlmSelection(ctx, cap, {
       roleDefaults: { model: 'deepseek-v4-pro', reasoningEffort: 'high' }, // 无 provider(内置档位)
     })
@@ -228,7 +234,7 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     expect(selection.model).toBe('gpt-5.6-sol[1M]')
   })
 
-  it('roleDefaults:角色档位只给 effort、model 缺失时仍从队长继承', async () => {
+  it('roleDefaults:角色档位只给 effort 时不再覆盖队长 effort', async () => {
     const cap = captain('/ws', {
       session: {
         header: { cwd: '/ws', id: 'session-captain' },
@@ -240,13 +246,14 @@ describe('resolveMemberLlmSelection — LLM 路由解析', () => {
     const ctx = baseCtx({
       llm: { resolveCallConfig: async (config: { provider: string; model: string; reasoningEffort?: string }) => ({ ...config }) },
     })
-    // 角色档位只声明 effort(low),provider/model 回退队长。
+    // A legacy effort-only record is ignored: same-route inheritance from the
+    // captain is the only implicit effort source under the new contract.
     const selection = await resolveMemberLlmSelection(ctx, cap, {
       roleDefaults: { reasoningEffort: 'low' },
     })
     expect(selection.provider).toBe('deepseek-official')
     expect(selection.model).toBe('deepseek-v4-flash')
-    expect(selection.reasoningEffort).toBe('low')
+    expect(selection.reasoningEffort).toBe('high')
   })
 })
 
@@ -261,21 +268,26 @@ describe('resolveMemberLlmCandidates — portable route admission', () => {
     expect(calls).toBe(0)
   })
 
-  it('falls back from an ungranted complete role route to the captain route', async () => {
-    const ctx = baseCtx({ llm: { resolveCallConfig: async (config: { provider: string; model: string }) => config } })
+  it('admits only the captain route when no explicit provider/model is selected', async () => {
+    const ctx = baseCtx({ llm: {
+      resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+      resolveCallConfig: async (config: { provider: string; model: string }) => config,
+    } })
     const selection = await resolveMemberLlmCandidates(ctx, captain('/ws'), [
-      { label: 'profile role default', request: { roleDefaults: { provider: 'foreign', model: 'm1' } } },
       { label: 'captain route', request: {} },
-    ], (provider, model) => provider === 'p' && model === 'm')
+    ], (provider, model) => provider === 'p' && model === 'm', undefined,
+      () => ({ enabled: true, legacy: true }))
     expect(selection).toMatchObject({ provider: 'p', model: 'm' })
   })
 
-  it('aggregates the captain failure after nonexplicit candidates fail', async () => {
-    const ctx = baseCtx({ llm: { resolveCallConfig: async () => { throw new Error('adapter rejected route') } } })
+  it('aggregates adapter failure on the inherited captain route', async () => {
+    const ctx = baseCtx({ llm: {
+      resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
+      resolveCallConfig: async () => { throw new Error('adapter rejected route') },
+    } })
     await expect(resolveMemberLlmCandidates(ctx, captain('/ws'), [
-      { label: 'profile role default', request: { roleDefaults: { provider: 'p', model: 'role' } } },
       { label: 'captain route', request: {} },
-    ], () => true)).rejects.toThrow(/profile role default:.*captain route:/)
+    ], () => true, undefined, () => ({ enabled: true, legacy: true }))).rejects.toThrow(/captain route:.*adapter rejected route/)
   })
 })
 

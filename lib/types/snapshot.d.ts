@@ -128,8 +128,18 @@ export interface TeamProviderView {
     readonly id: string;
     readonly name: string;
     readonly enabled: boolean;
-    /** 该 provider 的模型列表(advisory,ctx.llm.listModels 容空)。 */
-    readonly models?: readonly string[];
+    /** Models are advisory; reasoning levels come from exact adapter metadata. */
+    readonly models?: readonly {
+        id: string;
+        reasoning?: {
+            efforts: readonly {
+                id: string;
+                name: string;
+                description?: string;
+            }[];
+            defaultEffort?: string;
+        };
+    }[];
 }
 /** 自成长校准统计的快照视图(面板展示用,复用 retro.ts 纯函数)。 */
 export interface TeamCalibrationView {

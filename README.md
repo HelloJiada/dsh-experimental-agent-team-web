@@ -8,7 +8,7 @@
 
 ## DSH compatibility
 
-Version 0.1.30 uses the package's self-contained AgentTeams kernel and is tested
+Version 0.1.31 uses the package's self-contained AgentTeams kernel and is tested
 against the public DSH `0.1.7-rc.1` package line. It does **not** require the
 unpublished official experimental Agent Teams package or a local DSH checkout.
 
@@ -40,13 +40,12 @@ It provides:
 
 ## Settings center
 
-DSH Settings hosts an **AgentTeam** section (`settings.section` slot, with a dedicated nav board glyph) of two cards managing model grants and role presets:
+DSH Settings hosts an **AgentTeam** section (`settings.section` slot, with a dedicated nav board glyph): one card for role duties and one for model selection.
 
-- **Model access grants**: per-provider toggles over model authorization (`enabledModels`, composite key `${provider}/${model}`); `deepseek-official` is always granted with a locked "Default" pill. Grants link with role presets — models of unauthorized providers do not appear in the role-preset dropdown.
-- **Role presets**: one row per role (display name + mono id), model dropdown grouped by provider (`optgroup`), reasoning-effort dropdown editable; top-right "Reset to defaults" clears all overrides. A row-level **view button** (eye glyph, matching the DSH Agent-preset interaction) opens a role-duty dialog — slogan + working order + deliverable + key rules (full Chinese copy, source `client/roles.ts` ROLE_DUTY).
-- **Three-source chain**: a role's preset = settings override → profile `roleLlmDefaults` → built-in `DEFAULT_ROLE_LLM`, falling back down the chain when unset; "Reset to defaults" clears overrides to the chain tail.
-- **Grant-linked auto-assignment**: on grant changes (or page init) roles are re-assigned model + effort per `ROLE_AUTO_ASSIGN_TABLE`; manual overrides (distinguished by the `auto` flag) are preserved, unauthorized targets fall back to deepseek, and results carry `auto:true` so they can be recomputed later.
-- **Generic capability adaptation**: `NO_REASONING_EFFORT_PROVIDERS` table + `supportsReasoningEffort()` lookup — models that do not support reasoning effort (e.g. cc-switch GPT-5.6) get no effort written and a disabled effort dropdown; adding a new unsupported model is one provider-id entry.
+- **Role presets** (first card): **duties only**. One row per role (display name + mono id); a row-level **view button** (eye glyph, matching the DSH Agent-preset interaction) opens a role-duty dialog — slogan + working order + deliverable + key rules (full Chinese copy, source `client/roles.ts` ROLE_DUTY). The card has no model or reasoning-effort dropdown and no "apply preset" entry: a role's duty never chooses a member's model.
+- **Model selection** (second card): lets the Agent choose models for subagents — a per-`${provider}/${model}` switch (`modelCapabilities[key].enabled`) plus an optional **maximum reasoning effort** per model (`maxReasoningEffort`, which must be an effort id that model's adapter advertises). The dropdown lists `reasoning.efforts` from `ctx.llm.resolveModelInfo` in adapter order; a model without reasoning capability renders no effort control and the server never invents one. `deepseek-official` stays implicitly granted (locked pill) while its ceiling remains configurable. The card's **model preset reference** is read-only and writes nothing.
+- **Legacy configuration stays readable**: `enabledModels` (old grant table) and `roleDefaults` / profile `roleLlmDefaults` / built-in `DEFAULT_ROLE_LLM` (old role-route chain) are still read and never auto-deleted, but they **no longer participate in new-member routing**; the role card only shows them as "legacy route record (compatibility display)".
+- **New-member routing**: without an explicit `provider`/`model` a member **inherits the captain's current route**; an explicit route is validated exactly (ungranted, unknown effort, or above the ceiling fails instead of silently falling back).
 
 ## Self-growing framework
 
@@ -164,7 +163,7 @@ The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.30.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.31.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -221,4 +220,4 @@ page for the current asset name.)
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.30.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.31.tgz`

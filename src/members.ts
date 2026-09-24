@@ -82,9 +82,10 @@ export interface MemberLlmSelectionRequest {
   defaultModel?: string
   /** Explicit reasoning effort; "default" selects the target model's default effort. */
   reasoningEffort?: string
-  /** Role-based default (auto-assign): provider/model/effort for the member's
-   * canonical role, consulted when no explicit route is given. Absent fields
-   * inside it fall through to the captain-inherit path below. */
+  /** Legacy role-based route/effort record. It remains readable so old settings
+   * keep type-checking, but it never selects a route or an effort: role presets
+   * describe duties, not models. Absent fields fall through to the
+   * captain-inherit path below. */
   roleDefaults?: Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>
 }
 
@@ -94,6 +95,20 @@ export interface MemberLlmSelectionCandidate {
   readonly request: MemberLlmSelectionRequest
   /** Explicit user intent is fail-closed; it never falls through. */
   readonly explicit?: boolean
+}
+
+/** One model's policy ceiling. Absence of max permits only adapter default. */
+export interface MemberModelCapability {
+  readonly enabled: boolean
+  readonly maxReasoningEffort?: string
+  readonly legacy?: true
+}
+
+export interface MemberModelReasoningInfo {
+  readonly reasoning?: {
+    readonly efforts: readonly { readonly id: string }[]
+    readonly defaultEffort?: string
+  }
 }
 
 interface MemberRoute {
@@ -117,21 +132,14 @@ function memberRouteForRequest(captain: Agent, request: MemberLlmSelectionReques
   const current = captain.session.requestHeader()?.config
   const currentProvider = current?.provider ?? captain.options.provider
   const currentModel = current?.model ?? captain.options.model
-  const roleProvider = request.roleDefaults?.provider?.trim()
-  const roleModel = request.roleDefaults?.model?.trim()
-  const provider = explicitProvider ?? roleProvider ?? currentProvider
-  const model = explicitModel
-    ?? (roleProvider !== undefined ? roleModel : undefined)
-    ?? defaultModel ?? currentModel
+  const provider = explicitProvider ?? currentProvider
+  const model = explicitModel ?? defaultModel ?? currentModel
   if (provider === undefined || model === undefined) {
     throw new Error('cannot resolve the member LLM route from the current captain session')
   }
-  const roleEffort = request.roleDefaults?.reasoningEffort?.trim()
   const sameRoute = provider === currentProvider && model === currentModel
   const reasoningEffort = explicitEffort === undefined
-    ? roleEffort !== undefined && roleEffort !== ''
-      ? roleEffort
-      : sameRoute ? current?.reasoningEffort : undefined
+    ? sameRoute ? current?.reasoningEffort : undefined
     : explicitEffort
   return { provider, model, ...reasoningEffort === undefined ? {} : { reasoningEffort } }
 }
@@ -162,15 +170,46 @@ export async function resolveMemberLlmCandidates(
   candidates: readonly MemberLlmSelectionCandidate[],
   isGranted: (provider: string, model: string) => boolean,
   signal?: AbortSignal,
+  capabilityFor?: (provider: string, model: string) => MemberModelCapability | undefined,
 ): Promise<MemberLlmSelection> {
   const failures: string[] = []
   for (const candidate of candidates) {
     try {
       const route = memberRouteForRequest(captain, candidate.request)
-      if (!isGranted(route.provider, route.model)) {
+      // Read the new grant and its ceiling atomically from one resolved model
+      // capability snapshot. Never read enabledModels and modelCapabilities
+      // through separate volatile references: revocation could race between them.
+      const capability = capabilityFor?.(route.provider, route.model)
+      if (capabilityFor !== undefined) {
+        if (capability?.enabled !== true) throw new Error(`model ${route.provider}/${route.model} is not authorized`)
+      } else if (!isGranted(route.provider, route.model)) {
         throw new Error(`model ${route.provider}/${route.model} is not authorized`)
       }
-      return await resolveMemberRoute(ctx, route, signal)
+      // Route choice is independent of legacy role presets. New model metadata
+      // always owns the effort vocabulary for the chosen exact route.
+      const info = await ctx.llm.resolveModelInfo(route.provider, route.model, signal)
+      const offered = info.reasoning?.efforts.map(entry => String(entry.id)) ?? []
+      const ceiling = capability?.maxReasoningEffort
+      if (ceiling !== undefined && !offered.includes(ceiling)) {
+        throw new Error(`model ${route.provider}/${route.model} has no configured ceiling effort ${ceiling}`)
+      }
+      const requested = candidate.request.reasoningEffort
+      if (info.reasoning === undefined || offered.length === 0) {
+        if (requested !== undefined && requested !== 'default') {
+          throw new Error(`model ${route.provider}/${route.model} does not advertise reasoning effort`)
+        }
+        return await resolveMemberRoute(ctx, { ...route, reasoningEffort: 'default' }, signal)
+      }
+      if (requested !== undefined && requested !== 'default') {
+        if (!offered.includes(requested)) throw new Error(`model ${route.provider}/${route.model} does not support effort ${requested}`)
+        if (ceiling === undefined) throw new Error(`model ${route.provider}/${route.model} has no configured reasoning ceiling; select adapter default`)
+        if (offered.indexOf(requested) > offered.indexOf(ceiling)) throw new Error(`model ${route.provider}/${route.model} effort ${requested} exceeds ceiling ${ceiling}`)
+        return await resolveMemberRoute(ctx, { ...route, reasoningEffort: requested }, signal)
+      }
+      const adapterDefault = info.reasoning.defaultEffort === undefined ? undefined : String(info.reasoning.defaultEffort)
+      const safeDefault = adapterDefault !== undefined && ceiling !== undefined
+        && offered.indexOf(adapterDefault) > offered.indexOf(ceiling) ? ceiling : adapterDefault ?? ceiling
+      return await resolveMemberRoute(ctx, { ...route, reasoningEffort: safeDefault ?? 'default' }, signal)
     } catch (error: unknown) {
       const reason = String(error instanceof Error ? error.message : error)
       if (candidate.explicit === true) {
@@ -195,24 +234,9 @@ export interface MemberSelectionRuntime {
 
 const MEMBER_LABEL_PREFIX = 'agent-team-web:'
 
-/**
- * Built-in per-role default LLM selection (auto-assign model + effort).
- * Consulted when add_member carries no explicit provider/model and the
- * profile has no `roleLlmDefaults` entry for the role. Roles absent here
- * inherit the captain's route (existing behavior).
- */
-export const DEFAULT_ROLE_LLM: Readonly<Record<string, Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>>> = {
-  researcher: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
-  engineer: { model: 'deepseek-v4-flash', reasoningEffort: 'high' },
-  qa: { model: 'deepseek-v4-flash', reasoningEffort: 'high' },
-  designer: { model: 'deepseek-v4-flash-vision-exp', reasoningEffort: 'low' },
-  data: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
-  docs: { model: 'deepseek-v4-flash', reasoningEffort: 'low' },
-  security: { model: 'deepseek-v4-pro', reasoningEffort: 'max' },
-  reviewer: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
-  commissar: { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
-}
-
+/** Legacy route map retained as a migration/display reference. Runtime member
+ * selection deliberately does not consult role presets or this table. */
+export const DEFAULT_ROLE_LLM: Readonly<Record<string, Readonly<{ provider?: string; model?: string; reasoningEffort?: string }>>> = {}
 
 /**
  * Resolve one member's complete model selection. Ordinary members snapshot the
@@ -252,38 +276,21 @@ export async function resolveMemberLlmSelection(
   const current = captain.session.requestHeader()?.config
   const currentProvider = current?.provider ?? captain.options.provider
   const currentModel = current?.model ?? captain.options.model
-  // 成员路由 bug 修复(保留):provider 与 model 必须同源配对,杜绝
-  // `cc-switch + deepseek-v4-*` 错配。原链 `model = roleDefaults.model ?? ...`
-  // 在「角色档位只有 deepseek model 无 provider(内置 DEFAULT_ROLE_LLM)」+
-  // 「队长会话是 cc-switch」时,会让 model 取 deepseek、provider 取 cc-switch。
-  // 修正:model 只有在 provider 也来自同一层时才从该层取——roleDefaults 带
-  // provider 才用其 model,否则回落 defaultModel/队长会话 model。
-  const roleProvider = request.roleDefaults?.provider?.trim()
-  const roleModel = request.roleDefaults?.model?.trim()
-  const provider = explicitProvider ?? roleProvider ?? currentProvider
-  const model = explicitModel
-    ?? (roleProvider !== undefined ? roleModel : undefined)
-    ?? defaultModel ?? currentModel
+  // Provider and model form one inseparable route; role presets never supply it.
+  const provider = explicitProvider ?? currentProvider
+  const model = explicitModel ?? defaultModel ?? currentModel
   if (provider === undefined || model === undefined) {
     throw new Error('cannot resolve the member LLM route from the current captain session')
   }
 
   // Effort ids belong to one exact provider/model capability. Preserve the
-  // captain's effort only on the same route; a changed route must resolve its
-  // own default. Explicit effort still wins, while "default" forces that
-  // target-default behavior even when the route did not change. Role defaults
-  // (auto-assign) sit between: their effort applies on their own route, and
-  // the captain-inherit path stays intact when no role default exists.
-  const roleEffort = request.roleDefaults?.reasoningEffort?.trim()
+  // captain's effort only on the same route; a changed route resolves against
+  // that target adapter. Explicit requests are validated before child creation.
   const sameRoute = provider === currentProvider && model === currentModel
   const reasoningEffort = explicitEffort === undefined
-    ? roleEffort !== undefined && roleEffort !== ''
-      ? roleEffort === 'default'
-        ? undefined
-        : ReasoningEffortId(roleEffort)
-      : sameRoute
-        ? current?.reasoningEffort
-        : undefined
+    ? sameRoute
+      ? current?.reasoningEffort
+      : undefined
     : explicitEffort === 'default'
       ? undefined
       : ReasoningEffortId(explicitEffort)

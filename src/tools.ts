@@ -70,7 +70,6 @@ import {
   writeTeam,
 } from './state.ts'
 import {
-  DEFAULT_ROLE_LLM,
   deliverToMember,
   installRetiredMemberGuard,
   installMemberSelectionRuntime,
@@ -127,16 +126,15 @@ export interface ToolsConfig {
   maxExecPerRole?: number
   /** Per-role cap overrides keyed by canonical role (e.g. `{ engineer: 2 }`). */
   maxExecPerRoleByRole?: Record<string, number>
-  /** Per-role default LLM selection for members (auto-assign model + effort),
-   * overriding the built-in DEFAULT_ROLE_LLM table. */
+  /** Legacy per-role model routing; retained only for migration diagnostics. */
   roleLlmDefaults?: Record<string, { provider?: string; model?: string; reasoningEffort?: string }>
   /** 模型授权判定(t13,settings scope 闭包):`${provider}/${model}` 复合 key,
    * deepseek-official 名下恒授权;undefined(无 settings 服务)→ 仅 deepseek
    * 授权。 */
   modelGrantedFor?: (provider: string, model: string) => boolean
-  /** 角色档位覆盖(t13,settings scope 闭包):settings.roleDefaults[roleKey]
-   * 存在即覆盖;undefined → 走 profile.roleLlmDefaults → DEFAULT_ROLE_LLM。 */
+  /** Legacy role-route settings retained for display/migration only. */
   roleDefaultsFor?: (roleKey: string) => { provider?: string; model?: string; reasoningEffort?: string } | undefined
+  modelCapabilitiesFor?: (provider: string, model: string) => { enabled: boolean; maxReasoningEffort?: string; legacy?: true } | undefined
   /** A member-owned open task is "stalled" (helppable) after this many ms. */
   stallThresholdMs: number
 }
@@ -201,15 +199,8 @@ function memberRouteCandidates(
       request: explicit,
     })
   }
-  const roleSources: Array<[string, { provider?: string; model?: string; reasoningEffort?: string } | undefined]> = [
-    ['settings role default', config.roleDefaultsFor?.(roleKey)],
-    ['profile role default', config.roleLlmDefaults?.[roleKey]],
-    ['builtin role default', DEFAULT_ROLE_LLM[roleKey]],
-  ]
-  for (const [label, role] of roleSources) {
-    if (role?.provider === undefined || role.model === undefined) continue
-    candidates.push({ label, request: { roleDefaults: role } })
-  }
+  // Role presets describe work, not routing. New members inherit the captain
+  // route unless the captain explicitly chooses another provider/model.
   candidates.push({ label: 'captain route', request: {} })
   return candidates
 }
@@ -630,6 +621,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
               memberRouteCandidates(config, 'commissar', {}),
               grant,
               exec.signal,
+              config.modelCapabilitiesFor,
             )
             commissar = {
               id: '',
@@ -771,9 +763,8 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
       })
 
       // 锁外执行:LLM 选型 + 团队记忆读取 + 子代理 spawn(网络/慢,不占团队锁)。
-      // 角色自动分配:显式 provider/model 永远优先;否则取该角色的默认档位
-      // (t13 三源链:settings.roleDefaults 覆盖 → profile roleLlmDefaults →
-      // 内置 DEFAULT_ROLE_LLM);再否则继承队长路由。
+      // Role is retained for duty presentation and memory matching; model routing
+      // is independent: explicit provider/model or inherit the captain's route.
       const roleKey = canonicalExecRole(args.role)
       const captainRoute = captain.session.requestHeader()?.config
       const grant = (provider: string, model: string): boolean => {
@@ -784,9 +775,8 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           || (provider === (captainRoute?.provider ?? captain.options.provider)
             && model === (captainRoute?.model ?? captain.options.model))
       }
-      // Candidate admission is fail-closed. In particular, do not resurrect the
-      // previous soft fallback that spawned a member on an unauthorized route
-      // after a DeepSeek fallback failed.
+      // Candidate admission is fail-closed. The captain route is not bypassed
+      // by role templates; explicit route requests never silently fallback.
       const effectiveSelection = await resolveMemberLlmCandidates(
         ctx,
         captain,
@@ -797,6 +787,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
         }),
         grant,
         exec.signal,
+        config.modelCapabilitiesFor,
       )
       const member: TeamMember = {
         id: '',
@@ -1030,6 +1021,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
           memberRouteCandidates(config, 'commissar', {}),
           grant,
           exec.signal,
+          config.modelCapabilitiesFor,
         )
         const draft: TeamMember = {
           id: '',
