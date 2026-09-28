@@ -4,7 +4,7 @@
  *
  * Members are durable continuable subagents of the captain, so a member keeps
  * its conversation across turns and across harness restarts: the captain
- * wakes it with {@link ctx.subagents.followup}, it works through its turn
+ * wakes it with {@link ctx.subagents.sendMessage}, it works through its turn
  * (updating team state through the `agent_teams_*` tools), and becomes idle
  * again. Its final assistant message is not readable programmatically, so the
  * member persists its report into the captain's mailbox and the task records,
@@ -608,16 +608,10 @@ export async function deliverToMember(
   signal: AbortSignal,
 ): Promise<boolean> {
   try {
-    const runtime = ctx.subagents as unknown as {
-      sendMessage?: (parent: Agent, childId: SessionId, content: { type: 'text'; text: string }[], options: { signal: AbortSignal }) => Promise<unknown>
-      followup?: (parent: Agent, childId: SessionId, content: { type: 'text'; text: string }[], options: { signal: AbortSignal }) => Promise<unknown>
-    }
-    const send = runtime.sendMessage ?? runtime.followup
-    if (send === undefined) throw new Error('subagent runtime exposes neither sendMessage nor legacy followup')
-    await send.call(ctx.subagents, captain, brandedSessionId(childId), [{ type: 'text', text }], { signal })
+    await ctx.subagents.sendMessage(captain, brandedSessionId(childId), [{ type: 'text', text }], { signal })
     return true
   } catch (error: unknown) {
-    ctx.logger.warn(`agent-team-web: followup to member ${childId} failed: ${String(error)}`)
+    ctx.logger.warn(`agent-team-web: sendMessage to member ${childId} failed: ${String(error)}`)
     return false
   }
 }
@@ -647,25 +641,21 @@ async function assertMemberNotRetired(parent: Agent, childId: string, stateDir: 
 }
 
 /**
- * Defense-in-depth retirement boundary for both DSH 0.1.3 `sendMessage` and
- * the legacy `followup` name. The durable index is read on every call so a
- * just-retired member is rejected without a negative-cache window.
+ * Defense-in-depth retirement boundary for DSH `sendMessage`. The durable
+ * index is read on every call so a just-retired member is rejected without a
+ * negative-cache window.
  */
 export function installRetiredMemberGuard(ctx: Context, stateDir: string): void {
-  const runtime = ctx.subagents as unknown as Record<string, unknown>
   ctx.effect(() => {
-    const restorers: Array<() => void> = []
-    for (const method of ['sendMessage', 'followup'] as const) {
-      const original = runtime[method]
-      if (typeof original !== 'function') continue
-      const guarded = async (parent: Agent, childId: SessionId, ...rest: unknown[]): Promise<unknown> => {
-        await assertMemberNotRetired(parent, String(childId), stateDir)
-        return await original.call(ctx.subagents, parent, childId, ...rest)
-      }
-      runtime[method] = guarded
-      restorers.push(() => { if (runtime[method] === guarded) runtime[method] = original })
+    const original = ctx.subagents.sendMessage
+    const guarded: typeof original = async (parent, childId, content, options) => {
+      await assertMemberNotRetired(parent, String(childId), stateDir)
+      return await original.call(ctx.subagents, parent, childId, content, options)
     }
-    return () => { for (const restore of restorers.reverse()) restore() }
+    ctx.subagents.sendMessage = guarded
+    return () => {
+      if (ctx.subagents.sendMessage === guarded) ctx.subagents.sendMessage = original
+    }
   }, 'agent-team-web: retired member delivery guard')
 }
 

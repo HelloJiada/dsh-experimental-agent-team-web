@@ -10,6 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -82,7 +83,7 @@ function harness(): (name: string) => CapturedTool {
     effect: () => () => undefined,
     subagents: {
       registerContinuableSetup: () => undefined,
-      followup: async () => undefined,
+      sendMessage: async () => MessageId('message-status-trim'),
       interrupt: () => undefined,
       list: () => ['spawn'],
       getProvider: () => ({
@@ -267,9 +268,10 @@ describe('agent_teams_send_message — R-21/L-2 不可信标记', () => {
       subagents: {
         registerContinuableSetup: () => undefined,
         // R-21/L-2:捕获投递给成员的完整文本(标记注入在投递文本,而非邮箱 content)。
-        followup: async (_parent: unknown, _child: unknown, content: unknown) => {
+        sendMessage: async (_sender: unknown, _targetId: unknown, content: unknown) => {
           const text = (content as { type: string; text: string }[])[0]?.text ?? ''
           deliveredTexts.push(text)
+          return MessageId('message-status-trim-delivery')
         },
         interrupt: () => undefined,
         list: () => ['spawn'],

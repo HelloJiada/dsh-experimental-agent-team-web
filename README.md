@@ -8,15 +8,18 @@
 
 ## DSH compatibility
 
-Version 0.1.32 uses the package's self-contained AgentTeams kernel and is tested
-against the public DSH `0.1.7-rc.1` package line. It does **not** require the
-unpublished official experimental Agent Teams package or a local DSH checkout.
+Version 0.1.32 uses the package's self-contained AgentTeams kernel and targets
+the public DSH `0.1.7-rc.2` package line. Typecheck and tests use that package
+line; a real Web profile smoke test is still required before claiming runtime
+compatibility. It does **not** require the unpublished official experimental
+Agent Teams package or a local DSH checkout.
 
-On `0.1.5-rc.2` set `registration: eager` (see `docs/compatibility.md`): that
-harness joins a subagent child to its parent **preset** instead of inheriting
-the parent **agent scope**, so on-demand activation cannot deliver the team
-tools to members. `eager` installs the whole surface in the global layer (the
-v0.1.14 shape) and costs the full ~4.9k tokens/request in every session.
+Use `registration: eager` only on harnesses whose subagent children join the
+parent **preset** instead of inheriting the parent **agent scope**. This behavior
+was historically observed on DSH `0.1.5-rc.2`; the recommended lazy default for
+current `0.1.7-rc.2` still needs verification in a real profile. `eager`
+installs the whole surface in the global layer and costs the full ~4.9k
+tokens/request in every session.
 
 Team state remains workspace-local under `.agent-team-web/<teamId>/`, while the
 plugin provides the compatibility tools, activity panel, settings/presets,
@@ -28,7 +31,7 @@ An external DeepSeek Harness (DSH) bundle that turns the current session into th
 
 It provides:
 
-- **loaded on demand**: by default it registers only one `agent_teams_activate` tool plus a two-line hint; the 14 team tools and the captain protocol are installed into the **activating session's own scope** only when activation happens (measured: an inactive session pays ~270 tokens/request instead of ~4,900). Registration stays on that scope, while tool bodies take DSH services from the plugin root context — a session scope does not resolve the plugin's injected `subagents`/`agents` (see `docs/compatibility.md`). Three equivalent, idempotent activation entries: natural language ("use AgentTeams to do X" → the model calls `agent_teams_activate`), the `/agent-teams <goal>` slash command, and its pre-step gesture boundary for surfaces without command adjudication (headless). A harness whose subagent children join the parent **preset** instead of inheriting the parent **agent scope** (DSH `0.1.5-rc.2`) cannot deliver members this way — there, set `registration: eager` to register the whole surface globally (the v0.1.14 shape: ~4,900 tokens/request in every session); see `docs/compatibility.md`;
+- **loaded on demand**: by default it registers only one `agent_teams_activate` tool plus a two-line hint; the 14 team tools and the captain protocol are installed into the **activating session's own scope** only when activation happens (measured: an inactive session pays ~270 tokens/request instead of ~4,900). Registration stays on that scope, while tool bodies take DSH services from the plugin root context — a session scope does not resolve the plugin's injected `subagents`/`agents` (see `docs/compatibility.md`). Three equivalent, idempotent activation entries: natural language ("use AgentTeams to do X" → the model calls `agent_teams_activate`), the `/agent-teams <goal>` slash command, and its pre-step gesture boundary for surfaces without command adjudication (headless). A harness whose subagent children join the parent **preset** instead of inheriting the parent **agent scope** (historically observed on DSH `0.1.5-rc.2`) cannot deliver members this way — there, set `registration: eager` to register the whole surface globally (~4,900 tokens/request in every session); the current `0.1.7-rc.2` runtime mode has not yet been verified in a real profile; see `docs/compatibility.md`;
 - the full `agent_teams_*` tool suite (create/add-member/create-task/claim/update/reassign/remove/send-message/status/set-mode/delete, plus `agent_teams_retro_review` and `agent_teams_best_practices`), visible after activation to the captain **and its members** (member child scopes inherit the captain's registrations; under `registration: eager` they inherit them from the global layer);
 - a disk-backed team kernel — `.agent-team-web/<teamId>/team.json` + mailbox inboxes are the single source of truth, with atomic writes and per-team locking;
 - an event-driven shared-task scheduler that auto-assigns ready work to idle members and reacts to `agent/status`;

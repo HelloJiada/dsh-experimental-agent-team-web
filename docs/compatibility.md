@@ -2,17 +2,7 @@
 
 ## Required host packages
 
-The host DSH Web profile must provide the public DSH `0.1.3-alpha.2` package line:
-
-- `@deepseek-ai/dsh-session-projection`
-- `@deepseek-ai/dsh-api-session-controller`
-- `@deepseek-ai/dsh-client-store`
-- `@deepseek-ai/dsh-client-ui-chat`
-- `@deepseek-ai/dsh-client-ui-conversation`
-- `@deepseek-ai/dsh-client-ui-layout`
-- `@deepseek-ai/dsh-client-ui-renderer`
-- `@deepseek-ai/dsh-client-ui-settings`
-- `@deepseek-ai/dsh-invariants`
+The plugin peers and development dependencies target public DSH `0.1.7-rc.2`; typecheck and unit tests use this package line. Runtime compatibility still requires the real-profile smoke check below. Install and inject the bundle into the host DSH Web profile and ensure all of its declared peer packages are resolvable in that profile.
 
 `@deepseek-ai/dsh-experimental-agent-team-web` ships its own self-contained
 AgentTeams kernel (roster, durable mailbox, shared task DAG, scheduler,
@@ -24,7 +14,8 @@ local DeepSeek Harness checkout.
 
 | Plugin version | DSH version | Notes |
 |---|---|---|
-| 0.1.16 | 0.1.3-alpha.2 / 0.1.5-rc.2 | Root service context: tool bodies take injected services from the plugin root instead of the session scope. New `registration: 'lazy' | 'eager'` — `eager` installs the whole surface globally for harnesses that join a subagent child to its parent preset instead of inheriting the parent agent scope (required on 0.1.5-rc.2) |
+| 0.1.32 | 0.1.7-rc.2 | Current target package line. Typecheck and unit tests run against rc.2 packages; a real Web profile smoke check is not yet recorded. Historical child composition requiring `registration: eager` was observed on 0.1.5-rc.2; verify current runtime composition before changing the default. |
+| 0.1.16 | 0.1.3-alpha.2 / 0.1.5-rc.2 | Root service context: tool bodies take injected services from the plugin root instead of the session scope. Added `registration: 'lazy' | 'eager'` — `eager` installs the whole surface globally for harnesses that join a subagent child to its parent preset instead of inheriting the parent agent scope. |
 | 0.1.15 | 0.1.3-alpha.2 | On-demand loading: the 14 team tools and the captain protocol are installed into the activating session's own scope instead of every session (measured 4.9k -> 0.27k tokens per request for inactive sessions) |
 | 0.1.14 | 0.1.3-alpha.2 | Packaging hotfix: remove a stray self file: dependency that made the published tarball uninstallable |
 | 0.1.13 | 0.1.3-alpha.2 | Collaboration modes: light/standard/governed with an upgrade-only mode switch and fail-closed gated tasks |
@@ -64,14 +55,17 @@ which context the bodies read from.
 
 ## Two registration modes (`registration`)
 
-On-demand activation also assumes the harness lets a subagent child inherit its
-parent **agent scope**. DSH `0.1.5-rc.2` does not: `applyChildComposition` joins
-the child to its parent's **preset**
+On-demand activation assumes the harness lets a subagent child inherit its
+parent **agent scope**. This was observed not to hold on DSH `0.1.5-rc.2`, where
+`applyChildComposition` joins the child to its parent's **preset**
 (`agentPresets.composeFrom(childCtx, parent.ctx)`), so an ad-hoc `agent.ctx`
-registration is invisible to members. Two consequences, both observed:
+registration is invisible to members. This document does not claim that DSH
+`0.1.7-rc.2` retains the same runtime behavior; verify the loaded profile's
+child composition before choosing a registration mode. Two consequences were
+observed on the older preset-only composition:
 
-- members see **no** `agent_teams_*` tool at all;
-- `agent_teams_create` still fails first, at
+- on the observed historical composition, members saw **no** `agent_teams_*` tool at all;
+- `agent_teams_create` failed first, at
   `childCtx.tools.restrict({ deny: MEMBER_DENIED_TOOLS })` →
   `tools.restrict() names unknown global tools "agent_teams_create", …`,
   because `restrict()` accepts only **global** or **ancestor-scope** names
@@ -83,7 +77,7 @@ scope. `registration: 'eager'` installs the full surface in the global layer at
 mount (the v0.1.14 shape): every session pays the full cost, members get the
 tools by global inheritance, and the per-child deny filter compiles. Use
 `eager` on DSH `0.1.5-rc.2` and any harness with the same child-composition
-rule.
+rule. For DSH `0.1.7-rc.2`, this has not yet been confirmed by a real-profile test; keep the default `lazy` unless the current host composition demonstrates the preset-only inheritance behavior.
 
 ```yaml
 - id: agent-team-web

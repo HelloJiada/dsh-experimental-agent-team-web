@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -75,8 +76,9 @@ function context(options: {
   return {
     agents: { get: (id: string) => options.live?.[id] },
     subagents: {
-      followup: async () => {
+      sendMessage: async () => {
         if (options.followupThrows === true) throw new Error('delivery failed')
+        return MessageId('message-scheduler')
       },
     },
     logger: { warn: () => undefined, debug: () => undefined },
@@ -368,7 +370,7 @@ describe('kickTeam 集成 — Owner 优先与撤出通知（审查 #2 回归）'
     const scheduler = installTeamScheduler({
       agents: { get: (id: string) => id === 'session-captain' ? { status: 'idle' } : undefined },
       subagents: {
-        followup: async (_captain: unknown, childId: string) => { calls.push(childId) },
+        sendMessage: async (_sender: unknown, targetId: string) => { calls.push(targetId); return MessageId('message-scheduler-dispatch') }
       },
       logger: { warn: () => undefined, debug: () => undefined },
       on: (): void => undefined,
@@ -489,7 +491,7 @@ describe('政委排除 — 调度器不得把任务派给政委（P1 回归）',
     return {
       agents: { get: (id: string) => (id === 'session-captain' ? { status: 'idle' } : undefined) },
       subagents: {
-        followup: async (_captain: unknown, childId: string) => { calls.push(childId) },
+        sendMessage: async (_sender: unknown, targetId: string) => { calls.push(targetId); return MessageId('message-scheduler-dispatch') }
       },
       logger: { warn: () => undefined, debug: () => undefined },
       on: (): void => undefined,

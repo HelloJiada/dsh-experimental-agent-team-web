@@ -8,9 +8,9 @@
 
 ## DSH 兼容性
 
-版本 0.1.32 使用本包自包含的 AgentTeams 内核，已针对公开 DSH `0.1.7-rc.1` 包线完成验证；不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
+版本 0.1.32 使用本包自包含的 AgentTeams 内核，目标兼容公开 DSH `0.1.7-rc.2` 包线。类型检查和测试使用该包线；在宣称运行时兼容前，仍需真实 Web profile 冒烟验证。不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
 
-在 `0.1.5-rc.2` 上请设置 `registration: eager`（详见 `docs/compatibility.md`）：该 harness 让子 agent 加入**父的 preset**、而不是继承**父 agent 的 scope**，按需加载无法把团队工具交付给成员。`eager` 把整面注册进全局层（v0.1.14 形态），代价是每个会话约 4.9k tokens/请求。
+仅当 harness 的子 agent 加入**父 preset**、而不是继承**父 agent scope**时，才设置 `registration: eager`。这一行为历史上在 DSH `0.1.5-rc.2` 观察到；当前 `0.1.7-rc.2` 的 lazy 默认仍待真实 profile 验证。`eager` 把整面注册进全局层，代价是每个会话约 4.9k tokens/请求。
 
 ## 概览
 
@@ -18,7 +18,7 @@
 
 提供能力:
 
-- **按需加载**:默认只注册一个 `agent_teams_activate` 工具和一段两行提示,14 个团队工具与队长协议在激活时才装进**当前会话自己的作用域**(实测把未激活会话的每次请求开销从约 4,900 tokens 降到约 270 tokens)。注册留在会话作用域,工具体的 DSH 服务访问走插件根 ctx——会话作用域解析不到本插件注入的 `subagents`/`agents`(见 `docs/compatibility.md`)。三种激活入口等价且幂等:自然语言(「用 AgentTeams 做 X」→ 模型调 `agent_teams_activate`)、`/agent-teams <目标>` 斜杠命令(含 pre-step 手势边界,无命令裁决的 headless 面同样可用)。若 harness 让子 agent 加入**父的 preset** 而不是继承**父 agent 的 scope**(DSH `0.1.5-rc.2` 即如此),成员拿不到工具,需改用 `registration: eager` 把整面注册进全局层(v0.1.14 形态,每个会话约 4,900 tokens/请求),详见 `docs/compatibility.md`;
+- **按需加载**:默认只注册一个 `agent_teams_activate` 工具和一段两行提示,14 个团队工具与队长协议在激活时才装进**当前会话自己的作用域**(实测把未激活会话的每次请求开销从约 4,900 tokens 降到约 270 tokens)。注册留在会话作用域,工具体的 DSH 服务访问走插件根 ctx——会话作用域解析不到本插件注入的 `subagents`/`agents`(见 `docs/compatibility.md`)。三种激活入口等价且幂等:自然语言(「用 AgentTeams 做 X」→ 模型调 `agent_teams_activate`)、`/agent-teams <目标>` 斜杠命令(含 pre-step 手势边界,无命令裁决的 headless 面同样可用)。若 harness 让子 agent 加入**父的 preset** 而不是继承**父 agent 的 scope**(历史上在 DSH `0.1.5-rc.2` 观察到),成员拿不到工具,需改用 `registration: eager` 把整面注册进全局层(每个会话约 4,900 tokens/请求);当前 `0.1.7-rc.2` 运行时模式尚未经过真实 profile 验证,详见 `docs/compatibility.md`;
 - 完整 `agent_teams_*` 工具集(建队/加成员/建任务/认领/更新/转派/移除/发消息/状态/模式切换/删除,以及 `agent_teams_retro_review`、`agent_teams_best_practices`),激活后对队长**及其成员**可见(成员子作用域继承队长的注册;`registration: eager` 下改为从全局层继承);
 - 磁盘为唯一真源的团队内核 — `.agent-team-web/<teamId>/team.json` + 邮箱 inbox,原子写入 + 按团队加锁;
 - 事件驱动的共享任务调度器,自动把就绪任务派给空闲成员并响应 `agent/status`;

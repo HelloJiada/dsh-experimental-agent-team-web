@@ -5,11 +5,14 @@
 这是一份**最小可执行**的真机联调流程：目标不是覆盖所有边界，而是在几分钟内确认
 
 1. 本 bundle（`@deepseek-ai/dsh-experimental-agent-team-web`）已在 Web Profile 中生效；
-2. 本 bundle 的 Team 活动监视器已被正确注入；
-3. `.agent-team-web/` 磁盘状态与 `/plugins/agent-team-web/state` 快照可读取；
-4. Captain 侧的 current-session 活动入口与轻量监视器能准确反映这些真实数据。
+2. DSH `0.1.7-rc.2` 的插件和 Client 依赖已解析，本 bundle 的 Team 活动监视器已正确注入；
+3. AgentTeam 设置 section 可见、可保存（如设置服务已安装）；
+4. Captain 可启动成员，成员能看到 AgentTeams 工具并收发消息；
+5. `.agent-team-web/` 磁盘状态与 `/plugins/agent-team-web/state` 快照可读取；
+6. Captain 侧的 current-session 活动入口与轻量监视器能准确反映这些真实数据。
 
 本文件只保留最短路径；完整发布前验证流程见 [releasing.md](releasing.md)。
+截至此文档更新，DSH `0.1.7-rc.2` 只在依赖/类型与自动化测试层面目标化，真实 profile 冒烟尚未执行；请将以下流程作为运行时验证，不要将构建通过视为已完成运行时兼容证明。
 
 ## 0. 安装
 
@@ -18,7 +21,7 @@
 ```bash
 # 安装本 bundle（示例：release tarball）
 cd ~/.dsh/profiles/web
-pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.16.tgz
+pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz
 ```
 
 Profile patch 可直接复用：
@@ -39,6 +42,10 @@ dsh --profile web --dump-config
 
 - `@deepseek-ai/dsh-experimental-agent-team-web`
 - `sessionProjections` 注入链路里存在 `agent-team-web`
+- 当前 DSH 包线为 `0.1.7-rc.2`；确认插件在实际 profile 加载并检查版本解析
+- 确认 AgentTeam 设置 section 出现且可保存
+- 触发创建团队并确认成员可见 AgentTeams 工具、成功启动并收件
+- 注册模式默认 `lazy`；若成员工具未继承，记录实际 child composition 后再验证 `eager` 模式
 
 ## 2. 启动 Web
 

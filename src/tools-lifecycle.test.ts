@@ -12,6 +12,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -118,7 +119,7 @@ function harness(
         : undefined,
     },
     llm: {
-      // DSH 0.1.7-rc.1 LlmService owns resolveModelInfo; production member
+      // DSH 0.1.7-rc.2 LlmService owns resolveModelInfo; production member
       // selection reads its reasoning metadata, so every stub must expose it.
       // Default: exact route with no advertised reasoning vocabulary.
       resolveModelInfo: providerOverrides.resolveModelInfo
@@ -130,7 +131,7 @@ function harness(
     effect: () => () => undefined,
     subagents: {
       registerContinuableSetup: () => undefined,
-      followup: async () => undefined,
+      sendMessage: async () => MessageId('message-lifecycle'),
       interrupt: () => undefined,
       list: () => ['spawn'],
       getProvider: providerOverrides.getProvider ?? (() => ({
@@ -327,7 +328,7 @@ describe('agent_teams_add_member — 添加成员', () => {
       },
       subagents: {
         registerContinuableSetup: () => undefined,
-        followup: async () => undefined,
+        sendMessage: async () => MessageId('message-lifecycle'),
         getProvider: () => ({
           prepareContinuable: {},
           capabilities: { persona: true, toolFilter: true },
@@ -376,7 +377,7 @@ describe('agent_teams_add_member — 添加成员', () => {
       },
       subagents: {
         registerContinuableSetup: () => undefined,
-        followup: async () => undefined,
+        sendMessage: async () => MessageId('message-lifecycle'),
         getProvider: () => ({
           prepareContinuable: {},
           capabilities: { persona: true, toolFilter: true },
@@ -484,7 +485,7 @@ describe('agent_teams_add_member — 添加成员', () => {
       },
       subagents: {
         registerContinuableSetup: () => undefined,
-        followup: async () => undefined,
+        sendMessage: async () => MessageId('message-lifecycle'),
         getProvider: () => ({
           prepareContinuable: {},
           capabilities: { persona: true, toolFilter: true },
@@ -534,7 +535,7 @@ describe('agent_teams_add_member — 添加成员', () => {
       },
       subagents: {
         registerContinuableSetup: () => undefined,
-        followup: async () => undefined,
+        sendMessage: async () => MessageId('message-lifecycle'),
         getProvider: () => ({
           prepareContinuable: {},
           capabilities: { persona: true, toolFilter: true },
@@ -603,7 +604,7 @@ describe('agent_teams_add_member — 添加成员', () => {
       effect: () => () => undefined,
       subagents: {
         registerContinuableSetup: () => undefined,
-        followup: async () => undefined,
+        sendMessage: async () => MessageId('message-lifecycle'),
         interrupt: () => undefined,
         list: () => ['spawn'],
         getProvider: () => ({
@@ -886,7 +887,7 @@ describe('R-31 — 调度扇出不占工具关键路径(kick fire-and-forget)', 
         effect: () => () => undefined,
         subagents: {
           registerContinuableSetup: () => undefined,
-          followup: async () => { await followupGate },
+          sendMessage: async () => { await followupGate; return MessageId('message-lifecycle-gated') },
           interrupt: () => undefined,
           list: () => ['spawn'],
           getProvider: () => ({
@@ -970,9 +971,10 @@ describe('R-17: scheduler kick 真链路(解除 stub running 短路,验证自动
         effect: () => () => undefined,
         subagents: {
           registerContinuableSetup: () => undefined,
-          followup: async (_parent: unknown, _child: unknown, content: unknown) => {
+          sendMessage: async (_sender: unknown, _targetId: unknown, content: unknown) => {
             const text = (content as { type: string; text: string }[])[0]?.text ?? ''
             deliveredTexts.push(text)
+            return MessageId('message-lifecycle-delivery')
           },
           interrupt: () => undefined,
           list: () => ['spawn'],

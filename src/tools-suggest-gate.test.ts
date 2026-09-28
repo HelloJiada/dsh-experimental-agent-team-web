@@ -16,6 +16,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -105,7 +106,7 @@ function harness(): (name: string) => CapturedTool {
     effect: () => () => undefined,
     subagents: {
       registerContinuableSetup: () => undefined,
-      followup: async () => undefined,
+      sendMessage: async () => MessageId('message-suggest-gate'),
     },
   } as unknown as Context
   registerAgentTeamsTools(fakeCtx, config)
@@ -410,7 +411,7 @@ describe('门禁拦截链路 — blockedByReview → pass/reject 放行(改进4 
       effect: () => () => undefined,
       subagents: {
         registerContinuableSetup: () => undefined,
-        followup: async () => { await wakeGate },
+        sendMessage: async () => { await wakeGate; return MessageId('message-suggest-gate-wake') },
       },
     } as unknown as Context
     registerAgentTeamsTools(fakeCtx, config)

@@ -1,6 +1,7 @@
 /** v0.1.13 collaboration-mode tests: additive mode, light fail-closed, governed guard. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -38,7 +39,7 @@ function harness(spawned: unknown[] = [], overrides: HarnessOverrides = {}, inte
     on: () => undefined,
     effect: () => () => undefined,
     llm: {
-      // DSH 0.1.7-rc.1 LlmService owns resolveModelInfo; the commissar spawn
+      // DSH 0.1.7-rc.2 LlmService owns resolveModelInfo; the commissar spawn
       // reads its reasoning metadata, so this stub must expose it.
       resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
       resolveCallConfig: overrides.resolveCallConfig ?? (async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
@@ -49,7 +50,7 @@ function harness(spawned: unknown[] = [], overrides: HarnessOverrides = {}, inte
     },
     subagents: {
       registerContinuableSetup: () => undefined,
-      followup: async () => undefined,
+      sendMessage: async () => MessageId('message-team-mode'),
       interrupt: (childId: string) => { interrupted.push(childId) },
       list: () => ['spawn'],
       getProvider: () => ({ prepareContinuable: {}, capabilities: { persona: true, toolFilter: true } }),

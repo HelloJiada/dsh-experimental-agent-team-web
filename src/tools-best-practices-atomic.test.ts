@@ -14,6 +14,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -89,7 +90,7 @@ function harness(): (name: string) => CapturedTool {
     effect: () => () => undefined,
     subagents: {
       registerContinuableSetup: () => undefined,
-      followup: async () => undefined,
+      sendMessage: async () => MessageId('message-best-practices'),
     },
   } as unknown as Context
   registerAgentTeamsTools(fakeCtx, config)
@@ -279,7 +280,7 @@ describe('R-10 — 帮助派发 owner 通知 appendMailbox 串行化(集成回�
         get: (id: string) => id === 'session-captain' ? { status: 'idle' } : undefined,
       },
       subagents: {
-        followup: async () => undefined,
+        sendMessage: async () => MessageId('message-best-practices'),
       },
       logger: { warn: () => undefined, debug: () => undefined },
       on: (): void => undefined,

@@ -10,11 +10,13 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  deliverToMember,
   installMemberSelectionRuntime,
   installRetiredMemberGuard,
   interruptMember,
@@ -79,7 +81,7 @@ function baseCtx(overrides: Record<string, unknown> = {}): Context {
     effect: () => () => undefined,
     subagents: {
       registerContinuableSetup: () => undefined,
-      followup: async () => undefined,
+      sendMessage: async () => MessageId('message-1'),
       interrupt: () => undefined,
       list: () => ['spawn'],
       getProvider: () => ({
@@ -402,7 +404,34 @@ describe('withPending — 模型选择桥(installMemberSelectionRuntime)', () =>
   })
 })
 
-describe('installRetiredMemberGuard — 退休成员 followup 边界', () => {
+describe('deliverToMember — sendMessage 交付', () => {
+  it('使用正式 sendMessage API 发送文本与 signal', async () => {
+    const parent = captain('/ws')
+    const signal = new AbortController().signal
+    let call: unknown[] = []
+    const ctx = baseCtx({
+      subagents: {
+        ...baseCtx().subagents,
+        sendMessage: async (...args: unknown[]) => { call = args; return MessageId('accepted-message') },
+      },
+    } as unknown as Partial<Context>)
+
+    await expect(deliverToMember(ctx, parent, 'child-1', 'hello', signal)).resolves.toBe(true)
+    expect(call).toEqual([parent, 'child-1', [{ type: 'text', text: 'hello' }], { signal }])
+  })
+
+  it('sendMessage 拒绝时返回 false 并记录 warn', async () => {
+    const warnings: string[] = []
+    const ctx = baseCtx({
+      logger: { warn: (message: string) => warnings.push(message), debug: () => undefined },
+      subagents: { ...baseCtx().subagents, sendMessage: async () => { throw new Error('delivery failed') } },
+    } as unknown as Partial<Context>)
+    await expect(deliverToMember(ctx, captain('/ws'), 'child-1', 'hello', new AbortController().signal)).resolves.toBe(false)
+    expect(warnings).toEqual([expect.stringContaining('delivery failed')])
+  })
+})
+
+describe('installRetiredMemberGuard — 退休成员 sendMessage 边界', () => {
   let workspace: string
   let stateRoot: string
 
@@ -416,10 +445,10 @@ describe('installRetiredMemberGuard — 退休成员 followup 边界', () => {
     await rm(workspace, { recursive: true, force: true })
   })
 
-  it('退休成员 followup 抛 NOT_RESUMABLE;未退休成员正常透传', async () => {
+  it('退休成员 sendMessage 抛 NOT_RESUMABLE;未退休成员正常透传', async () => {
     await writeFile(join(stateRoot, 'retired-members.json'), `${JSON.stringify(['child-retired'], null, 2)}\n`)
     const calls: string[] = []
-    const original = async (_parent: unknown, childId: string) => { calls.push(String(childId)) }
+    const original = async (_parent: unknown, childId: string) => { calls.push(String(childId)); return MessageId('accepted-message') }
     const ctx = baseCtx({
       // 真实执行 effect 回调,让 retired guard 完成安装。
       effect: (cb: () => () => void) => {
@@ -428,36 +457,64 @@ describe('installRetiredMemberGuard — 退休成员 followup 边界', () => {
       },
       subagents: {
         ...baseCtx().subagents,
-        followup: original,
+        sendMessage: original,
       },
     } as unknown as Partial<Context>)
     installRetiredMemberGuard(ctx, STATE_DIR)
 
-    const guarded = (ctx.subagents as unknown as { followup: (p: unknown, id: string) => Promise<void> }).followup
-    await expect(guarded(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
-    await guarded(captain(workspace), 'child-live')
+    const guarded = ctx.subagents.sendMessage
+    const content = [{ type: 'text' as const, text: 'hello' }]
+    const options = { signal: new AbortController().signal }
+    await expect(guarded(captain(workspace), 'child-retired' as never, content, options))
+      .rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
+    await expect(guarded(captain(workspace), 'child-live' as never, content, options)).resolves.toBe(MessageId('accepted-message'))
     expect(calls).toEqual(['child-live'])
   })
 
-  it('sendMessage 与 followup 都实时读取 durable retired index，刚退休立即拒绝', async () => {
+  it('每次 sendMessage 都实时读取 durable retired index，刚退休立即拒绝', async () => {
     const calls: string[] = []
-    const send = async (_parent: unknown, childId: string) => { calls.push(`send:${childId}`) }
-    const followup = async (_parent: unknown, childId: string) => { calls.push(`followup:${childId}`) }
+    const send = async (_parent: unknown, childId: string) => { calls.push(childId); return MessageId(`send:${childId}`) }
     const ctx = baseCtx({
       effect: (cb: () => () => void) => cb(),
-      subagents: { ...baseCtx().subagents, sendMessage: send, followup },
+      subagents: { ...baseCtx().subagents, sendMessage: send },
     } as unknown as Partial<Context>)
     installRetiredMemberGuard(ctx, STATE_DIR)
-    const runtime = ctx.subagents as unknown as {
-      sendMessage: (p: unknown, id: string) => Promise<void>
-      followup: (p: unknown, id: string) => Promise<void>
-    }
+    const runtime = ctx.subagents
+    const content = [{ type: 'text' as const, text: 'hello' }]
+    const options = { signal: new AbortController().signal }
 
-    await runtime.sendMessage(captain(workspace), 'child-live')
+    await expect(runtime.sendMessage(captain(workspace), 'child-live' as never, content, options)).resolves.toBe(MessageId('send:child-live'))
     await writeFile(join(stateRoot, 'retired-members.json'), `${JSON.stringify(['child-retired'], null, 2)}\n`)
-    await expect(runtime.sendMessage(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
-    await expect(runtime.followup(captain(workspace), 'child-retired')).rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
-    expect(calls).toEqual(['send:child-live'])
+    await expect(runtime.sendMessage(captain(workspace), 'child-retired' as never, content, options))
+      .rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
+    expect(calls).toEqual(['child-live'])
+  })
+
+  it('effect cleanup restores original sendMessage without overwriting a later wrapper', () => {
+    const original = async () => 'original'
+    let restore!: () => void
+    const ctx = baseCtx({
+      effect: (cb: () => () => void) => { restore = cb(); return restore },
+      subagents: { ...baseCtx().subagents, sendMessage: original },
+    } as unknown as Partial<Context>)
+    installRetiredMemberGuard(ctx, STATE_DIR)
+    const guarded = ctx.subagents.sendMessage
+    expect(guarded).not.toBe(original)
+    restore()
+    expect(ctx.subagents.sendMessage).toBe(original)
+
+    let restoreSecond!: () => void
+    const secondCtx = baseCtx({
+      effect: (cb: () => () => void) => { restoreSecond = cb(); return restoreSecond },
+      subagents: { ...baseCtx().subagents, sendMessage: guarded },
+    } as unknown as Partial<Context>)
+    installRetiredMemberGuard(secondCtx, STATE_DIR)
+    const installed = secondCtx.subagents.sendMessage
+    const later = async () => MessageId('later')
+    secondCtx.subagents.sendMessage = later
+    restoreSecond()
+    expect(installed).not.toBe(guarded)
+    expect(secondCtx.subagents.sendMessage).toBe(later)
   })
 })
 

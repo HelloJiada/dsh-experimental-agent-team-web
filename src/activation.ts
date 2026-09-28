@@ -151,12 +151,14 @@ export function activateAgentTeams(
  * surface plus the captain protocol in the PLUGIN ROOT (the global layer),
  * with no activation step at all.
  *
- * This is the v0.1.14 shape, kept because on-demand activation cannot deliver
- * on every harness: a harness that joins a subagent child to its parent's
- * PRESET instead of inheriting the parent AGENT scope (DSH `0.1.5-rc.2`, see
- * `@deepseek-ai/dsh-subagent` `applyChildComposition`) leaves members with
- * none of the team tools — and the member deny-filter cannot even name them,
- * because `tools.restrict()` accepts only global or ancestor-scope names.
+ * This global-registration mode is kept for harnesses where on-demand
+ * activation cannot deliver tools to subagent children. Preset-only child
+ * composition was historically observed on DSH `0.1.5-rc.2`
+ * (`@deepseek-ai/dsh-subagent` `applyChildComposition`); current DSH
+ * `0.1.7-rc.2` behavior has not been verified in a real profile. In the
+ * preset-only case, members have none of the team tools and the member
+ * deny-filter cannot name them, because `tools.restrict()` accepts only global
+ * or ancestor-scope names.
  * Global registration reaches every agent, so members get the tools and the
  * per-child deny filter compiles.
  *

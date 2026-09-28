@@ -4,7 +4,7 @@
  *
  * Members are durable continuable subagents of the captain, so a member keeps
  * its conversation across turns and across harness restarts: the captain
- * wakes it with {@link ctx.subagents.followup}, it works through its turn
+ * wakes it with {@link ctx.subagents.sendMessage}, it works through its turn
  * (updating team state through the `agent_teams_*` tools), and becomes idle
  * again. Its final assistant message is not readable programmatically, so the
  * member persists its report into the captain's mailbox and the task records,
@@ -168,9 +168,9 @@ export declare function deliverToMember(ctx: Context, captain: Agent, childId: s
  */
 export declare function interruptMember(ctx: Context, captain: Agent, childId: string): void;
 /**
- * Defense-in-depth retirement boundary for both DSH 0.1.3 `sendMessage` and
- * the legacy `followup` name. The durable index is read on every call so a
- * just-retired member is rejected without a negative-cache window.
+ * Defense-in-depth retirement boundary for DSH `sendMessage`. The durable
+ * index is read on every call so a just-retired member is rejected without a
+ * negative-cache window.
  */
 export declare function installRetiredMemberGuard(ctx: Context, stateDir: string): void;
 /**

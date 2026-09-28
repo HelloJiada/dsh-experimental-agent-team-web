@@ -259,9 +259,9 @@ export function apply(ctx: Context, config: Config): void {
   const sectionOrder = config.promptSectionOrder ?? 117
   // 注册方式见 Config.registration:
   // - lazy(默认):这里只装提示段 + 激活工具,真面在激活时装进调用方 agent 的 scope。
-  // - eager:整面装进全局层(v0.1.14 形态)。当 harness 让子 agent 加入「父的
-  //   preset」而不是继承「父 agent 的 scope」时(DSH 0.1.5-rc.2 即如此),lazy
-  //   的成员既拿不到工具,成员 deny 过滤也无法命名这些工具,只能走 eager。
+  // - eager:整面装进全局层。历史上 DSH 0.1.5-rc.2 的子 agent 加入「父的
+  //   preset」而非继承「父 agent 的 scope」,lazy 成员拿不到工具且 deny 过滤
+  //   无法命名这些工具。当前 DSH 0.1.7-rc.2 的运行时组合尚未真实 profile 验证。
   const eager = (config.registration ?? 'lazy') === 'eager'
   if (eager) {
     registerAgentTeamsSurface(ctx, toolsConfig, sectionOrder, runtime)
