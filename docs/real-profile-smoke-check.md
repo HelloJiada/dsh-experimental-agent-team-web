@@ -4,15 +4,17 @@
 
 这是一份**最小可执行**的真机联调流程：目标不是覆盖所有边界，而是在几分钟内确认
 
-1. 本 bundle（`@deepseek-ai/dsh-experimental-agent-team-web`）已在 Web Profile 中生效；
-2. DSH `0.1.7-rc.2` 的插件和 Client 依赖已解析，本 bundle 的 Team 活动监视器已正确注入；
+1. 本 bundle（`@deepseek-ai/dsh-experimental-agent-team-web`）已在目标 profile 中生效；
+2. DSH 的插件和 Client 依赖已解析，本 bundle 的 Team 活动监视器已正确注入；
 3. AgentTeam 设置 section 可见、可保存（如设置服务已安装）；
 4. Captain 可启动成员，成员能看到 AgentTeams 工具并收发消息；
 5. `.agent-team-web/` 磁盘状态与 `/plugins/agent-team-web/state` 快照可读取；
 6. Captain 侧的 current-session 活动入口与轻量监视器能准确反映这些真实数据。
 
+当前目标版本为 DSH `0.2.1-alpha.2`；本文件中的完整实时流程尚未在该版本的桌面 profile/runtime 执行。
+
 本文件只保留最短路径；完整发布前验证流程见 [releasing.md](releasing.md)。
-截至此文档更新，DSH `0.1.7-rc.2` 只在依赖/类型与自动化测试层面目标化，真实 profile 冒烟尚未执行；请将以下流程作为运行时验证，不要将构建通过视为已完成运行时兼容证明。
+截至本次适配，DSH `0.2.1-alpha.2` 的依赖、类型、自动化测试、build、tarball 检查与本插件 desktop profile 离线组合均已通过。profile loader 加载了本插件、26 个 DSH peers 全部解析到 alpha.2，且本插件未被跳过；另外 6 个无关可选 bundle 因 profile/install 中不可解析而跳过。当前活动进程未重启，故离线组合不代表运行时已加载 alpha.2；须在获准正常重启后执行本流程的实时检查。
 
 ## 0. 安装
 
@@ -38,14 +40,30 @@ Profile patch 可直接复用：
 dsh --profile web --dump-config
 ```
 
-最低应能在结果里看到：
+以下是**待执行的验证项**，不能从类型检查、构建或 tarball 检查推断通过：
 
-- `@deepseek-ai/dsh-experimental-agent-team-web`
-- `sessionProjections` 注入链路里存在 `agent-team-web`
-- 当前 DSH 包线为 `0.1.7-rc.2`；确认插件在实际 profile 加载并检查版本解析
-- 确认 AgentTeam 设置 section 出现且可保存
-- 触发创建团队并确认成员可见 AgentTeams 工具、成功启动并收件
-- 注册模式默认 `lazy`；若成员工具未继承，记录实际 child composition 后再验证 `eager` 模式
+- profile 确实包含并加载 `@deepseek-ai/dsh-experimental-agent-team-web`，`sessionProjections` 注入链路出现 `agent-team-web`；确认运行时与插件版本解析；
+- AgentTeam 设置 section 出现且可保存；
+- 在获准启动/重启的 DSH `0.2.1-alpha.2` 进程中确认插件已加载、`/plugins/agent-team-web/state` 返回 200；
+- 真实建队 + 加成员，确认成员能看到除队长专属外的 `agent_teams_*` 工具并成功启动/收件；
+- 验证授权关闭时继承模型路由也会被拒绝；若新版本 `pre-step` 行为不兼容，再评估 `registration: eager` 兜底；
+- DSH 0.1.7-rc.2 的 lazy 成员 scope 自装实测仅为历史证据，见下方。
+
+### 历史记录：lazy 成员面实测（desktop dev profile，DSH 0.1.7-rc.2）
+
+在活动 desktop profile 装入本包后的一次真实会话中观测到：
+
+| 观测点 | 结果 |
+|---|---|
+| 队长 `agent_teams_activate` | 15 个工具装入调用方会话 scope |
+| 队长 `agent_teams_create`(light) / `agent_teams_add_member` | 均成功；**未**出现 `tools.restrict() names unknown global tools` |
+| 成员首个 turn 后成员自报可见集合 | 7 个 = `MEMBER_TOOL_NAMES`(6) + 全局 `agent_teams_activate`(1) |
+| 成员侧队长专属工具（`create_task` 等 9 个） | **不存在**（成员自报「工具不存在」，不是调用被拒） |
+| 成员 `claim_task` → `in_progress` → `completed` | 全链路成功，attempt_id 贯穿 |
+| 落盘交叉核对 | `team.json` 的 member / task / attempt 与工具回执一致 |
+
+历史结论：lazy 下「队长面全量 + 成员面按需自装」在 DSH 0.1.7-rc.2 真实运行时可工作，无需 `eager` 常驻（后者每会话约 +4.9k tokens/请求）。该结论不能替代 0.2.1-alpha.2 的新版本重测。
+附带观测（既有语义，非本次改动）：带 acceptance 的任务完成时需显式 `original_acceptance_met=true`，否则被完成门禁拦下。
 
 ## 2. 启动 Web
 

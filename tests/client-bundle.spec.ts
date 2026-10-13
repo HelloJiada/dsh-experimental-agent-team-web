@@ -54,6 +54,7 @@ interface ClientBundleExports {
 
 interface PackageManifest {
   readonly name: string
+  readonly peerDependencies?: Readonly<Record<string, string>>
   readonly dsh?: { readonly client?: { readonly inject?: readonly string[] } }
 }
 
@@ -102,6 +103,8 @@ describe('client bundle protocol', () => {
     expect(registrations).toHaveLength(1)
     expect(registrations[0]?.id).toBe(manifest.name)
     expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-layout')
+    expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-slots')
+    expect(manifest.peerDependencies?.['@deepseek-ai/dsh-client-ui-slots']).toBe('0.2.1-alpha.2')
     const declared = new Set(manifest.dsh?.client?.inject ?? [])
     const available = new Set([...defaultModuleTable, ...declared])
     const requested = new Set<string>()

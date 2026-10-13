@@ -16,6 +16,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolDispatchExecution, ToolExecutionResult, ToolFailure } from '@deepseek-ai/dsh-tools'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { findTeamByParticipant } from './state.ts'
@@ -135,6 +136,18 @@ async function ensureMemberAgent(id: string, workspace: string, stateDir: string
   const active = team?.members.some(member => member.id === id && member.status !== 'removed') === true
   if (active) memberAgentIds.add(id)
   return active
+}
+
+/**
+ * Whether one live agent is a member of a team — process-local set first, then
+ * the durable roster for a child this process never saw spawn (cold resume).
+ * The captain is never a member, even though it is a participant.
+ * @param agent - the live agent to classify.
+ * @param stateDir - configured state directory name.
+ */
+export async function isKnownMemberAgent(agent: Agent, stateDir: string): Promise<boolean> {
+  const workspace = agent.session.header.cwd ?? process.cwd()
+  return await ensureMemberAgent(agent.id, workspace, stateDir)
 }
 
 /** Build the denial result shape the registry expects. */

@@ -39,7 +39,7 @@ export interface ToolsConfig {
     }>;
     /** 模型授权判定(t13,settings scope 闭包):`${provider}/${model}` 复合 key。
      * 没有 provider 是隐式恒授权的;undefined(无 settings 服务)→ 仅队长自身
-     * 路由可被继承(见 memberRouteCandidates 的 implicit 候选)。 */
+     * 路由可被继承(见 memberRouteCandidates 的 captain-route 候选),但继承不豁免授权。 */
     modelGrantedFor?: (provider: string, model: string) => boolean;
     /** Legacy role-route settings retained for display/migration only. */
     roleDefaultsFor?: (roleKey: string) => {
@@ -137,6 +137,10 @@ export declare function installAgentTeamsRuntime(ctx: Context, config: ToolsConf
  * @param runtime - process-wide runtime from {@link installAgentTeamsRuntime};
  *   omitted, this call installs (and owns) its own — then the installing
  *   context doubles as the service context.
+ * @param only - optional allow-list of tool names to install. A member's own
+ *   scope passes `MEMBER_TOOL_NAMES` so the captain-only tools are never
+ *   registered there at all (denying them by name is impossible on a harness
+ *   whose children join the parent preset — see `memberDeniedTools`).
  */
-export declare function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, runtime?: AgentTeamsRuntime): void;
+export declare function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, runtime?: AgentTeamsRuntime, only?: readonly string[]): void;
 //# sourceMappingURL=tools.d.ts.map

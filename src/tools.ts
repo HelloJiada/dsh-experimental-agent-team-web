@@ -130,7 +130,7 @@ export interface ToolsConfig {
   roleLlmDefaults?: Record<string, { provider?: string; model?: string; reasoningEffort?: string }>
   /** 模型授权判定(t13,settings scope 闭包):`${provider}/${model}` 复合 key。
    * 没有 provider 是隐式恒授权的;undefined(无 settings 服务)→ 仅队长自身
-   * 路由可被继承(见 memberRouteCandidates 的 implicit 候选)。 */
+   * 路由可被继承(见 memberRouteCandidates 的 captain-route 候选),但继承不豁免授权。 */
   modelGrantedFor?: (provider: string, model: string) => boolean
   /** Legacy role-route settings retained for display/migration only. */
   roleDefaultsFor?: (roleKey: string) => { provider?: string; model?: string; reasoningEffort?: string } | undefined
@@ -183,8 +183,10 @@ function stateRootOf(workspace: string, config: ToolsConfig): string {
 
 /**
  * Build portable route candidates in precedence order: the explicit request
- * (fail-closed) followed by the inherited captain route (implicit). Role presets
- * never contribute a candidate — a role describes work, not a model.
+ * (fail-closed) followed by the inherited captain route. Role presets never
+ * contribute a candidate — a role describes work, not a model. Both candidates
+ * pass the same authorization gate: the model switch is the permission, so a
+ * model that is switched off cannot carry a member even by inheritance.
  */
 function memberRouteCandidates(
   explicit: { provider?: string; model?: string; reasoningEffort?: string },
@@ -198,10 +200,11 @@ function memberRouteCandidates(
     })
   }
   // Role presets describe work, not routing. New members inherit the captain
-  // route unless the captain explicitly chooses another provider/model. That
-  // inherited candidate is implicit: the captain's own live route stays usable
-  // even when every model grant is switched off.
-  candidates.push({ label: 'captain route', request: {}, implicit: true })
+  // route unless the captain explicitly chooses another provider/model — but
+  // inheritance only picks the route, it does not grant it: the inherited model
+  // must be switched on too, otherwise the spawn fails with a message pointing
+  // at the settings card.
+  candidates.push({ label: 'captain route', request: {} })
   return candidates
 }
 
@@ -524,15 +527,29 @@ export function installAgentTeamsRuntime(ctx: Context, config: ToolsConfig): Age
  * @param runtime - process-wide runtime from {@link installAgentTeamsRuntime};
  *   omitted, this call installs (and owns) its own — then the installing
  *   context doubles as the service context.
+ * @param only - optional allow-list of tool names to install. A member's own
+ *   scope passes `MEMBER_TOOL_NAMES` so the captain-only tools are never
+ *   registered there at all (denying them by name is impossible on a harness
+ *   whose children join the parent preset — see `memberDeniedTools`).
  */
-export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, runtime?: AgentTeamsRuntime): void {
+export function registerAgentTeamsTools(
+  scopeCtx: Context,
+  config: ToolsConfig,
+  runtime?: AgentTeamsRuntime,
+  only?: readonly string[],
+): void {
   const effective = runtime ?? installAgentTeamsRuntime(scopeCtx, config)
   const { memberSelections, kickTeamAsync, kickMemberAsync } = effective
   // Bodies below keep the name `ctx` for readability, but it is the ROOT
   // context: services live there, schemas live in `scopeCtx`.
   const ctx = effective.serviceCtx
+  const included = only === undefined ? undefined : new Set(only)
+  const register = (definition: Parameters<Context['tools']['register']>[0]): void => {
+    if (included !== undefined && !included.has(definition.name)) return
+    scopeCtx.tools.register(definition)
+  }
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_create',
     description: 'Create a new AgentTeams team: you (the calling agent) become the captain. A commissar (政委) member for independent oversight is auto-created with the team; do not add a second one. A captain leads one team at a time; create tasks and additional members afterwards with agent_teams_add_member and agent_teams_create_task.',
     parameters: {
@@ -688,7 +705,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_add_member',
     description: 'Add a durable continuable member. When name is omitted (or given as just the role), the member is named after the role title itself (技术员, 侦察参谋, …); only a second member of the same role gets a numbered suffix (技术员 二号). By default it snapshots the captain\'s current LLM route and effort. Supply provider/model only for an explicitly requested role-specific route; a changed provider or model automatically uses the target model\'s default effort. Set reasoning_effort only to request one of the target model\'s supported ids explicitly (or "default" to force its default). The member waits for messages, works on assigned tasks, and can message the team.',
     parameters: {
@@ -870,7 +887,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_remove_member',
     description: 'Remove a member safely: revoke its current attempts, return all unfinished owned tasks to the shared pending pool, interrupt its live turn, and mark it removed.',
     parameters: {
@@ -941,7 +958,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_set_mode',
     description: 'Change the team collaboration mode. Upgrade only: light → standard or governed. A light team has no commissar and refuses gated tasks; upgrading to standard/governed creates the commissar if it is missing so review can proceed. Downgrading to light is refused because it would silently drop an active review authority.',
     parameters: {
@@ -1089,7 +1106,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_create_task',
     description: 'Create a task in your team\'s task list. Tasks can depend on other tasks (dependencies): a task is only claimable once every dependency is completed. Optionally assign it to a member, who still claims it before working. Mark risk=high/critical or milestone=true to put the task under the commissar gate: it can only be marked completed after the commissar passes it with agent_teams_review_task. When no assignee is given, the result carries a suggested_role/assignee (keyword-based, purely advisory) for your confirmation — you keep the assignee decision.',
     parameters: {
@@ -1305,7 +1322,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_triage_finding',
     description: 'Captain-only decision for one reported single-task discovery. Approve only a minimal blocker/safety repair; defer unrelated findings. Never silently enlarge original acceptance.',
     parameters: {
@@ -1355,7 +1372,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_reassign_task',
     description: 'Atomically retry, reassign, or let the captain take over any unfinished/failed task. The old attempt is revoked before its member is interrupted, so late updates cannot overwrite the new owner. Use assignee="captain" for captain takeover.',
     parameters: {
@@ -1474,7 +1491,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_claim_task',
     description: 'Claim one ready task for a member (or yourself). A member cannot own a second unfinished task. The returned attempt_id is required for that member\'s updates and becomes stale after retry/reassignment.',
     parameters: {
@@ -1588,7 +1605,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_update_task',
     description: 'Update a task status/output. Members must supply the current attempt_id returned by claim_task; stale attempts are rejected after takeover/reassignment. Terminal results are immutable. A captain must use reassign_task(assignee="captain") before updating member-owned work.',
     parameters: {
@@ -1928,7 +1945,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_review_task',
     description: 'Commissar gate review: only an active commissar (role=commissar) member may call this — the captain cannot review (independent oversight). Records a pass/reject verdict on a task; a task under review can only be marked completed after a pass verdict. Pass releases the completion gate; reject keeps the task in progress for rework.',
     parameters: {
@@ -2013,7 +2030,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_send_message',
     description: 'Send a message to the captain or to a teammate. Messages go straight into the recipient\'s mailbox; when the captain agent is online the plugin also schedules live delivery (member recipients get the message as their next turn; a running captain sees it at the nearest model step). No relay is involved: teammates talk to each other directly, exactly like the Claude Code AgentTeams mailbox model.',
     parameters: {
@@ -2126,7 +2143,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_status',
     description: 'Team snapshot: members with live activity and tasks with status/assignee/dependencies/output. Captains also see every team mailbox; members see only their own inbox. Poll this to watch progress. Non-terminal tasks may carry a suggested_role/assignee (keyword-based, advisory only) so the captain can confirm or override before assigning. R-31: as a captain caller this also triggers a best-effort scheduler kick (wake idle members to claim ready work) — fire-and-forget, never blocks the snapshot response.',
     parameters: {},
@@ -2306,7 +2323,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_retro_review',
     description: 'Captain calibration of a task retrospective (复盘三层之第三层): mark it useful (confirmed into the best-practices library), useless (remove from the library), or revised (re-attribute the cause and re-distill). Updates both the task retro and the global best-practices entry.',
     parameters: {
@@ -2417,7 +2434,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_best_practices',
     description: 'Read the global best-practices library (L3, cross-team) with optional role/level filtering, plus per-(role × level) calibration of this team\'s completed tasks (average actual duration, overrun ratio) to calibrate future estimate_level. Cold start: with fewer than 2 settled samples the calibration concludes "insufficient samples" instead of guessing.',
     parameters: {
@@ -2537,7 +2554,7 @@ export function registerAgentTeamsTools(scopeCtx: Context, config: ToolsConfig, 
     },
   }))
 
-  scopeCtx.tools.register(defineTool({
+  register(defineTool({
     name: 'agent_teams_delete',
     description: 'End your team: interrupts all members (best effort) and archives the team\'s state directory (team file, tasks, mailboxes) under <stateRoot>/archive/ for later review and dependency rebuilds. Use when the team\'s work is done or abandoned.',
     parameters: {},

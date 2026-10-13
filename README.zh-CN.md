@@ -8,9 +8,9 @@
 
 ## DSH 兼容性
 
-版本 0.1.32 使用本包自包含的 AgentTeams 内核，目标兼容公开 DSH `0.1.7-rc.2` 包线。类型检查和测试使用该包线；在宣称运行时兼容前，仍需真实 Web profile 冒烟验证。不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
+当前工作树已将本包自包含的 AgentTeams 内核适配到桌面正在使用的 DSH `0.2.1-alpha.2`。本次迁移更新 subagent 创建 API，并补充本包实际使用的 client slot 与 working-directory peers；类型检查、测试、构建及打包校验均通过。alpha.2 候选包已安装到 desktop profile，离线组合检查确认本插件加载、peer 兼容且未被跳过；另有 6 个无关的可选 profile bundle 因依赖不可解析而跳过。桌面活动进程尚未重启，真实 Web/成员派发冒烟仍待正常重启后验证。不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
 
-仅当 harness 的子 agent 加入**父 preset**、而不是继承**父 agent scope**时，才设置 `registration: eager`。这一行为历史上在 DSH `0.1.5-rc.2` 观察到；当前 `0.1.7-rc.2` 的 lazy 默认仍待真实 profile 验证。`eager` 把整面注册进全局层，代价是每个会话约 4.9k tokens/请求。
+`registration` 保持默认 `lazy`。当前 DSH(`0.2.1-alpha.2`)的子 agent 加入**父 preset**、而不是继承**父 agent scope**(`@deepseek-ai/dsh-subagent` 的 `applyChildComposition` 先 `agentPresets.composeFrom(childCtx, parent.ctx)`,之后才 `tools.restrict`),所以成员看不到队长自己的 scope——但它不需要看到:成员**自己的** scope 由插件填。在成员第一步之前(`agent/pre-step`,即该步请求组装前),插件把成员可见子集(除队长专属外的全部团队工具)装进该成员的 scope,成员 deny 名单因此也不再必要。`eager` 保留作兜底:整面注册进全局层,代价是每个会话约 4.9k tokens/请求。
 
 ## 概览
 
@@ -18,7 +18,7 @@
 
 提供能力:
 
-- **按需加载**:默认只注册一个 `agent_teams_activate` 工具和一段两行提示,14 个团队工具与队长协议在激活时才装进**当前会话自己的作用域**(实测把未激活会话的每次请求开销从约 4,900 tokens 降到约 270 tokens)。注册留在会话作用域,工具体的 DSH 服务访问走插件根 ctx——会话作用域解析不到本插件注入的 `subagents`/`agents`(见 `docs/compatibility.md`)。三种激活入口等价且幂等:自然语言(「用 AgentTeams 做 X」→ 模型调 `agent_teams_activate`)、`/agent-teams <目标>` 斜杠命令(含 pre-step 手势边界,无命令裁决的 headless 面同样可用)。若 harness 让子 agent 加入**父的 preset** 而不是继承**父 agent 的 scope**(历史上在 DSH `0.1.5-rc.2` 观察到),成员拿不到工具,需改用 `registration: eager` 把整面注册进全局层(每个会话约 4,900 tokens/请求);当前 `0.1.7-rc.2` 运行时模式尚未经过真实 profile 验证,详见 `docs/compatibility.md`;
+- **按需加载**:默认只注册一个 `agent_teams_activate` 工具和一段两行提示,14 个团队工具与队长协议在激活时才装进**当前会话自己的作用域**(实测把未激活会话的每次请求开销从约 4,900 tokens 降到约 270 tokens)。注册留在会话作用域,工具体的 DSH 服务访问走插件根 ctx——会话作用域解析不到本插件注入的 `subagents`/`agents`(见 `docs/compatibility.md`)。三种激活入口等价且幂等:自然语言(「用 AgentTeams 做 X」→ 模型调 `agent_teams_activate`)、`/agent-teams <目标>` 斜杠命令(含 pre-step 手势边界,无命令裁决的 headless 面同样可用)。当前 DSH(`0.2.1-alpha.2`)正是让子 agent 加入**父的 preset**、而非继承**父 agent 的 scope** 的宿主,因此改为填成员**自己**的 scope:在成员首个 `agent/pre-step` 时把「除队长专属外的全部团队工具」装进该成员作用域。`registration: 'eager'`(整面进全局层,每会话约 4,900 tokens/请求)保留作兜底,详见 `docs/compatibility.md`;
 - 完整 `agent_teams_*` 工具集(建队/加成员/建任务/认领/更新/转派/移除/发消息/状态/模式切换/删除,以及 `agent_teams_retro_review`、`agent_teams_best_practices`),激活后对队长**及其成员**可见(成员子作用域继承队长的注册;`registration: eager` 下改为从全局层继承);
 - 磁盘为唯一真源的团队内核 — `.agent-team-web/<teamId>/team.json` + 邮箱 inbox,原子写入 + 按团队加锁;
 - 事件驱动的共享任务调度器,自动把就绪任务派给空闲成员并响应 `agent/status`;
@@ -32,10 +32,10 @@
 
 DSH 设置页内置 **AgentTeam** section(`settings.section` 槽位,含导航专属棋盘图标),两张卡片分别管理角色职责与模型选择:
 
-- **角色预设**(第一张卡):**只描述职责**。每角色一个盒子(中文名 + mono id + 职责摘要,排版对齐 DSH 内置预设卡),盒内**职责说明链接与查看按钮**(眼睛图标)弹出角色职责说明——slogan + 工作方式 + 交付物 + 核心准则(中文全量版,数据源 `client/roles.ts` ROLE_DUTY)。卡片不再有模型/思考档位下拉,也不再有「套用预设」入口:角色职责不决定成员用哪个模型。
-- **模型选择**(第二张卡):允许 Agent 为 Subagent 选择模型——按 `${provider}/${model}` 逐模型开关(`modelCapabilities[key].enabled`),并为每个模型限制**最高思考档位**(`maxReasoningEffort`,必须是该模型 adapter 提供的档位 id)。档位选项原序来自 `ctx.llm.resolveModelInfo` 的 `reasoning.efforts`;模型没有 reasoning 能力时不渲染档位控件,服务端也不会替它造一个。没有任何 provider 是隐式恒授权的——包括 deepseek-official 在内的每个模型都有真实开关、都可以关闭,因此"一个都不授权"是合法配置。卡片内的**模型预设参考**只作查阅,不写入任何配置。
+- **角色预设**(第一张卡):**只描述职责**。紧凑网格:每格=中文名 + mono id + 单行职责摘要,卡片顶部一行提示说明"角色职责不决定成员模型",**点击整格**弹出角色职责说明——slogan + 工作方式 + 交付物 + 核心准则(中文全量版,数据源 `client/roles.ts` ROLE_DUTY)。卡片没有模型/思考档位下拉,也没有「套用预设」入口。
+- **模型选择**(第二张卡):允许 Agent 为 Subagent 选择模型——按 `${provider}/${model}` 逐模型开关(`modelCapabilities[key].enabled`),并为每个模型限制**最高思考档位**(`maxReasoningEffort`,必须是该模型 adapter 提供的档位 id)。档位选项原序来自 `ctx.llm.resolveModelInfo` 的 `reasoning.efforts`;模型没有 reasoning 能力时不渲染档位控件,服务端也不会替它造一个。**开关即权限**:只有处于打开状态的模型才能承载成员,deepseek-official 也不例外。全部关闭是合法状态,但此时成员无法启动(spawn 会失败并提示去这张卡打开模型),队长自己正在使用的会话模型也不例外。卡片只渲染开关与档位上限:原先的**模型预设参考**只读区块已移除。
 - **旧配置只读兼容**:`enabledModels`(旧授权表)与 `roleDefaults` / profile `roleLlmDefaults` / 内置 `DEFAULT_ROLE_LLM`(旧角色档位链)仍可读、不会被自动删除,但**不再参与任何新成员选路**,角色卡也不再渲染这些旧记录。
-- **新成员路由**:未显式指定 `provider`/`model` 时**继承队长当前路由**——继承不是授权决策,全部关闭后依然可用;队长显式指定时按该精确路由校验授权(未授权/无档位/超上限一律失败,不静默回退)。
+- **新成员路由**:未显式指定 `provider`/`model` 时**继承队长当前路由**,但继承只决定走哪条路由、不产生授权——两条路径都按同一份开关校验,未授权的继承路由与显式路由一样直接失败(未授权/无档位/超上限一律失败,不静默回退)。
 
 ## 自成长框架
 

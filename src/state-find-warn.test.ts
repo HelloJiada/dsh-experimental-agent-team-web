@@ -14,6 +14,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { MessageId } from '@deepseek-ai/dsh-llm'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -165,7 +166,7 @@ describe('R-23 调用层 warn 注入 — tools.ts logger.warn 被调用且不影
           prepareContinuable: {},
           capabilities: { persona: true, toolFilter: true },
         }),
-        startContinuable: async () => ({ childId: 'child-1' }),
+        startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? 'child-1', messageId: MessageId('message-test') }),
       },
     } as unknown as Context
     registerAgentTeamsTools(fakeCtx, config)

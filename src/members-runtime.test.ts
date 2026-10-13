@@ -11,6 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MessageId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,6 +22,7 @@ import {
   installRetiredMemberGuard,
   interruptMember,
   memberActivity,
+  memberDeniedTools,
   memberWelcome,
   resolveMemberLlmCandidates,
   resolveMemberLlmSelection,
@@ -28,6 +30,7 @@ import {
   type MemberRuntimeConfig,
 } from './members.ts'
 import type { TeamMember, TeamState } from './types.ts'
+import { isMemberAgent, resetMemberAgents } from './member-state-guard.ts'
 
 const STATE_DIR = '.agent-team-web'
 
@@ -88,7 +91,7 @@ function baseCtx(overrides: Record<string, unknown> = {}): Context {
         prepareContinuable: {},
         capabilities: { persona: true, toolFilter: true },
       }),
-      startContinuable: async () => ({ childId: 'child-1' }),
+      startActivation: async (spec: { childId?: string }) => ({ childId: SessionId(spec.childId ?? 'child-1'), messageId: MessageId('message-1') }),
     },
     ...overrides,
   } as unknown as Context
@@ -270,17 +273,28 @@ describe('resolveMemberLlmCandidates — portable route admission', () => {
     expect(calls).toBe(0)
   })
 
-  it('admits the implicit inherited captain route even when every grant is off', async () => {
+  it('rejects the inherited captain route when its model switch is off(继承不豁免授权)', async () => {
     const ctx = baseCtx({ llm: {
       resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model,
         reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }),
       resolveCallConfig: async (config: { provider: string; model: string }) => config,
     } })
-    // 全部授权关闭:capability.enabled === false,但继承队长路由的隐式候选仍放行,
-    // 且上限策略照旧生效(此处未配上限 → 用 adapter 默认 effort)。
+    // 授权表即权限:关掉的模型连继承路径也不能用,报错要指向设置页而不是静默换模型。
+    await expect(resolveMemberLlmCandidates(ctx, captain('/ws'), [
+      { label: 'captain route', request: {} },
+    ], () => false, undefined, () => ({ enabled: false })))
+      .rejects.toThrow(/model p\/m is not authorized \(captain route\).*Settings → AgentTeam → 模型选择/)
+  })
+
+  it('admits the inherited captain route once its switch is on', async () => {
+    const ctx = baseCtx({ llm: {
+      resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model,
+        reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }], defaultEffort: 'low' } }),
+      resolveCallConfig: async (config: { provider: string; model: string }) => config,
+    } })
     const selection = await resolveMemberLlmCandidates(ctx, captain('/ws'), [
-      { label: 'captain route', request: {}, implicit: true },
-    ], () => false, undefined, () => ({ enabled: false }))
+      { label: 'captain route', request: {} },
+    ], () => false, undefined, () => ({ enabled: true }))
     expect(selection).toMatchObject({ provider: 'p', model: 'm' })
     expect(selection.reasoningEffort).toBe('low')
   })
@@ -319,7 +333,7 @@ describe('resolveMemberLlmCandidates — portable route admission', () => {
 })
 
 describe('spawnMember — 成员派生', () => {
-  it('主路径:startContinuable 成功后 member.id 填充', async () => {
+  it('主路径:startActivation 成功后 member.id 填充为 reserved childId', async () => {
     const state = team({ members: [member('技术员')] })
     const draft = member('技术员')
     const selections = installMemberSelectionRuntime(baseCtx(), STATE_DIR)
@@ -334,7 +348,50 @@ describe('spawnMember — 成员派生', () => {
       STATE_DIR,
       new AbortController().signal,
     )
-    expect(draft.id).toBe('child-1')
+    expect(draft.id).not.toBe('')
+    expect(draft.id).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(isMemberAgent(draft.id)).toBe(true)
+  })
+
+  it('startActivation 的 parent delivery 携带一次欢迎语且预留 ID 在首个 pre-step 前登记', async () => {
+    resetMemberAgents()
+    const state = team({ members: [member('技术员')] })
+    const draft = member('技术员')
+    const selections = installMemberSelectionRuntime(baseCtx(), STATE_DIR)
+    let registeredAtCallTime: boolean | undefined
+    let reservedAtCallTime: string | undefined
+    let activationSpec: unknown
+    const ctx = baseCtx({
+      subagents: {
+        ...baseCtx().subagents,
+        startActivation: async (options: { childId?: string }) => {
+          activationSpec = options
+          reservedAtCallTime = options.childId
+          registeredAtCallTime = options.childId !== undefined && isMemberAgent(options.childId)
+          return { childId: SessionId('unexpected-child'), messageId: MessageId('message-1'), dispose: async () => undefined }
+        },
+      },
+    })
+    await expect(spawnMember(
+      ctx,
+      runtimeConfig,
+      selections,
+      { provider: 'p', model: 'm' },
+      captain('/ws'),
+      state,
+      draft,
+      STATE_DIR,
+      new AbortController().signal,
+    )).rejects.toThrow(/returned child id.*instead of reserved id/)
+    expect(reservedAtCallTime).toBeDefined()
+    expect(registeredAtCallTime).toBe(true)
+    expect(activationSpec).toMatchObject({
+      delivery: 'parent',
+      childId: reservedAtCallTime,
+      request: { prompt: [{ type: 'text', text: expect.stringContaining('运行时测试团队') }] },
+    })
+    expect(draft.id).toBe('')
+    expect(isMemberAgent(reservedAtCallTime!)).toBe(false)
   })
 
   it('provider 未注册:报错含可用列表,id 不填充', async () => {
@@ -353,6 +410,21 @@ describe('spawnMember — 成员派生', () => {
       new AbortController().signal,
     )).rejects.toThrow(/no subagent provider "spawn" is registered/)
     expect(draft.id).toBe('')
+  })
+})
+
+describe('memberDeniedTools — 队长专属 deny 名单按宿主已知工具过滤', () => {
+  it('无探针(宿主不暴露查询)时下发完整名单,保持原有行为', () => {
+    expect(memberDeniedTools()).toHaveLength(9)
+    expect(memberDeniedTools()).toContain('agent_teams_create')
+  })
+
+  it('探针为真(eager:工具在全局层)时名单不变', () => {
+    expect(memberDeniedTools(() => true)).toHaveLength(9)
+  })
+
+  it('探针为假(lazy:名字只在队长 agent scope)时降级为空,不触发 tools.restrict 抛错', () => {
+    expect(memberDeniedTools(() => false)).toEqual([])
   })
 })
 

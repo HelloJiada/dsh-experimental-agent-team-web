@@ -26,7 +26,7 @@ interface CapturedTool {
 
 interface HarnessOverrides {
   resolveCallConfig?: (args: { provider?: string; model?: string; reasoningEffort?: string }) => Promise<{ provider: string; model: string; reasoningEffort?: string }>
-  startContinuable?: (options: unknown, seq: number) => Promise<{ childId: string }>
+  startActivation?: (options: { childId?: string }, seq: number) => Promise<{ childId: string; messageId: MessageId }>
 }
 
 function harness(spawned: unknown[] = [], overrides: HarnessOverrides = {}, interrupted: string[] = []): (name: string) => CapturedTool {
@@ -39,7 +39,7 @@ function harness(spawned: unknown[] = [], overrides: HarnessOverrides = {}, inte
     on: () => undefined,
     effect: () => () => undefined,
     llm: {
-      // DSH 0.1.7-rc.2 LlmService owns resolveModelInfo; the commissar spawn
+      // DSH 0.2.1-alpha.2 LlmService owns resolveModelInfo; the commissar spawn
       // reads its reasoning metadata, so this stub must expose it.
       resolveModelInfo: async (provider: string, model: string) => ({ provider, id: model, name: model }),
       resolveCallConfig: overrides.resolveCallConfig ?? (async (args: { provider?: string; model?: string; reasoningEffort?: string }) => ({
@@ -54,12 +54,12 @@ function harness(spawned: unknown[] = [], overrides: HarnessOverrides = {}, inte
       interrupt: (childId: string) => { interrupted.push(childId) },
       list: () => ['spawn'],
       getProvider: () => ({ prepareContinuable: {}, capabilities: { persona: true, toolFilter: true } }),
-      startContinuable: async (options: unknown) => {
+      startActivation: async (options: { childId?: string }) => {
         spawned.push(options)
         const seq = ++childSeq
-        return overrides.startContinuable === undefined
-          ? { childId: `child-${seq}` }
-          : await overrides.startContinuable(options, seq)
+        return overrides.startActivation === undefined
+          ? { childId: options.childId ?? `child-${seq}`, messageId: MessageId('message-test') }
+          : await overrides.startActivation(options, seq)
       },
     },
   } as unknown as Context
@@ -304,7 +304,7 @@ describe('agent_teams_set_mode — upgrade only', () => {
     const interrupted: string[] = []
     const tool = harness(spawned, {
       // Both upgrades resolve their child before either attaches.
-      startContinuable: async (_options, seq) => ({ childId: `child-${seq}` }),
+      startActivation: async (options: { childId?: string }, seq: number) => ({ childId: options.childId ?? `child-${seq}`, messageId: MessageId('message-test') }),
     }, interrupted)
     const results = await Promise.allSettled([
       tool('agent_teams_set_mode').execute({ mode: 'governed' }, execOf(agent(workspace))),
@@ -337,12 +337,14 @@ describe('agent_teams_set_mode — upgrade only', () => {
     await writeTeamToDisk(stateRoot, legacyTeam({ mode: 'light' }))
     const spawned: unknown[] = []
     const interrupted: string[] = []
+    let orphanId = ''
     const tool = harness(spawned, {
-      startContinuable: async () => {
+      startActivation: async (options: { childId?: string }, _seq: number) => {
         // Remove the durable team between spawn and attach so the second
         // locked pass fails after the child already exists.
         await rm(stateRoot, { recursive: true, force: true })
-        return { childId: 'child-orphan' }
+        orphanId = options.childId ?? 'child-orphan'
+        return { childId: orphanId, messageId: MessageId('message-test'), dispose: async () => undefined }
       },
     }, interrupted)
     await expect(tool('agent_teams_set_mode').execute(
@@ -350,7 +352,7 @@ describe('agent_teams_set_mode — upgrade only', () => {
       execOf(agent(workspace)),
     )).rejects.toThrow()
     expect(spawned).toHaveLength(1)
-    expect(interrupted).toContain('child-orphan')
+    expect(interrupted).toContain(orphanId)
   })
 
   it('is a no-op when already in the target mode with a commissar', async () => {

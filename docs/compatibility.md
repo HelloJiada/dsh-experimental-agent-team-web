@@ -2,7 +2,7 @@
 
 ## Required host packages
 
-The plugin peers and development dependencies target public DSH `0.1.7-rc.2`; typecheck and unit tests use this package line. Runtime compatibility still requires the real-profile smoke check below. Install and inject the bundle into the host DSH Web profile and ensure all of its declared peer packages are resolvable in that profile.
+The plugin peers and development dependencies target public DSH `0.2.1-alpha.2`. This line replaces the removed `subagents.startContinuable()` call with `subagents.startActivation()` and declares the alpha.2 `dsh-working-directory` and `dsh-client-ui-slots` peers. Alpha.2 typecheck, unit tests, build, and packed-artifact checks pass. The alpha.2 candidate is installed in the desktop profile; its bundle layer loads with no plugin compatibility issue and all direct DSH peers resolve as alpha.2. Six unrelated optional profile bundles are skipped because they are not resolvable from this profile/install. Live Web/member-spawn smoke remains unverified until the active desktop is normally restarted.
 
 `@deepseek-ai/dsh-experimental-agent-team-web` ships its own self-contained
 AgentTeams kernel (roster, durable mailbox, shared task DAG, scheduler,
@@ -14,7 +14,7 @@ local DeepSeek Harness checkout.
 
 | Plugin version | DSH version | Notes |
 |---|---|---|
-| 0.1.32 | 0.1.7-rc.2 | Current target package line. Typecheck and unit tests run against rc.2 packages; a real Web profile smoke check is not yet recorded. Historical child composition requiring `registration: eager` was observed on 0.1.5-rc.2; verify current runtime composition before changing the default. |
+| 0.1.32 | 0.2.1-alpha.2 | Current target package line. Typecheck/tests/build/artifact pass; offline desktop profile load resolves all 26 direct DSH peers to alpha.2 with no compatibility issue for this plugin. Six other optional profile bundles are skipped; live Web/member-spawn smoke after restart remains unverified. |
 | 0.1.16 | 0.1.3-alpha.2 / 0.1.5-rc.2 | Root service context: tool bodies take injected services from the plugin root instead of the session scope. Added `registration: 'lazy' | 'eager'` — `eager` installs the whole surface globally for harnesses that join a subagent child to its parent preset instead of inheriting the parent agent scope. |
 | 0.1.15 | 0.1.3-alpha.2 | On-demand loading: the 14 team tools and the captain protocol are installed into the activating session's own scope instead of every session (measured 4.9k -> 0.27k tokens per request for inactive sessions) |
 | 0.1.14 | 0.1.3-alpha.2 | Packaging hotfix: remove a stray self file: dependency that made the published tarball uninstallable |
@@ -56,28 +56,27 @@ which context the bodies read from.
 ## Two registration modes (`registration`)
 
 On-demand activation assumes the harness lets a subagent child inherit its
-parent **agent scope**. This was observed not to hold on DSH `0.1.5-rc.2`, where
-`applyChildComposition` joins the child to its parent's **preset**
-(`agentPresets.composeFrom(childCtx, parent.ctx)`), so an ad-hoc `agent.ctx`
-registration is invisible to members. This document does not claim that DSH
-`0.1.7-rc.2` retains the same runtime behavior; verify the loaded profile's
-child composition before choosing a registration mode. Two consequences were
-observed on the older preset-only composition:
+parent **agent scope**. DSH `0.2.1-alpha.2` does not: in
+`packages/subagent/subagent/src/child-agent.ts`,
+`applyChildComposition(childCtx, parent, composition)` first calls
+`agentPresets.composeFrom(childCtx, parent.ctx)` — joining the child to the
+parent's **preset generation** — and only afterwards applies
+`childCtx.tools.restrict(composition.toolFilter)`. An ad-hoc `agent.ctx`
+registration (the captain's `lazy` path) is therefore invisible to members.
+The plugin handles this without eager/global registration: its `agent/pre-step`
+hook resolves active member identity and installs the member-visible subset in
+the member's own scope before request assembly. This lazy member-scope design
+was observed end-to-end on DSH `0.1.7-rc.2`; runtime behavior on DSH
+`0.2.1-alpha.2` is not yet verified.
 
-- on the observed historical composition, members saw **no** `agent_teams_*` tool at all;
-- `agent_teams_create` failed first, at
-  `childCtx.tools.restrict({ deny: MEMBER_DENIED_TOOLS })` →
-  `tools.restrict() names unknown global tools "agent_teams_create", …`,
-  because `restrict()` accepts only **global** or **ancestor-scope** names
-  (`packages/core/tools` `view().restrictableNames`).
-
-`registration: 'lazy'` (default) is the on-demand design: cheapest per idle
-session, and correct on a harness whose children inherit the parent agent
-scope. `registration: 'eager'` installs the full surface in the global layer at
-mount (the v0.1.14 shape): every session pays the full cost, members get the
-tools by global inheritance, and the per-child deny filter compiles. Use
-`eager` on DSH `0.1.5-rc.2` and any harness with the same child-composition
-rule. For DSH `0.1.7-rc.2`, this has not yet been confirmed by a real-profile test; keep the default `lazy` unless the current host composition demonstrates the preset-only inheritance behavior.
+`registration: 'lazy'` (**default**) keeps idle sessions at the hint-only cost.
+The captain receives the full surface on activation; an active member receives
+only `MEMBER_TOOL_NAMES` at its first pre-step. Captain-only tools are absent
+from the member scope rather than denied by name, so the child preset's
+`tools.restrict()` need not resolve those names. `registration: 'eager'` remains
+a fallback for a harness where even a member's own scope cannot receive
+registrations: it installs the full surface in the global layer at mount, and
+the per-child deny filter compiles, at ~4.9k tokens/request in every session.
 
 ```yaml
 - id: agent-team-web

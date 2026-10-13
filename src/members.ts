@@ -19,36 +19,49 @@ import { SubagentError } from '@deepseek-ai/dsh-subagent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { isCommissarRole } from './commissar-gate.ts'
 import { canonicalExecRole } from './role-limits.ts'
-import { registerMemberAgent } from './member-state-guard.ts'
+import { registerMemberAgent, unregisterMemberAgent } from './member-state-guard.ts'
+import { CAPTAIN_ONLY_TOOL_NAMES } from './tool-surface.ts'
 import { truncatePracticeForInjection } from './best-practices.ts'
 import type { BestPracticeEntry } from './best-practices.ts'
 import type { TeamMember, TeamState } from './types.ts'
 import { readRetiredMemberIds } from './state.ts'
 
-/** Captain-only AgentTeams tools hidden from newly spawned members. */
-const MEMBER_DENIED_TOOLS = [
-  'agent_teams_create',
-  'agent_teams_add_member',
-  'agent_teams_remove_member',
-  'agent_teams_reassign_task',
-  'agent_teams_create_task',
-  'agent_teams_triage_finding',
-  // R-29/F-11:retro_review(队长校准)与 best_practices(经验库/校准统计)同为
-  // 队长专属——运行期 requireCaptainTeam 守卫本就拒绝成员,但在成员工具列表
-  // 里出现两个"永远报错"的工具浪费 token 且误导,与 create/add_member 等
-  // 保持同一套"队长专属"deny 口径。
-  'agent_teams_retro_review',
-  'agent_teams_best_practices',
-  'agent_teams_delete',
-] as const
+/**
+ * Captain-only tools hidden from newly spawned members. The list itself lives
+ * in `tool-surface.ts` so the deny filter, the member-scope registration and
+ * the captain surface can never drift apart.
+ */
+const MEMBER_DENIED_TOOLS = CAPTAIN_ONLY_TOOL_NAMES
+
+/**
+ * Captain-only tools denied on a member's tool scope, filtered against the
+ * tools the host actually knows at the plugin root.
+ *
+ * The host restricts a child scope AFTER the child joins its parent preset
+ * (`applyChildComposition`), and `tools.restrict()` throws on any name that is
+ * neither global nor visible in an ancestor scope. Under `registration: 'lazy'`
+ * the team tools exist only in the captain's agent scope, so an unfiltered deny
+ * list aborts the spawn with
+ * `tools.restrict() names unknown global tools "agent_teams_create"…`.
+ * Probing keeps the spawn alive instead of failing the whole call; the caller
+ * warns that the mode cannot restrict member tools at all.
+ *
+ * @param known - probe for one tool name, or `undefined` when the host exposes no query.
+ * @returns the deny list to send (empty when nothing can be named).
+ */
+export function memberDeniedTools(known?: (name: string) => boolean): readonly string[] {
+  if (known === undefined) return MEMBER_DENIED_TOOLS
+  return MEMBER_DENIED_TOOLS.filter(name => known(name))
+}
 
 /**
  * Restore the SessionId brand on a value that round-tripped through the
  * durable team file. The brand is erased by JSON serialization; the value
- * originated from `startContinuable`/`agent.id`, so this cast is the boundary
- * restoration, not a new assertion.
+ * originated from a reserved activation id or `agent.id`, so this cast is the
+ * boundary restoration, not a new assertion.
  */
 function brandedSessionId(value: string): SessionId {
   return value as SessionId
@@ -95,11 +108,6 @@ export interface MemberLlmSelectionCandidate {
   readonly request: MemberLlmSelectionRequest
   /** Explicit user intent is fail-closed; it never falls through. */
   readonly explicit?: boolean
-  /** Inherit-the-captain candidate: the captain's own live route is always
-   * admissible, so an all-grants-off configuration still creates members on the
-   * session model. Only the enabled gate is skipped; the ceiling and the adapter
-   * validation still apply. */
-  readonly implicit?: boolean
 }
 
 /** One model's policy ceiling. Absence of max permits only adapter default. */
@@ -185,16 +193,19 @@ export async function resolveMemberLlmCandidates(
       // capability snapshot. Never read enabledModels and modelCapabilities
       // through separate volatile references: revocation could race between them.
       const capability = capabilityFor?.(route.provider, route.model)
-      // The captain's own live route is not a grant decision: inheriting the
-      // session model must keep working after every grant is switched off. Only
-      // the authorization gate is skipped for that candidate; the ceiling below
-      // and the adapter validation still apply.
-      if (candidate.implicit !== true) {
-        if (capabilityFor !== undefined) {
-          if (capability?.enabled !== true) throw new Error(`model ${route.provider}/${route.model} is not authorized`)
-        } else if (!isGranted(route.provider, route.model)) {
-          throw new Error(`model ${route.provider}/${route.model} is not authorized`)
-        }
+      // The authorization switch IS the permission: a model that is not switched
+      // on cannot carry a member, whether the captain named it explicitly or the
+      // member would inherit the captain's own live route. There is no bypass —
+      // an all-off configuration fails the spawn with an actionable message
+      // instead of quietly running on an unauthorized model.
+      const unauthorized = capabilityFor !== undefined
+        ? capability?.enabled !== true
+        : !isGranted(route.provider, route.model)
+      if (unauthorized) {
+        throw new Error(
+          `model ${route.provider}/${route.model} is not authorized (${candidate.label}) — `
+          + 'switch it on under Settings → AgentTeam → 模型选择, or name an already enabled provider/model',
+        )
       }
       // Route choice is independent of legacy role presets. New model metadata
       // always owns the effort vocabulary for the chosen exact route.
@@ -538,7 +549,7 @@ export async function spawnMember(
 ): Promise<void> {
   // Fail loud at the first use: provider registration is a sibling plugin's
   // effect and may settle after this plugin mounts. Capability checks here
-  // mirror what startContinuable would reject, with an actionable error.
+  // mirror what startActivation requires for a continuable member, with an actionable error.
   const provider = ctx.subagents.getProvider(config.provider)
   if (provider === undefined) {
     throw new Error(
@@ -556,31 +567,70 @@ export async function spawnMember(
     throw new Error(`agent-team-web: provider "${config.provider}" cannot restrict captain-only tools for members`)
   }
   const label = `${MEMBER_LABEL_PREFIX}${team.id}:${member.name}`
-  const start = await selections.withPending(captain.id, label, llmSelection, () => (
-    ctx.subagents.startContinuable({
-      provider: config.provider,
-      label,
-      request: {
-        prompt: [{ type: 'text', text: memberWelcome(team) }],
-        parent: captain,
-        persona: memberPersona(team, member, stateDir, memories),
-        toolFilter: { deny: [...MEMBER_DENIED_TOOLS] },
-        agentOptions: {
-          provider: llmSelection.provider,
-          model: llmSelection.model,
-          ...llmSelection.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: ReasoningEffortId(llmSelection.reasoningEffort) },
+  // 队长专属工具只在全局层可见时才能被 restrict 命名;lazy 模式下这些名字
+  // 只存在于队长的 agent scope,直接下发会让整个 spawn 抛错(见 memberDeniedTools)。
+  const denyTools = memberDeniedTools(
+    typeof ctx.tools?.get === 'function' ? name => ctx.tools.get(name) !== undefined : undefined,
+  )
+  if (denyTools.length !== MEMBER_DENIED_TOOLS.length) {
+    ctx.logger.warn(
+      'agent-team-web: captain-only tools are not in the global layer, so this per-child deny list is empty '
+      + `(${MEMBER_DENIED_TOOLS.length - denyTools.length}/${MEMBER_DENIED_TOOLS.length} unnamed) — `
+      + 'expected under registration: "lazy": the member receives the member-visible subset in its own scope at '
+      + 'its first pre-step (see activateMemberAgentTeams); set registration: "eager" only if members still '
+      + 'cannot see agent_teams_*',
+    )
+  }
+  // 预留并登记 childId:宿主允许调用方自带 id(childId 省略时才由它分配),这样
+  // 成员的首个 pre-step 一定早不过登记——成员面正是靠「pre-step 时已是成员」装进
+  // 该成员自己的 scope(见 activateMemberAgentTeams)。
+  const reservedChildId = brandedSessionId(randomUUID())
+  // Register before startActivation: the continuation manager may begin the
+  // first child turn as soon as it accepts the initial prompt, and its first
+  // pre-step must already recognize this session as an AgentTeams member.
+  registerMemberAgent(reservedChildId)
+  let started
+  try {
+    started = await selections.withPending(captain.id, label, llmSelection, () => (
+      ctx.subagents.startActivation({
+        delivery: 'parent',
+        provider: config.provider,
+        childId: reservedChildId,
+        label,
+        request: {
+          prompt: [{ type: 'text', text: memberWelcome(team) }],
+          parent: captain,
+          persona: memberPersona(team, member, stateDir, memories),
+          toolFilter: { deny: [...denyTools] },
+          agentOptions: {
+            provider: llmSelection.provider,
+            model: llmSelection.model,
+            ...llmSelection.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: ReasoningEffortId(llmSelection.reasoningEffort) },
+          },
+          ...config.maxDepth !== undefined ? { maxDepth: config.maxDepth } : {},
         },
-        ...config.maxDepth !== undefined ? { maxDepth: config.maxDepth } : {},
-      },
-      signal,
-    })
-  ))
-  member.id = start.childId
-  // R-18/H-2: fresh spawns register with the state-dir guard (cold-resumed
-  // members are registered by installMemberSelectionRuntime's setup).
-  registerMemberAgent(member.id)
+        signal,
+      })
+    ))
+  } catch (error) {
+    unregisterMemberAgent(reservedChildId)
+    throw error
+  }
+  if (started.childId !== reservedChildId) {
+    // A local activation with a caller-supplied id must preserve it. Treat a
+    // broken adapter as a failed member creation rather than recording a
+    // replacement id whose first pre-step may already have raced registration.
+    unregisterMemberAgent(reservedChildId)
+    try {
+      await started.dispose()
+    } catch (error: unknown) {
+      ctx.logger.warn(`agent-team-web: cleanup after mismatched child id also failed: ${String(error)}`)
+    }
+    throw new Error(`agent-team-web: subagent provider returned child id "${started.childId}" instead of reserved id "${reservedChildId}"`)
+  }
+  member.id = started.childId
 }
 
 /**

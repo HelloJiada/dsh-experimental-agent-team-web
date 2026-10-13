@@ -90,7 +90,7 @@ function harness(): (name: string) => CapturedTool {
         prepareContinuable: {},
         capabilities: { persona: true, toolFilter: true },
       }),
-      startContinuable: async () => ({ childId: `child-${++childSeq}` }),
+      startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? `child-${++childSeq}`, messageId: MessageId('message-test') }),
     },
   } as unknown as Context
   registerAgentTeamsTools(fakeCtx, config)
@@ -279,7 +279,7 @@ describe('agent_teams_send_message — R-21/L-2 不可信标记', () => {
           prepareContinuable: {},
           capabilities: { persona: true, toolFilter: true },
         }),
-        startContinuable: async () => ({ childId: `child-${++childSeq}` }),
+        startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? `child-${++childSeq}`, messageId: MessageId('message-test') }),
       },
     } as unknown as Context
     registerAgentTeamsTools(fakeCtx, config)

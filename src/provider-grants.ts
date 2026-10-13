@@ -4,7 +4,7 @@
  * 设计(t12/t27):Provider 授权粒度从 provider 升到 model——授权 key 为
  * `${provider}/${model}` 复合键(避免跨 provider 同名模型撞车);**没有
  * provider 是隐式恒授权的**(含 deepseek-official,全部关闭是合法状态),
- * 显式路由按授权表拦,继承队长路由由 implicit 候选单独放行。命名空间更名
+ * 授权表即权限:显式路由与继承的队长路由同等受拦(关掉的模型一律不可用)。命名空间更名
  * agent-team-web(schema 扩 enabledModels + roleDefaults),旧
  * agent-team-web-providers/enabledProviders 废弃(provider 粒度无法无损迁
  * 到 model 粒度,弃旧取新;profile.roleLlmDefaults 保留作 fallback/初始值)。
@@ -100,7 +100,7 @@ const modelCapabilitiesSchema = z.dict(z.object({
 // DSH 只接受 volatile 字段下的设置页即时写入(settings/schema.ts 的
 // isVolatilePath),且 volatileForm 会跳过没有 volatile 字段的 entry。若少
 // 了该标记,宿主既不暴露可编辑表单、也拒绝一切写入——控件点了等于没点。
-// 必须使用 Schemastery >=3.18.4：其解析器才会把 meta.volatile 字段包装为
+// 必须使用 Schemastery >=3.18.5-alpha.1：其解析器才会把 meta.volatile 字段包装为
 // 实时 Volatile 引用。3.18.2 即便设置 meta 标记也只返回裸对象，宿主 Loader
 // 的 _commitVolatile 找不到引用，导致落盘成功但页面与运行时始终是旧值。
 const liveEnabledModelsSchema: z<Record<string, boolean>> = enabledModelsSchema.volatile() as unknown as z<Record<string, boolean>>
@@ -143,14 +143,6 @@ export interface SettingsSurface {
   update(ns: string, patch: object, expectedRevision?: number): Promise<void>
 }
 
-/** 一个已注册命名空间的描述（配置 UI / 读取方消费）。 */
-export interface SettingsDescriptor {
-  readonly ns: SettingsNamespace
-  readonly schema: unknown
-  readonly value: unknown
-  readonly revision: number
-  readonly applies: 'live' | 'restart'
-}
 
 /** 旧版(`register` 返回命名空间 scope)的 SettingsScope 形状,保留仅作类型
  * 参考,不再参与接线。 */
@@ -183,19 +175,6 @@ export function modelGrantedFromValue(
   return modelCapabilityFromValue(value, provider, model).enabled === true
 }
 
-/** 角色档位解析(config 覆盖 → profile.roleLlmDefaults → DEFAULT_ROLE_LLM
- * 三源链):config.roleDefaults[roleKey] 存在即用之(「默认」= 删覆盖);
- * 否则 profile 档位;再否则内置档位。 */
-export function resolveRoleDefault(
-  value: AgentTeamSettingsValue | undefined,
-  profile: Record<string, RoleLlmDefaultValue> | undefined,
-  builtin: Record<string, RoleLlmDefaultValue> | undefined,
-  roleKey: string,
-): RoleLlmDefaultValue | undefined {
-  const override = value?.roleDefaults?.[roleKey]
-  if (override !== undefined) return override
-  return profile?.[roleKey] ?? builtin?.[roleKey]
-}
 
 /** 设置中心的工具侧/写面共享访问对象（apply 期接线写入，作用域释放清空）。 */
 export interface AgentTeamSettingsAccess {
@@ -212,8 +191,6 @@ export interface AgentTeamSettingsAccess {
   modelCapabilityFor?: (provider: string, model: string) => ResolvedModelCapability
   /** 模型授权写入(HTTP 路由第二写面)；undefined → 写面不可用(settings 缺席)。 */
   setModelGrant?: (provider: string, model: string, enabled: boolean) => Promise<void>
-  /** 角色档位覆盖写入(设置页 RolePresetCard)；value=undefined → 删覆盖回「默认」。 */
-  setRoleDefault?: (roleKey: string, value: RoleLlmDefaultValue | undefined) => Promise<void>
 }
 
 /** DSH 交付 volatile 配置字段的引用形状(schemastery 的 `volatile()` 分支在
@@ -278,15 +255,8 @@ export function wireAgentTeamSettings(settingsCtx: unknown, access: AgentTeamSet
     capabilities[key] = { ...(capabilities[key] ?? {}), enabled }
     await settings.update(String(AGENT_TEAM_SETTINGS_NS), { modelCapabilities: capabilities, enabledModels: { ...current, [key]: enabled } })
   }
-  access.setRoleDefault = async (roleKey: string, value: RoleLlmDefaultValue | undefined): Promise<void> => {
-    const next = { ...(access.roleDefaults?.() ?? {}) }
-    if (value === undefined) delete next[roleKey] // 「默认」= 删覆盖
-    else next[roleKey] = value
-    await settings.update(String(AGENT_TEAM_SETTINGS_NS), { roleDefaults: next })
-  }
   const dispose = (): void => {
     access.setModelGrant = undefined
-    access.setRoleDefault = undefined
   }
   const effect = (settingsCtx as { effect?: (fn: () => () => void) => void }).effect
   if (effect !== undefined) {

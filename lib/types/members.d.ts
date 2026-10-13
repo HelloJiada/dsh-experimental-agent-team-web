@@ -15,6 +15,23 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import type { BestPracticeEntry } from './best-practices.ts';
 import type { TeamMember, TeamState } from './types.ts';
+/**
+ * Captain-only tools denied on a member's tool scope, filtered against the
+ * tools the host actually knows at the plugin root.
+ *
+ * The host restricts a child scope AFTER the child joins its parent preset
+ * (`applyChildComposition`), and `tools.restrict()` throws on any name that is
+ * neither global nor visible in an ancestor scope. Under `registration: 'lazy'`
+ * the team tools exist only in the captain's agent scope, so an unfiltered deny
+ * list aborts the spawn with
+ * `tools.restrict() names unknown global tools "agent_teams_create"…`.
+ * Probing keeps the spawn alive instead of failing the whole call; the caller
+ * warns that the mode cannot restrict member tools at all.
+ *
+ * @param known - probe for one tool name, or `undefined` when the host exposes no query.
+ * @returns the deny list to send (empty when nothing can be named).
+ */
+export declare function memberDeniedTools(known?: (name: string) => boolean): readonly string[];
 /** Runtime knobs for member spawning, resolved from plugin config. */
 export interface MemberRuntimeConfig {
     /** Registered `ctx.subagents` provider name (must support continuable + persona). */
@@ -57,11 +74,6 @@ export interface MemberLlmSelectionCandidate {
     readonly request: MemberLlmSelectionRequest;
     /** Explicit user intent is fail-closed; it never falls through. */
     readonly explicit?: boolean;
-    /** Inherit-the-captain candidate: the captain's own live route is always
-     * admissible, so an all-grants-off configuration still creates members on the
-     * session model. Only the enabled gate is skipped; the ceiling and the adapter
-     * validation still apply. */
-    readonly implicit?: boolean;
 }
 /** One model's policy ceiling. Absence of max permits only adapter default. */
 export interface MemberModelCapability {

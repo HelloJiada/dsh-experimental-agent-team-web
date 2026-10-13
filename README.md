@@ -8,18 +8,28 @@
 
 ## DSH compatibility
 
-Version 0.1.32 uses the package's self-contained AgentTeams kernel and targets
-the public DSH `0.1.7-rc.2` package line. Typecheck and tests use that package
-line; a real Web profile smoke test is still required before claiming runtime
-compatibility. It does **not** require the unpublished official experimental
-Agent Teams package or a local DSH checkout.
+This worktree adapts the self-contained AgentTeams kernel to the current public
+DSH `0.2.1-alpha.2` package line. The migration updates the subagent creation API
+and declares the client-slot and working-directory peers used by this package.
+Typecheck, tests, build, and packed-artifact checks pass against alpha.2. The
+desktop profile now has the alpha.2 candidate installed and its plugin layer
+passes offline compatibility/composition checks (six unrelated optional profile
+bundles are unavailable and skipped). The active app has not been restarted, so
+live Web/member-spawn smoke remains pending. This package does not
+require the unpublished official experimental Agent Teams package or a local
+DSH checkout.
 
-Use `registration: eager` only on harnesses whose subagent children join the
-parent **preset** instead of inheriting the parent **agent scope**. This behavior
-was historically observed on DSH `0.1.5-rc.2`; the recommended lazy default for
-current `0.1.7-rc.2` still needs verification in a real profile. `eager`
-installs the whole surface in the global layer and costs the full ~4.9k
-tokens/request in every session.
+`registration` stays `lazy` (the default) on current DSH. DSH `0.2.1-alpha.2`
+joins a subagent child to its parent **preset** instead of letting it inherit the
+parent **agent scope** (`@deepseek-ai/dsh-subagent` `applyChildComposition` →
+`agentPresets.composeFrom(childCtx, parent.ctx)`, then `tools.restrict`), so a
+member cannot see the captain's own scope. It does not need to: the member's
+**own** scope is filled for it. Right before a member's first step
+(`agent/pre-step`, i.e. before that step's request is assembled) the plugin
+installs the member-visible subset — every team tool except the captain-only
+ones — into that member's scope, which is also why the per-child deny list is no
+longer required. `eager` remains available as a fallback: it registers the whole
+surface in the global layer and costs ~4.9k tokens/request in every session.
 
 Team state remains workspace-local under `.agent-team-web/<teamId>/`, while the
 plugin provides the compatibility tools, activity panel, settings/presets,
@@ -31,7 +41,7 @@ An external DeepSeek Harness (DSH) bundle that turns the current session into th
 
 It provides:
 
-- **loaded on demand**: by default it registers only one `agent_teams_activate` tool plus a two-line hint; the 14 team tools and the captain protocol are installed into the **activating session's own scope** only when activation happens (measured: an inactive session pays ~270 tokens/request instead of ~4,900). Registration stays on that scope, while tool bodies take DSH services from the plugin root context — a session scope does not resolve the plugin's injected `subagents`/`agents` (see `docs/compatibility.md`). Three equivalent, idempotent activation entries: natural language ("use AgentTeams to do X" → the model calls `agent_teams_activate`), the `/agent-teams <goal>` slash command, and its pre-step gesture boundary for surfaces without command adjudication (headless). A harness whose subagent children join the parent **preset** instead of inheriting the parent **agent scope** (historically observed on DSH `0.1.5-rc.2`) cannot deliver members this way — there, set `registration: eager` to register the whole surface globally (~4,900 tokens/request in every session); the current `0.1.7-rc.2` runtime mode has not yet been verified in a real profile; see `docs/compatibility.md`;
+- **loaded on demand**: by default it registers only one `agent_teams_activate` tool plus a two-line hint; the 14 team tools and the captain protocol are installed into the **activating session's own scope** only when activation happens (measured: an inactive session pays ~270 tokens/request instead of ~4,900). Registration stays on that scope, while tool bodies take DSH services from the plugin root context — a session scope does not resolve the plugin's injected `subagents`/`agents` (see `docs/compatibility.md`). Three equivalent, idempotent activation entries: natural language ("use AgentTeams to do X" → the model calls `agent_teams_activate`), the `/agent-teams <goal>` slash command, and its pre-step gesture boundary for surfaces without command adjudication (headless). Current DSH (`0.2.1-alpha.2`) is such a harness — its subagent children join the parent **preset** instead of inheriting the parent **agent scope** — so the member's own scope is filled instead: at the member's first `agent/pre-step` the plugin installs every team tool except the captain-only subset into that member's scope. `registration: 'eager'` (whole surface global, ~4,900 tokens/request in every session) stays available as a fallback; see `docs/compatibility.md`;
 - the full `agent_teams_*` tool suite (create/add-member/create-task/claim/update/reassign/remove/send-message/status/set-mode/delete, plus `agent_teams_retro_review` and `agent_teams_best_practices`), visible after activation to the captain **and its members** (member child scopes inherit the captain's registrations; under `registration: eager` they inherit them from the global layer);
 - a disk-backed team kernel — `.agent-team-web/<teamId>/team.json` + mailbox inboxes are the single source of truth, with atomic writes and per-team locking;
 - an event-driven shared-task scheduler that auto-assigns ready work to idle members and reacts to `agent/status`;
@@ -45,10 +55,10 @@ It provides:
 
 DSH Settings hosts an **AgentTeam** section (`settings.section` slot, with a dedicated nav board glyph): one card for role duties and one for model selection.
 
-- **Role presets** (first card): **duties only**. One card per role (display name + mono id + duty summary in the DSH built-in-preset box style); the **duty link / view button** (eye glyph, matching the DSH Agent-preset interaction) opens a role-duty dialog — slogan + working order + deliverable + key rules (full Chinese copy, source `client/roles.ts` ROLE_DUTY). The card has no model or reasoning-effort dropdown and no "apply preset" entry: a role's duty never chooses a member's model.
-- **Model selection** (second card): lets the Agent choose models for subagents — a per-`${provider}/${model}` switch (`modelCapabilities[key].enabled`) plus an optional **maximum reasoning effort** per model (`maxReasoningEffort`, which must be an effort id that model's adapter advertises). The dropdown lists `reasoning.efforts` from `ctx.llm.resolveModelInfo` in adapter order; a model without reasoning capability renders no effort control and the server never invents one. No provider is implicitly granted — every model, `deepseek-official` included, has a real switch and can be turned off, so "no grants at all" is a valid configuration. The card's **model preset reference** is read-only and writes nothing.
+- **Role presets** (first card): **duties only**. A compact grid of role chips (display name + mono id + one-line duty summary); one hint line says duties never choose a member's model, and clicking a chip opens the role-duty dialog — slogan + working order + deliverable + key rules (full Chinese copy, source `client/roles.ts` ROLE_DUTY). The card has no model or reasoning-effort dropdown and no "apply preset" entry.
+- **Model selection** (second card): lets the Agent choose models for subagents — a per-`${provider}/${model}` switch (`modelCapabilities[key].enabled`) plus an optional **maximum reasoning effort** per model (`maxReasoningEffort`, which must be an effort id that model's adapter advertises). The dropdown lists `reasoning.efforts` from `ctx.llm.resolveModelInfo` in adapter order; a model without reasoning capability renders no effort control and the server never invents one. **The switch is the permission**: a model can carry a member only while it is switched on, `deepseek-official` included. Switching everything off is a legal state, but then no member can start (the spawn fails with a message pointing at this card) — the session model the captain itself runs on is no exception. The card renders switches and effort ceilings only: the former read-only **model preset reference** is gone.
 - **Legacy configuration stays readable**: `enabledModels` (old grant table) and `roleDefaults` / profile `roleLlmDefaults` / built-in `DEFAULT_ROLE_LLM` (old role-route chain) are still read and never auto-deleted, but they **no longer participate in new-member routing** and are no longer rendered in the settings card.
-- **New-member routing**: without an explicit `provider`/`model` a member **inherits the captain's current route**, which is not a grant decision — it stays usable after every grant is switched off. An explicit route is validated against the grants exactly (ungranted, unknown effort, or above the ceiling fails instead of silently falling back).
+- **New-member routing**: without an explicit `provider`/`model` a member **inherits the captain's current route**, but inheritance only picks the route — it does not authorize it. Both paths are validated against the same switches, so an ungranted inherited route fails exactly like an explicit one (ungranted, unknown effort, or above the ceiling fails instead of silently falling back).
 
 ## Self-growing framework
 

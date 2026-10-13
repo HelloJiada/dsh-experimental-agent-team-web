@@ -29,13 +29,13 @@
       inject:
         - sessionProjections
 
-# 历史兼容说明：DSH 0.1.5-rc.2 及同类 harness 若子 agent 加入父 preset
-# (不继承父 agent scope)，按需加载交付不到成员，需设置 registration: eager。
-# 当前 DSH 0.1.7-rc.2 的真实 profile 行为尚待冒烟验证；先使用 lazy 默认，
-# 仅在验证确认相同继承语义时启用下面的 eager 覆写。
-# 如已确认当前 host 为 preset-only 继承，取消下方注释以使用 eager：
+# 注册模式：默认 lazy 即可。当前 DSH(0.2.1-alpha.2)的子 agent 加入父 preset、不继承父
+# agent scope(child-agent.ts applyChildComposition → agentPresets.composeFrom 后才 restrict)，
+# 成员面由插件在成员首个 agent/pre-step(请求组装前)装进成员自己的 scope，只含成员可见子集；
+# 队长专属工具因此是"不存在"而非"被 deny"，也不需要 tools.restrict() 能解析这些名字。
+# 只有连成员自己 scope 的注册都拿不到时，才取消下面注释切到 eager(整面进全局层，代价是
+# 每个会话约 4.9k tokens/请求)。
 # - id: agent-team-web
-#   inject:
-#     - sessionProjections
+#   name: "@deepseek-ai/dsh-experimental-agent-team-web"
 #   config:
 #     registration: eager

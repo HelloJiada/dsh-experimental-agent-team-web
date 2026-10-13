@@ -82,25 +82,27 @@ export interface Config {
      */
     trustedHosts?: string[];
     /**
-     * How the 14 `agent_teams_*` tools reach the model.
+     * How the `agent_teams_*` tools reach the model.
      *
-     * `lazy` (default): only a hint section plus `agent_teams_activate` are
-     * always on, and the real surface is installed into the activating session's
-     * own scope. Cheapest for sessions that never use AgentTeams, but it
-     * requires the harness to let a subagent child inherit its parent AGENT
-     * scope's registrations. DSH `0.1.5-rc.2` does not: a child joins its
-     * parent's PRESET (`@deepseek-ai/dsh-subagent`,
-     * `applyChildComposition` → `agentPresets.composeFrom(childCtx, parent.ctx)`),
-     * so members see none of the team tools and the member deny-filter cannot
-     * even name them — `tools.restrict()` accepts only global or ancestor-scope
-     * names, and it throws `unknown global tool "agent_teams_create"…` before
-     * the first member exists.
+     * `lazy` (default): only a hint section plus `agent_teams_activate` are always
+     * on. Activating installs the full surface into the calling session's own
+     * scope, and each member gets the member-visible subset installed into its
+     * own scope at its first `agent/pre-step` — before that step's request is
+     * assembled. That second half is what makes on-demand activation work on a
+     * harness whose subagent children join the parent PRESET instead of
+     * inheriting the parent agent scope (verified on DSH `0.1.7-rc.2`:
+     * `@deepseek-ai/dsh-subagent` `applyChildComposition` runs
+     * `agentPresets.composeFrom(childCtx, parent.ctx)` and only then
+     * `tools.restrict(childFilter)`). Only `MEMBER_TOOL_NAMES` are registered into
+     * a member's scope, so the captain-only tools are absent rather than denied —
+     * no `tools.restrict({ deny })` name has to resolve globally. Sessions that
+     * never activate pay only the hint.
      *
-     * `eager`: register the whole surface in the global layer at mount — the
-     * v0.1.14 shape. Every session pays the full ~4.9k tokens/request, and
-     * members get the tools by global inheritance while the captain-only ones
-     * are denied per child scope. Required on harnesses where child scopes join
-     * the parent preset instead of inheriting the parent agent scope.
+     * `eager`: register the whole surface in the global layer at mount (the
+     * v0.1.14 shape). Every session pays the full ~4.9k tokens/request; members
+     * inherit the tools globally and the per-child deny filter compiles. Keep it
+     * as the fallback for a harness where even a member's own scope cannot
+     * receive registrations.
      */
     registration?: 'lazy' | 'eager';
     /** 旧模型授权表(key `${provider}/${model}` → true)。设置页写面字段,必须

@@ -1,17 +1,15 @@
 /**
  * AgentTeam 设置中心 section(t13 重构)——一个 settings.section 两张卡。
  *
- * 卡片一 RolePresetCard:角色预设——每角色一个职责盒子(名称 + mono id +
- * 职责摘要 + 职责说明/查看入口),不含任何模型或档位控件。
+ * 卡片一 RolePresetCard:角色预设——紧凑网格,每格=角色名 + mono id + 单行职责
+ * 摘要,整格可点开完整职责说明;不含任何模型或档位控件。
  * 卡片二 ModelGrantCard(模型选择):每 provider 的每模型一行 + 真实 switch
  * (key `${provider}/${model}` 复合,deepseek-official 同样可开关) + 最高
- * 思考档位(由 adapter reasoning 能力驱动) + 只读模型预设参考。
- * 「默认」(删 settings 覆盖,回落到 profile.roleLlmDefaults → DEFAULT_ROLE_LLM)。
+ * 思考档位(由 adapter reasoning 能力驱动),不再渲染任何预设参考区块。
  *
- * 数据流:模型/角色列表 = /state 顶层(providers 含 advisory models,
- * roleDefaults 三源链合并视图含 overridden 标记);授权/覆盖状态 =
- * settingsScope 命名空间 resolved value;写面 = scope.set(宿主持久化,
- * spawn 校验随之下次 add_member 生效)。
+ * 数据流:模型列表 = /state 顶层(providers 含 advisory models);
+ * 授权状态 = settingsScope 命名空间 resolved value;写面 = scope.set
+ * (宿主持久化,spawn 校验随之下次 add_member 生效)。
  *
  * 纯逻辑(providerGrantRows/toggleProviderModels/roleDefaultsMap 等)导出供 node 直测,
  * 与 activity-panel-helpers.test 同构。
@@ -74,10 +72,6 @@ export interface ProviderWithModels {
     readonly name: string;
     readonly models?: readonly (ProviderModelCapability | string)[];
 }
-export declare function modelCapabilityEntries(providers: readonly ProviderWithModels[]): readonly {
-    provider: string;
-    model: ProviderModelCapability;
-}[];
 export declare function modelCapabilityValue(value: ProviderGrantsSectionValue | undefined, provider: string, model: string): {
     enabled: boolean;
     maxReasoningEffort?: string;
@@ -98,22 +92,6 @@ export interface ProviderGrantRow {
 }
 /** 角色预设行(t17:合并视图直接透传,模型选项改由全 provider 分组提供)。 */
 export type RolePresetRow = RolePresetView;
-export type PresetGroupId = 'ds' | 'gpt' | 'mixed';
-export interface RolePresetTemplateEntry {
-    readonly provider?: string;
-    readonly model?: string;
-    readonly reasoningEffort?: string;
-}
-export interface RolePresetTemplate {
-    readonly id: string;
-    readonly group: PresetGroupId;
-    readonly label: string;
-    readonly description: string;
-    readonly cost: string;
-    readonly speed: string;
-    readonly quality: string;
-    readonly roleDefaults: Readonly<Record<string, RolePresetTemplateEntry>>;
-}
 /** 注入面:scope(读写命名空间) + t(文案)。 */
 export interface ProviderGrantsSectionInjected {
     scope?: SettingsScope<ProviderGrantsSectionValue>;
@@ -121,25 +99,6 @@ export interface ProviderGrantsSectionInjected {
 }
 /** Props delivered by the slot outlet: the inject face spread flat. */
 export type ProviderGrantsSectionProps = Partial<InjectFace<ProviderGrantsSectionInjected>>;
-/** 思考深度选项(与角色档位 effort 值域对齐)。 */
-export declare const EFFORT_OPTIONS: readonly ["high", "max", "low", "off"];
-export declare const ROLE_PRESET_TEMPLATES: readonly RolePresetTemplate[];
-/**
- * 已知**不支持** reasoning effort 的 provider 列表(t8 通用适配)。
- * 这些 provider 的模型没有可选的思考深度——自动重分配/模型切换/effort
- * 下拉统一查表,不硬编码单一 provider。后续新增不支持 effort 的模型,
- * 只需在此追加 provider id(或更细粒度时扩展为 Record)。
- * 当前为空:cc-switch(GPT-5.6)经 anthropic-messages 适配器支持 adaptive
- * thinking 思考深度(low/medium/high/max)——t13 纠正 t26/t8 的误判(当时因
- * settings.yaml 缺 reasoningEfforts 映射导致适配器误报不支持)。未列出的
- * provider 默认支持(未知按支持处理)。
- */
-export declare const NO_REASONING_EFFORT_PROVIDERS: readonly string[];
-/**
- * 纯函数(t8):该 provider 是否支持 reasoning effort(未知 provider 默认支持)。
- * 替代 t26 的硬编码 `=== 'cc-switch'` 判断,支持未来任意新模型。
- */
-export declare function supportsReasoningEffort(provider: string | undefined): boolean;
 /** 纯函数:复合 key(`${provider}/${model}`)。 */
 export declare function modelKeyOf(provider: string, model: string): string;
 /**
@@ -167,81 +126,12 @@ export interface RoleLlmDefaultValue {
     readonly reasoningEffort?: string;
     readonly auto?: boolean;
 }
-/** 自动重分配档位表(t23,用户确认 v2;t26 修正:cc-switch GPT-5.6 不支持
- * reasoning effort,cc-switch 目标不配 effort——仅模型,effort 由模型默认;
- * deepseek 回退档位保留 effort(deepseek 支持)。sol=最强推理(pro 级 5 角色),
- * terra=稳健执行(技术/质检),luna=轻量省成本(文书/文宣,支持视觉)。 */
-export interface RoleAutoAssignEntry {
-    readonly provider: string;
-    readonly model: string;
-    /** 目标模型的 effort;cc-switch(GPT-5.6)不支持 reasoning → undefined 不写。 */
-    readonly reasoningEffort?: string;
-    readonly fallback: {
-        readonly provider: string;
-        readonly model: string;
-        readonly reasoningEffort: string;
-    };
-}
-export declare const ROLE_AUTO_ASSIGN_TABLE: Readonly<Record<string, RoleAutoAssignEntry>>;
-/**
- * 纯函数(t23;t26 修正):授权变化后自动重分配角色档位(写 settings 覆盖层,
- * 不动默认/内置表)。逐角色(table 的 key):
- * a. 手动覆盖(roleDefaults[role] 存在且无 auto 标记)→ 保留不动(尊重显式选择);
- * b. 否则(继承态或带 auto 标记的自动分配结果)→ 目标模型已授权 → 写
- *    {provider:'cc-switch', model:目标, auto:true}(cc-switch GPT-5.6 不支持
- *    reasoning effort,不落 effort 字段;deepseek 回退条目保留 effort);
- *    目标未授权 → 写 deepseek 原档位回退(deepseek-official 恒授权),同样 auto:true。
- * 返回新 map 仅含变更(无关角色/已有覆盖原样保留)。
- */
-export declare function autoAssignRoleDefaults(current: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, enabledModels: Readonly<Record<string, boolean>> | undefined, table?: Readonly<Record<string, RoleAutoAssignEntry>>): Record<string, RoleLlmDefaultValue>;
 /** 纯函数(t20):实时合并角色档位——显示值 = 实时覆盖(scope snapshot)
  * ?? base(/state 的 profile ?? DEFAULT,不含覆盖);overridden 由实时覆盖
  * 判定(驱动「恢复默认」disabled 态与选中回显)。 */
 export declare const MEMBER_PRESET_ROLES: readonly ["researcher", "engineer", "qa", "designer", "data", "docs", "security", "reviewer", "commissar"];
 export declare function roleDutyDescription(role: string, t: AgentTeamsTranslate): string;
 export declare function mergeRoleDefaults(base: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, overrides: Readonly<Record<string, RoleLlmDefaultValue>> | undefined): readonly RolePresetView[];
-/** 纯函数(t25):是否存在任一档位表目标模型已授权(初始化分配的前提——
- * 有目标可分配才写,避免无谓覆盖/写入)。 */
-export declare function autoAssignHasTarget(enabledModels: Readonly<Record<string, boolean>> | undefined, table?: Readonly<Record<string, RoleAutoAssignEntry>>): boolean;
-/** 纯函数(t25):初始化重分配幂等判定——按表重算结果与当前覆盖是否不同
- * (无变更则不写 scope,避免无谓写入/触发 uSES 重渲染循环)。 */
-export declare function autoAssignDiffers(current: Readonly<Record<string, RoleLlmDefaultValue>> | undefined, enabledModels: Readonly<Record<string, boolean>> | undefined, table?: Readonly<Record<string, RoleAutoAssignEntry>>): boolean;
-/** 纯函数:角色档位覆盖写后的 roleDefaults map(value=undefined → 删覆盖)。 */
-export declare function roleDefaultsMap(current: Readonly<Record<string, {
-    provider?: string;
-    model?: string;
-    reasoningEffort?: string;
-}>> | undefined, roleKey: string, value: {
-    provider?: string;
-    model?: string;
-    reasoningEffort?: string;
-} | undefined): Record<string, {
-    provider?: string;
-    model?: string;
-    reasoningEffort?: string;
-}>;
-/** 纯函数(t17):「恢复默认」= 清空全部 roleDefaults 覆盖,所有角色回落三源链。 */
-export declare function resetRoleDefaults(): Record<string, {
-    provider?: string;
-    model?: string;
-    reasoningEffort?: string;
-}>;
-export declare function rolePresetTemplatesByGroup(group: PresetGroupId): readonly RolePresetTemplate[];
-export declare function applyRolePresetTemplate(template: RolePresetTemplate): Record<string, {
-    provider?: string;
-    model?: string;
-    reasoningEffort?: string;
-}>;
-export declare function presetDiffCount(rows: readonly RolePresetRow[], template: RolePresetTemplate): number;
-/** 纯函数(t17/t22):模型下拉按 provider 分组——可调度判定与第一张卡
- * providerGrantRows.enabled 语义一致:deepseek-official 恒可调度(全量模型);
- * 其他 provider = models 非空 && 全部模型已授权(enabledModels 每个
- * `${provider}/${model}` key 均为 true)。enabledModels 缺省(undefined)时
- * 不过滤(兼容旧行为/快照缺省);过滤后空组剔除。 */
-export declare function rolePresetModelGroups(providers: readonly ProviderWithModels[], enabledModels?: Readonly<Record<string, boolean>>): readonly {
-    providerId: string;
-    models: readonly string[];
-}[];
 /** /state 顶层自成长数据(t10:设置页第三张卡数据源)。 */
 export interface SelfGrowthView {
     readonly total: number;

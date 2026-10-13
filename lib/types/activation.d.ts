@@ -32,16 +32,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { type AgentTeamsRuntime, type ToolsConfig } from './tools.ts';
-/**
- * The collaboration tools activated together, in protocol order.
- *
- * MUST stay identical to what {@link registerAgentTeamsTools} registers: this
- * list is the `Tools:` line the captain protocol ends with, so a name that is
- * registered but unlisted (or listed but absent) quietly misleads the model —
- * `agent_teams_set_mode` was missing here until this list was pinned by
- * `activation.test.ts`.
- */
-export declare const TEAM_TOOL_NAMES: readonly ["agent_teams_create", "agent_teams_add_member", "agent_teams_remove_member", "agent_teams_create_task", "agent_teams_triage_finding", "agent_teams_reassign_task", "agent_teams_claim_task", "agent_teams_update_task", "agent_teams_review_task", "agent_teams_send_message", "agent_teams_status", "agent_teams_retro_review", "agent_teams_best_practices", "agent_teams_set_mode", "agent_teams_delete"];
+export { CAPTAIN_ONLY_TOOL_NAMES, MEMBER_TOOL_NAMES, TEAM_TOOL_NAMES } from './tool-surface.ts';
 /**
  * Prompt-section name shared by the always-on hint and the activated
  * protocol. The agent-scoped protocol registers under this same name so it
@@ -78,20 +69,53 @@ export declare function isAgentTeamsActivated(agent: Agent): boolean;
  */
 export declare function activateAgentTeams(agent: Agent, config: ToolsConfig, sectionOrder: number, runtime?: AgentTeamsRuntime): boolean;
 /**
- * Register the always-on pieces for `registration: 'eager'`: the full 14-tool
- * surface plus the captain protocol in the PLUGIN ROOT (the global layer),
- * with no activation step at all.
+ * Install the member-visible surface into one member's own scope.
  *
- * This global-registration mode is kept for harnesses where on-demand
- * activation cannot deliver tools to subagent children. Preset-only child
- * composition was historically observed on DSH `0.1.5-rc.2`
- * (`@deepseek-ai/dsh-subagent` `applyChildComposition`); current DSH
- * `0.1.7-rc.2` behavior has not been verified in a real profile. In the
- * preset-only case, members have none of the team tools and the member
- * deny-filter cannot name them, because `tools.restrict()` accepts only global
- * or ancestor-scope names.
- * Global registration reaches every agent, so members get the tools and the
- * per-child deny filter compiles.
+ * This is what keeps `registration: 'lazy'` usable on a harness whose subagent
+ * children join the parent PRESET instead of inheriting the parent agent scope
+ * (verified on DSH `0.1.7-rc.2`): the captain's own scope is unreachable from a
+ * member, but the member's scope is ours to fill, and `agent/pre-step` runs
+ * before that step's request is assembled. Only {@link MEMBER_TOOL_NAMES} are
+ * registered, so the captain-only tools are absent rather than merely denied —
+ * which also means no `tools.restrict({ deny })` name has to resolve globally.
+ *
+ * Idempotent per live agent, sharing {@link activatedAgents} with the captain
+ * path: an agent is either a captain or a member in this plugin's model, never
+ * both, and either way it must not receive a second layer.
+ *
+ * @param agent - the member agent whose `ctx` receives the subset.
+ * @param config - resolved tool config (shared with the plugin root).
+ * @param runtime - process-wide runtime installed once at plugin mount.
+ * @returns `true` when this call installed the subset, `false` when it was already there.
+ */
+export declare function activateMemberAgentTeams(agent: Agent, config: ToolsConfig, runtime?: AgentTeamsRuntime): boolean;
+/**
+ * Install the member-scope activation used by `registration: 'lazy'`.
+ *
+ * Runs inside the `agent/pre-step` waterfall, i.e. before the stepping agent's
+ * request is assembled, so the tool subset is visible in that same step. Only
+ * subagent children are considered (`session.header.origin === 'subagent'`),
+ * which keeps the per-step cost of ordinary sessions at one property read; the
+ * durable roster lookup happens only for children this process has not already
+ * registered as members.
+ *
+ * @param ctx - host context providing the `agent/pre-step` waterfall.
+ * @param config - resolved tool config.
+ * @param stateDir - configured team state directory (membership fallback).
+ * @param runtime - process-wide runtime installed once at plugin mount.
+ * @returns a disposer removing the hook.
+ */
+export declare function installMemberSurfaceActivation(ctx: Context, config: ToolsConfig, stateDir: string, runtime?: AgentTeamsRuntime): () => void;
+/**
+ * Register the always-on pieces for `registration: 'eager'`, the fallback for
+ * harnesses where even a member's own scope cannot receive registrations.
+ *
+ * This global-registration mode is the fallback for a harness where even a
+ * member's own scope cannot receive registrations; the normal path is `lazy`
+ * plus {@link installMemberSurfaceActivation}, which fills each member's scope
+ * at its first pre-step. Use this one when that is not enough: it reaches every
+ * agent, so the per-child deny filter also compiles — and every session pays
+ * the full token cost.
  *
  * @param ctx - the plugin root context.
  * @param config - resolved tool config.

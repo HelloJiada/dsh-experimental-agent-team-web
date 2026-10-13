@@ -18,7 +18,6 @@ import {
   modelGrantedFromValue,
   modelCapabilityFromValue,
   modelKey,
-  resolveRoleDefault,
   settingsAccessFromConfig,
   settingsNamespace,
   wireAgentTeamSettings,
@@ -129,23 +128,6 @@ describe('modelGrantedFromValue — 复合 key 模型授权判定', () => {
   })
 })
 
-describe('resolveRoleDefault — 三源链(config 覆盖 → profile → builtin)', () => {
-  const profile = { engineer: { model: 'deepseek-v4-flash' }, qa: { model: 'deepseek-v4-flash' } }
-  const builtin = { engineer: { model: 'deepseek-v4-pro', reasoningEffort: 'high' }, researcher: { model: 'deepseek-v4-pro' } }
-
-  it('config 覆盖优先;无覆盖 → profile;无 profile → builtin;都无 → undefined', () => {
-    const withOverride = { roleDefaults: { engineer: { model: 'custom-m1', reasoningEffort: 'low' } } }
-    expect(resolveRoleDefault(withOverride, profile, builtin, 'engineer')).toEqual({ model: 'custom-m1', reasoningEffort: 'low' }) // read-only legacy migration view
-    expect(resolveRoleDefault({}, profile, builtin, 'engineer')).toEqual({ model: 'deepseek-v4-flash' })
-    expect(resolveRoleDefault({}, {}, builtin, 'researcher')).toEqual({ model: 'deepseek-v4-pro' })
-    expect(resolveRoleDefault({}, {}, {}, 'unknown-role')).toBeUndefined()
-  })
-
-  it('roleDefaults 缺失字段不覆盖下层(部分覆盖语义由调用方保证)', () => {
-    const partial = { roleDefaults: { engineer: { reasoningEffort: 'off' } } }
-    expect(resolveRoleDefault(partial, profile, builtin, 'engineer')).toEqual({ reasoningEffort: 'off' })
-  })
-})
 
 describe('settingsAccessFromConfig — 读访问直接来自 apply 期 config', () => {
   it('判定/快照三通道都读同一份 config', () => {
@@ -226,16 +208,9 @@ describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)'
       modelCapabilities: { 'cc-switch/gpt-5.6-terra': { enabled: false } },
     })
 
-    // 角色覆盖写 + 「默认」删覆盖
-    await access.setRoleDefault?.('engineer', { model: 'gpt-5.6-terra' })
-    expect(calls[3]?.patch).toEqual({ roleDefaults: { engineer: { model: 'gpt-5.6-terra' } } })
-    await access.setRoleDefault?.('engineer', undefined)
-    expect(calls[4]?.patch).toEqual({ roleDefaults: {} })
-
     // 释放:写面清空(读访问由 config 闭包持有,不随之清空)
     disposer?.()
     expect(access.setModelGrant).toBeUndefined()
-    expect(access.setRoleDefault).toBeUndefined()
     expect(access.modelGrantedFor?.('deepseek-official', 'x')).toBe(false)
   })
 
@@ -243,7 +218,6 @@ describe('wireAgentTeamSettings — 仅写面(经宿主 settings.update 落盘)'
     const access: AgentTeamSettingsAccess = settingsAccessFromConfig({ enabledModels: {} })
     wireAgentTeamSettings({}, access)
     expect(access.setModelGrant).toBeUndefined()
-    expect(access.setRoleDefault).toBeUndefined()
     expect(access.modelGrantedFor?.('deepseek-official', 'deepseek-v4-pro')).toBe(false)
   })
 })

@@ -15,6 +15,7 @@
  * @module dsh-agent-team-web/member-state-guard
  */
 import type { Context } from '@deepseek-ai/cordis';
+import type { Agent } from '@deepseek-ai/dsh-agent';
 /**
  * Whether a resolved candidate path is inside the state root. Both sides are
  * resolved absolute paths; a prefix match is refused (a state dir sibling
@@ -40,6 +41,14 @@ export declare function unregisterMemberAgent(id: string): void;
 export declare function isMemberAgent(id: string): boolean;
 /** Test/process-reset helper: forget only the process-local acceleration set. */
 export declare function resetMemberAgents(): void;
+/**
+ * Whether one live agent is a member of a team — process-local set first, then
+ * the durable roster for a child this process never saw spawn (cold resume).
+ * The captain is never a member, even though it is a participant.
+ * @param agent - the live agent to classify.
+ * @param stateDir - configured state directory name.
+ */
+export declare function isKnownMemberAgent(agent: Agent, stateDir: string): Promise<boolean>;
 /**
  * Install the dispatch-time state-dir guard for member agents.
  * @param ctx - the plugin context (injects `tools`).

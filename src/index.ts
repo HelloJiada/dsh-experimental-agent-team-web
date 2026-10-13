@@ -29,6 +29,7 @@ import { installAgentTeamsRuntime, type ToolsConfig } from './tools.ts'
 import { DEFAULT_ROLE_LLM } from './members.ts'
 import {
   activateAgentTeams,
+  installMemberSurfaceActivation,
   registerAgentTeamsActivation,
   registerAgentTeamsSurface,
 } from './activation.ts'
@@ -141,25 +142,27 @@ export interface Config {
    */
   trustedHosts?: string[]
   /**
-   * How the 14 `agent_teams_*` tools reach the model.
+   * How the `agent_teams_*` tools reach the model.
    *
-   * `lazy` (default): only a hint section plus `agent_teams_activate` are
-   * always on, and the real surface is installed into the activating session's
-   * own scope. Cheapest for sessions that never use AgentTeams, but it
-   * requires the harness to let a subagent child inherit its parent AGENT
-   * scope's registrations. DSH `0.1.5-rc.2` does not: a child joins its
-   * parent's PRESET (`@deepseek-ai/dsh-subagent`,
-   * `applyChildComposition` → `agentPresets.composeFrom(childCtx, parent.ctx)`),
-   * so members see none of the team tools and the member deny-filter cannot
-   * even name them — `tools.restrict()` accepts only global or ancestor-scope
-   * names, and it throws `unknown global tool "agent_teams_create"…` before
-   * the first member exists.
+   * `lazy` (default): only a hint section plus `agent_teams_activate` are always
+   * on. Activating installs the full surface into the calling session's own
+   * scope, and each member gets the member-visible subset installed into its
+   * own scope at its first `agent/pre-step` — before that step's request is
+   * assembled. That second half is what makes on-demand activation work on a
+   * harness whose subagent children join the parent PRESET instead of
+   * inheriting the parent agent scope (verified on DSH `0.1.7-rc.2`:
+   * `@deepseek-ai/dsh-subagent` `applyChildComposition` runs
+   * `agentPresets.composeFrom(childCtx, parent.ctx)` and only then
+   * `tools.restrict(childFilter)`). Only `MEMBER_TOOL_NAMES` are registered into
+   * a member's scope, so the captain-only tools are absent rather than denied —
+   * no `tools.restrict({ deny })` name has to resolve globally. Sessions that
+   * never activate pay only the hint.
    *
-   * `eager`: register the whole surface in the global layer at mount — the
-   * v0.1.14 shape. Every session pays the full ~4.9k tokens/request, and
-   * members get the tools by global inheritance while the captain-only ones
-   * are denied per child scope. Required on harnesses where child scopes join
-   * the parent preset instead of inheriting the parent agent scope.
+   * `eager`: register the whole surface in the global layer at mount (the
+   * v0.1.14 shape). Every session pays the full ~4.9k tokens/request; members
+   * inherit the tools globally and the per-child deny filter compiles. Keep it
+   * as the fallback for a harness where even a member's own scope cannot
+   * receive registrations.
    */
   registration?: 'lazy' | 'eager'
   /** 旧模型授权表(key `${provider}/${model}` → true)。设置页写面字段,必须
@@ -258,15 +261,19 @@ export function apply(ctx: Context, config: Config): void {
   const runtime = installAgentTeamsRuntime(ctx, toolsConfig)
   const sectionOrder = config.promptSectionOrder ?? 117
   // 注册方式见 Config.registration:
-  // - lazy(默认):这里只装提示段 + 激活工具,真面在激活时装进调用方 agent 的 scope。
-  // - eager:整面装进全局层。历史上 DSH 0.1.5-rc.2 的子 agent 加入「父的
-  //   preset」而非继承「父 agent 的 scope」,lazy 成员拿不到工具且 deny 过滤
-  //   无法命名这些工具。当前 DSH 0.1.7-rc.2 的运行时组合尚未真实 profile 验证。
+  // - lazy(默认):这里只装提示段 + 激活工具,真面在激活时装进调用方 agent 的
+  //   scope。DSH 0.1.7-rc.2 的子 agent 加入「父的 preset」而非继承「父 agent 的
+  //   scope」,所以成员的可见面不再依赖继承:激活期装的队长面留在队长 scope,
+  //   成员面由 installMemberSurfaceActivation 在成员 pre-step(请求组装前)
+  //   装进成员自己的 scope,只含 MEMBER_TOOL_NAMES。
+  // - eager:整面装进全局层,每个会话都付 ~4.9k tokens/请求;仅当成员连自己
+  //   scope 的注册也拿不到时作为兜底。
   const eager = (config.registration ?? 'lazy') === 'eager'
   if (eager) {
     registerAgentTeamsSurface(ctx, toolsConfig, sectionOrder, runtime)
   } else {
     registerAgentTeamsActivation(ctx, toolsConfig, sectionOrder, runtime)
+    installMemberSurfaceActivation(ctx, toolsConfig, toolsConfig.stateDir, runtime)
   }
   const activateAgent: AgentTeamsActivation = eager
     // 全局层已经装好整面,激活无事可做(斜杠命令仍照常注入目标文本)。

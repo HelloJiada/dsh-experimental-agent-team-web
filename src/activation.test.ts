@@ -27,14 +27,19 @@ import { describe, expect, it } from 'vitest'
 import {
   AGENT_TEAMS_ACTIVATION_TOOL,
   AGENT_TEAMS_USAGE_SECTION,
+  CAPTAIN_ONLY_TOOL_NAMES,
+  MEMBER_TOOL_NAMES,
   TEAM_TOOL_NAMES,
   activateAgentTeams,
+  activateMemberAgentTeams,
   activationHintText,
+  installMemberSurfaceActivation,
   isAgentTeamsActivated,
   registerAgentTeamsActivation,
   registerAgentTeamsSurface,
   usageSectionText,
 } from './activation.ts'
+import { registerMemberAgent, resetMemberAgents } from './member-state-guard.ts'
 import type { AgentTeamsRuntime, ToolsConfig } from './tools.ts'
 import { registerAgentTeamsTools } from './tools.ts'
 import type { TeamState } from './types.ts'
@@ -347,3 +352,99 @@ describe('activation — 服务访问走插件根 ctx,注册走会话 scope', ()
     }
   })
 })
+
+/**
+ * 按需加载的第二半:成员面不再依赖「子 scope 继承父 scope」这一宿主行为,
+ * 而是由成员自己的 pre-step(请求组装之前)装进成员自己的 scope。
+ */
+describe("registration: 'lazy' — 成员面装进成员自己的 scope", () => {
+  it('工具面划分是全集且互斥(队长面 + 成员面 = 全部工具)', () => {
+    expect([...MEMBER_TOOL_NAMES, ...CAPTAIN_ONLY_TOOL_NAMES].sort()).toEqual([...TEAM_TOOL_NAMES].sort())
+    const captainOnly: readonly string[] = CAPTAIN_ONLY_TOOL_NAMES
+    expect(MEMBER_TOOL_NAMES.filter(name => captainOnly.includes(name))).toEqual([])
+  })
+
+  it('allow-list 只装成员子集,队长专属工具一个都不注册', () => {
+    const memberLayer = layer()
+    registerAgentTeamsTools(ctxOf(memberLayer), config, runtime, MEMBER_TOOL_NAMES)
+
+    expect([...memberLayer.tools.keys()].sort()).toEqual([...MEMBER_TOOL_NAMES].sort())
+    for (const name of CAPTAIN_ONLY_TOOL_NAMES) expect(memberLayer.tools.has(name)).toBe(false)
+  })
+
+  it('activateMemberAgentTeams 幂等,且不给成员装队长协议段', () => {
+    const memberLayer = layer()
+    const member = memberAgentOf(memberLayer, 'session-member-1', 'subagent')
+
+    expect(activateMemberAgentTeams(member, config, runtime)).toBe(true)
+    expect(activateMemberAgentTeams(member, config, runtime)).toBe(false)
+    expect([...memberLayer.tools.keys()].sort()).toEqual([...MEMBER_TOOL_NAMES].sort())
+    expect(memberLayer.sections.size).toBe(0)
+    expect(isAgentTeamsActivated(member)).toBe(true)
+  })
+
+  it('pre-step 钩子只对「已登记成员 + subagent 子代理」装上成员面', async () => {
+    resetMemberAgents()
+    registerMemberAgent('session-member-2')
+    const harness = preStepHarness()
+    const disposer = installMemberSurfaceActivation(harness.ctx, config, config.stateDir, runtime)
+    try {
+      // 普通会话(非 subagent 子代理):一次属性读之后直接放行,不装任何工具。
+      const plainLayer = layer()
+      const plain = memberAgentOf(plainLayer, 'session-captain', undefined)
+      await harness.fire(plain)
+      expect(plainLayer.tools.size).toBe(0)
+
+      // subagent 子代理但不是本队成员(例如用户自己派的子代理):不装。
+      const strayLayer = layer()
+      await harness.fire(memberAgentOf(strayLayer, 'session-stray', 'subagent'))
+      expect(strayLayer.tools.size).toBe(0)
+
+      // 已登记成员:装上成员子集。
+      const memberLayer = layer()
+      const member = memberAgentOf(memberLayer, 'session-member-2', 'subagent')
+      await harness.fire(member)
+      expect([...memberLayer.tools.keys()].sort()).toEqual([...MEMBER_TOOL_NAMES].sort())
+
+      // 同一步再触发:幂等,不重复注册。
+      const before = memberLayer.tools.size
+      await harness.fire(member)
+      expect(memberLayer.tools.size).toBe(before)
+    } finally {
+      disposer()
+      resetMemberAgents()
+    }
+  })
+})
+
+/** Build a live-looking agent carrying the session origin the hook branches on. */
+function memberAgentOf(target: Layer, id: string, origin: 'subagent' | undefined): Agent {
+  return {
+    id,
+    ctx: ctxOf(target),
+    session: { header: { origin, cwd: '/ws' } },
+  } as unknown as Agent
+}
+
+/** Capture the `agent/pre-step` handler the installer registers. */
+function preStepHarness(): { ctx: Context; fire: (agent: Agent) => Promise<{ kind: string }> } {
+  type Handler = (
+    event: { agent: Agent },
+    next: () => Promise<{ kind: string }>,
+  ) => Promise<{ kind: string }>
+  let handler: Handler | undefined
+  const ctx = {
+    on: (name: string, fn: Handler) => {
+      if (name === 'agent/pre-step') handler = fn
+      return () => undefined
+    },
+    logger: { warn: () => undefined, info: () => undefined, error: () => undefined, debug: () => undefined },
+  } as unknown as Context
+  return {
+    ctx,
+    fire: async (agent: Agent) => {
+      if (handler === undefined) throw new Error('agent/pre-step handler was not installed')
+      return await handler({ agent }, async () => ({ kind: 'enter' }))
+    },
+  }
+}

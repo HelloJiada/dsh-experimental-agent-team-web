@@ -8,7 +8,7 @@ Consumers install a prebuilt bundle. They must never need to build from source o
 
 The bundle never imports the DeepSeek Harness monorepo at runtime. All host
 interfaces come from npm-published `@deepseek-ai/dsh-*` packages (currently pinned
-to `0.1.7-rc.2` in this repository), and the AgentTeams kernel (roster, mailbox,
+to `0.2.1-alpha.2` in this repository), and the AgentTeams kernel (roster, mailbox,
 task DAG, scheduler) is implemented inside this repository. Consumers therefore
 never trigger a large monorepo git fetch during install, and no unpublished
 package is required.

@@ -193,147 +193,6 @@
   cursor: default;
 }
 
-.presetPopover {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 2px 0 10px;
-  padding: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 56%, transparent);
-}
-
-.presetTitle {
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.presetHelp {
-  margin: 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
-}
-
-.presetTabs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.presetTab {
-  padding: 3px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
-}
-
-.presetTab[data-active='true'] {
-  border-color: var(--dsw-alias-state-business-primary);
-  color: var(--dsw-alias-state-business-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
-}
-
-.presetList {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.presetItem {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.presetItem[data-active='true'] {
-  border-color: var(--dsw-alias-state-business-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
-}
-
-.presetItemHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.presetItemName {
-  color: var(--dsw-alias-label-primary);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-}
-
-.presetMetaRow {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.presetMetaChip {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 46%, transparent);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 10px;
-  line-height: 15px;
-}
-
-.presetItemDesc {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
-  line-height: 15px;
-}
-
-.presetDiffBadge {
-  flex: none;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 10px;
-  line-height: 15px;
-}
-
-.presetActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.presetActionGhost,
-.presetActionPrimary {
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
-}
-
-.presetActionGhost {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.presetActionPrimary {
-  border: 1px solid var(--dsw-alias-state-business-primary);
-  background: var(--dsw-alias-state-business-primary);
-  color: white;
-}
-
 /* 空态/加载占位。 */
 .empty {
   margin: 0;
@@ -343,28 +202,7 @@
   line-height: 16px;
 }
 
-/* t9:查看职责按钮——纯眼睛图标,对齐 DSH Agent 预设交互(无文字)。 */
-.viewBtn {
-  position: relative;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-.viewBtn:hover {
-  color: var(--dsw-alias-state-business-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
-}
-.viewBtn:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 1px;
-}
+/* t9:查看职责入口改为整格可点,不再单独保留图标按钮。 */
 
 /* t9:职责说明弹窗。 */
 .modalMask {
@@ -527,17 +365,15 @@
   line-height: 16px;
 }
 
-.roleBox { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 42%, transparent); }
-.roleBoxHead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.roleBoxTitle { color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 650; line-height: 20px; }
-.roleBoxId { overflow: hidden; color: var(--dsw-alias-label-tertiary); font: 10px/16px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-.roleBoxDescription { display: -webkit-box; overflow: hidden; margin: 0; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 17px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.roleBoxActions { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 6px; }
-.roleDutyLink { padding: 3px 0; border: 0; background: transparent; color: var(--dsw-alias-state-business-primary); font: inherit; font-size: 11px; cursor: pointer; }
-.roleDutyLink:hover { text-decoration: underline; }
-.roleBoxActions .viewBtn { margin-left: auto; }
+.roleHint { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 10px; line-height: 15px; }
+.roleGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.roleChip { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; padding: 6px 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 42%, transparent); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.roleChip:hover { border-color: var(--dsw-alias-state-business-primary); }
+.roleChipTop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.roleChipTitle { color: var(--dsw-alias-label-primary); font-size: 12px; font-weight: 650; line-height: 18px; white-space: nowrap; }
+.roleChipId { flex: none; overflow: hidden; color: var(--dsw-alias-label-tertiary); font: 10px/16px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.roleChipDesc { overflow: hidden; color: var(--dsw-alias-label-secondary); font-size: 10px; line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .modelHelp { margin: 0; padding: 0 10px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 17px; }
-.modelPresetReference { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 8px; }
 .modelProvider { display: flex; flex-direction: column; gap: 4px; }
 .modelProviderTitle { display: flex; align-items: center; gap: 8px; margin: 4px 0; color: var(--dsw-alias-label-primary); font-size: 12px; }
 .modelRow { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 10px; border-radius: 8px; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 35%, transparent); }

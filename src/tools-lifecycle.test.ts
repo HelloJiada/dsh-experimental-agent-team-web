@@ -4,7 +4,7 @@
  * 复用 tools-suggest-gate.test.ts 的「桩 ctx + mkdtemp 工作区 + 磁盘状态 +
  * 断言落盘」模式;桩面按质检员一号方案扩展:
  * - subagents.getProvider → 假 provider(prepareContinuable + persona/toolFilter 能力)
- * - subagents.startContinuable → 假 child(id 自增,避免成员 id 撞车)
+ * - subagents.startActivation → 假 child(id 自增,避免成员 id 撞车)
  * - ctx.llm.resolveCallConfig → 固定 provider/model
  * - 成员 agents.get 返回 running+whenIdle:调度器 kick 短路、waitForMemberIdle 快速过
  * @module dsh-agent-team-web/tools-lifecycle
@@ -79,11 +79,11 @@ interface CapturedTool {
 }
 
 /**
- * 扩展桩 ctx:支持 spawn 链路(subagents.getProvider/startContinuable/withPending)
+ * 扩展桩 ctx:支持 spawn 链路(subagents.getProvider/startActivation/withPending)
  * 与 LLM 路由解析(ctx.llm.resolveCallConfig)。MEMBER_IDS 内成员返回
  * running+whenIdle(调度 kick 短路、quiesce 快速过),其余(含队长)返回 undefined。
  * `providerOverrides` 可注入残缺 provider,用于 spawnMember 前置校验失败分支;
- * `spawnRequests` 捕获 startContinuable 请求(断言 persona 记忆注入)。
+ * `spawnRequests` 捕获 startActivation 请求(断言 persona 记忆注入)。
  */
 function harness(
   extraMemberIds: ReadonlySet<string> = new Set(),
@@ -100,7 +100,7 @@ function harness(
       reasoning?: { efforts: readonly { id: string; name: string }[]; defaultEffort?: string }
     }>
   } = {},
-  spawnRequests: Array<{ request: { persona: string; toolFilter: { deny: readonly string[] } } }> = [],
+  spawnRequests: Array<{ childId?: string; request: { persona: string; toolFilter: { deny: readonly string[] } } }> = [],
   toolConfig: Partial<ToolsConfig> = {},
 ): (name: string) => CapturedTool {
   const tools = new Map<string, CapturedTool>()
@@ -119,7 +119,7 @@ function harness(
         : undefined,
     },
     llm: {
-      // DSH 0.1.7-rc.2 LlmService owns resolveModelInfo; production member
+      // DSH 0.2.1-alpha.2 LlmService owns resolveModelInfo; production member
       // selection reads its reasoning metadata, so every stub must expose it.
       // Default: exact route with no advertised reasoning vocabulary.
       resolveModelInfo: providerOverrides.resolveModelInfo
@@ -141,9 +141,9 @@ function harness(
           toolFilter: providerOverrides.toolFilter !== false,
         },
       })),
-      startContinuable: async (options: { request: { persona: string; toolFilter: { deny: readonly string[] } } }) => {
+      startActivation: async (options: { childId?: string; request: { persona: string; toolFilter: { deny: readonly string[] } } }) => {
         spawnRequests.push(options)
-        return { childId: `child-${++childSeq}` }
+        return { childId: options.childId ?? `child-${++childSeq}`, messageId: MessageId('message-lifecycle') }
       },
     },
   } as unknown as Context
@@ -206,7 +206,7 @@ describe('agent_teams_create — 建队 + 政委自动创建', () => {
     const commissar = persisted?.members[0]
     expect(commissar?.name).toBe('政委')
     expect(commissar?.role).toBe('commissar')
-    expect(commissar?.id).toBe('child-1') // startContinuable 假 child id
+    expect(commissar?.id).toMatch(/^[0-9a-f-]{36}$/i) // reserved child id echoed by startActivation
     expect(commissar?.provider).toBe('p')
     expect(commissar?.model).toBe('m')
     // inbox 目录已建(空邮箱文件在首条消息时才创建)。
@@ -276,14 +276,14 @@ describe('agent_teams_add_member — 添加成员', () => {
       execOf(agent(workspace, CAPTAIN_ID)),
     ) as { member_name: string; member_id: string; role?: string; provider: string; model: string }
     expect(result.member_name).toBe('技术员')
-    expect(result.member_id).toBe('child-1')
+    expect(result.member_id).toMatch(/^[0-9a-f-]{36}$/i)
     expect(result.provider).toBe('p')
     expect(result.model).toBe('m')
 
     const persisted = await readTeam(stateRoot, 'team-tools')
     const added = persisted?.members.find(m => m.name === '技术员')
     expect(added?.role).toBe('engineer')
-    expect(added?.id).toBe('child-1')
+    expect(added?.id).toBe(result.member_id)
     expect(added?.status).toBe('idle')
   })
 
@@ -334,7 +334,7 @@ describe('agent_teams_add_member — 添加成员', () => {
           capabilities: { persona: true, toolFilter: true },
         }),
         list: () => ['spawn'],
-        startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
+        startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? 'child-' + Math.random().toString(36).slice(2), messageId: MessageId('message-test') }),
       },
     } as unknown as Context
     registerAgentTeamsTools(capCtx, {
@@ -383,7 +383,7 @@ describe('agent_teams_add_member — 添加成员', () => {
           capabilities: { persona: true, toolFilter: true },
         }),
         list: () => ['spawn'],
-        startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
+        startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? 'child-' + Math.random().toString(36).slice(2), messageId: MessageId('message-test') }),
       },
     } as unknown as Context
     registerAgentTeamsTools(grantCtx, { ...config })
@@ -491,7 +491,7 @@ describe('agent_teams_add_member — 添加成员', () => {
           capabilities: { persona: true, toolFilter: true },
         }),
         list: () => ['spawn'],
-        startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
+        startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? 'child-' + Math.random().toString(36).slice(2), messageId: MessageId('message-test') }),
       },
     } as unknown as Context
     registerAgentTeamsTools(grantedCtx, {
@@ -541,7 +541,7 @@ describe('agent_teams_add_member — 添加成员', () => {
           capabilities: { persona: true, toolFilter: true },
         }),
         list: () => ['spawn'],
-        startContinuable: async () => ({ childId: 'child-' + Math.random().toString(36).slice(2) }),
+        startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? 'child-' + Math.random().toString(36).slice(2), messageId: MessageId('message-test') }),
       },
     } as unknown as Context
     // 模拟 apply 期:config 携带已授权的复合 key(写面此时缺席,读访问不受影响)。
@@ -571,8 +571,24 @@ describe('agent_teams_add_member — 添加成员', () => {
       { role: 'researcher', provider: 'deepseek-official', model: 'deepseek-v4-pro' },
       execOf(agent(workspace, CAPTAIN_ID)),
     )).rejects.toThrow(/explicit member route explicit rejected.*not authorized/)
-    // 但"继承队长路由"不是授权决策:全部关掉时仍可用队长自己的会话模型。
-    const inherited = await execTool('agent_teams_add_member').execute(
+    // 授权表即权限:队长自己的会话路由(p/m)未授权时,"继承队长路由"同样被拒——
+    // 旧的"继承绕过授权"语义已不存在,报错必须指向设置页。
+    await expect(execTool('agent_teams_add_member').execute(
+      { role: 'researcher' },
+      execOf(agent(workspace, CAPTAIN_ID)),
+    )).rejects.toThrow(/model p\/m is not authorized \(captain route\).*模型选择/)
+
+    // 把队长路由也打开之后,继承候选才被放行(同一调用,只改授权)。
+    const tools2 = new Map<string, CapturedTool>()
+    const executeCtx2 = {
+      ...executeCtx,
+      tools: { register: (def: CapturedTool) => { tools2.set(def.name, def); return def } },
+    } as unknown as Context
+    registerAgentTeamsTools(executeCtx2, {
+      ...config,
+      ...settingsAccessFromConfig({ enabledModels: { 'p/m': true }, roleDefaults: {} }),
+    })
+    const inherited = await tools2.get('agent_teams_add_member')!.execute(
       { role: 'researcher' },
       execOf(agent(workspace, CAPTAIN_ID)),
     ) as { member_name: string; provider: string; model: string }
@@ -581,7 +597,7 @@ describe('agent_teams_add_member — 添加成员', () => {
   })
 
   it('R-26:spawn(网络)在锁外——add_member 进行中,同队 status 不被阻塞', async () => {
-    // 让 startContinuable 挂起 300ms,模拟慢网络 spawn。
+    // 让 startActivation 挂起 300ms,模拟慢网络 spawn。
     let releaseSpawn!: () => void
     const spawnGate = new Promise<void>((resolve) => { releaseSpawn = resolve })
     const tools = new Map<string, CapturedTool>()
@@ -611,9 +627,9 @@ describe('agent_teams_add_member — 添加成员', () => {
           prepareContinuable: {},
           capabilities: { persona: true, toolFilter: true },
         }),
-        startContinuable: async () => {
+        startActivation: async (spec: { childId?: string }) => {
           await spawnGate
-          return { childId: `child-${++childSeq}` }
+          return { childId: spec.childId ?? `child-${++childSeq}`, messageId: MessageId('message-test') }
         },
       },
     } as unknown as Context
@@ -720,7 +736,7 @@ describe('add_member best-practices 记忆注入', () => {
     await rm(workspace, { recursive: true, force: true })
   })
 
-  it('角色匹配样本 ≥2 时,经验注入成员 persona(startContinuable 请求断言)', async () => {
+  it('角色匹配样本 ≥2 时,经验注入成员 persona(startActivation 请求断言)', async () => {
     // 冷启动守卫:engineer 角色需 ≥2 条已验证(useful/revised)经验才注入;
     // R-20 门控:pending 未校准条目不计入可注入样本。
     const library: BestPracticeEntry[] = [
@@ -894,7 +910,7 @@ describe('R-31 — 调度扇出不占工具关键路径(kick fire-and-forget)', 
             prepareContinuable: {},
             capabilities: { persona: true, toolFilter: true },
           }),
-          startContinuable: async () => ({ childId: `child-${++childSeq}` }),
+          startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? `child-${++childSeq}`, messageId: MessageId('message-test') }),
         },
       } as unknown as Context
       registerAgentTeamsTools(fakeCtx, config)
@@ -982,7 +998,7 @@ describe('R-17: scheduler kick 真链路(解除 stub running 短路,验证自动
             prepareContinuable: {},
             capabilities: { persona: true, toolFilter: true },
           }),
-          startContinuable: async () => ({ childId: `child-${++childSeq}` }),
+          startActivation: async (spec: { childId?: string }) => ({ childId: spec.childId ?? `child-${++childSeq}`, messageId: MessageId('message-test') }),
         },
       } as unknown as Context
       registerAgentTeamsTools(fakeCtx, config)
