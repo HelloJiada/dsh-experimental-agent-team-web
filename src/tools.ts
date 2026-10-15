@@ -212,8 +212,11 @@ function memberRouteCandidates(
  * 自成长团队记忆:按角色从全局 best-practices 库选出可注入的经验条目。
  * 无角色(或空角色)直接返回空;冷启动守卫(角色样本 <2)由
  * {@link selectBestPracticesForRole} 内部处理,返回空即不注入。
+ *
+ * Exported for the member pre-step persona fallback: hosts that no longer take
+ * a persona at child start rebuild the same member persona there.
  */
-async function roleMemoriesFor(
+export async function roleMemoriesFor(
   stateRoot: string,
   role: string | undefined,
 ): Promise<readonly BestPracticeEntry[]> {

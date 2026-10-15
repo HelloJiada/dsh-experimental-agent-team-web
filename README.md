@@ -9,16 +9,17 @@
 ## DSH compatibility
 
 This worktree adapts the self-contained AgentTeams kernel to the public DSH
-`0.2.0-rc.2` and `0.2.1-alpha.x` package lines. The subagent child-start call is
-detected at runtime (`startActivation` on `0.2.1-alpha.x`, `startContinuable` on
-`0.2.0-rc.x`), and the declared DSH peer ranges accept both lines. Typecheck,
-tests, build, and packed-artifact checks pass against `0.2.0-rc.2`; the same
-source is verified against `0.2.1-alpha.2`. The plugin layer loads in the desktop
-profile with no compatibility issue for this package (six unrelated optional
-profile bundles are unavailable and skipped). Live Web/member-spawn smoke still
-requires a running DSH that has loaded this build. This package does not
-require the unpublished official experimental Agent Teams package or a local
-DSH checkout.
+`0.2.0-rc.2` through `0.2.1-alpha.x` package lines, bridging both API
+generations at runtime: the subagent child-start call
+(`startActivation` on `0.2.1-alpha.x`, `startContinuable` on `0.2.0-rc.x`), and
+the member persona / captain-only tool surface — start-time `persona` and
+`toolFilter` fields on older hosts, the member's own scoped persona section plus
+an eager `tools.restrict` deny list on `0.2.1-alpha.4`, which removed those
+fields. Typecheck, 752 tests, build, and packed-artifact checks pass against
+`0.2.1-alpha.4`; the same source is verified against `0.2.0-rc.2` and
+`0.2.1-alpha.2`. Live Web/member-spawn smoke still requires a running DSH that
+has loaded this build. This package does not require the unpublished official
+experimental Agent Teams package or a local DSH checkout.
 
 `registration` stays `lazy` (the default) on current DSH. DSH `0.2.0-rc.2` / `0.2.1-alpha.x`
 joins a subagent child to its parent **preset** instead of letting it inherit the
@@ -177,7 +178,7 @@ The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.34.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -234,4 +235,4 @@ page for the current asset name.)
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.34.tgz`

@@ -2,17 +2,28 @@
 
 ## Required host packages
 
-The plugin peers accept the public DSH `0.2.0-rc.2` and `0.2.1-alpha.x` package lines
-(`>=0.2.0-rc.2 <0.3.0-0`), and the development dependencies are pinned to
-`0.2.0-rc.2` for typecheck and tests. `0.2.1-alpha.1` replaced the continuable
-child-start call `subagents.startContinuable()` with `subagents.startActivation()`;
-this plugin detects which one the running DSH exposes and uses it, and it declares
-the `dsh-client-ui-slots` peer both lines ship. Typecheck, unit tests, build, and
-packed-artifact checks pass against `0.2.0-rc.2`, and the same source is verified
-against `0.2.1-alpha.2`. The plugin layer loads in the desktop profile with no
-compatibility issue for this package; six unrelated optional profile bundles are
-skipped because they are not resolvable from that profile/install. Live
-Web/member-spawn smoke remains unverified until a DSH runtime has loaded this build.
+The plugin peers accept the public DSH `0.2.0-rc.2` through `0.2.1-alpha.x`
+package lines (`>=0.2.0-rc.2 <0.3.0-0`), and the development dependencies are
+pinned to `0.2.1-alpha.4` for typecheck and tests. Two API generations are
+bridged at runtime:
+
+- **Child start.** `0.2.1-alpha.1` replaced `subagents.startContinuable()` with
+  `subagents.startActivation()`; the plugin detects which one the running DSH
+  exposes and uses it.
+- **Persona and member tool surface.** `0.2.1-alpha.4` removed the `persona` and
+  `toolFilter` start fields (and their `SubagentCapabilities` flags): composition
+  now belongs to the selected preset. On those hosts the plugin applies the same
+  semantics in the member's own scope at its first `agent/pre-step` — the member
+  persona is installed as a scoped `deployment:persona-prefix` section (which
+  shadows the inherited persona by name), and under `registration: 'eager'` the
+  captain-only names are denied with `tools.restrict({ deny })` instead of being
+  filtered at start. Older hosts keep the start-time fields unchanged.
+
+`dsh-client-ui-slots` is declared because both lines ship it. Typecheck, unit
+tests (752), build, and packed-artifact checks pass against `0.2.1-alpha.4`, and
+the same source typechecks and passes the same suite against `0.2.0-rc.2` and
+`0.2.1-alpha.2`. Live Web/member-spawn smoke remains unverified until a DSH
+runtime has loaded this build.
 
 `@deepseek-ai/dsh-experimental-agent-team-web` ships its own self-contained
 AgentTeams kernel (roster, durable mailbox, shared task DAG, scheduler,
@@ -24,7 +35,8 @@ local DeepSeek Harness checkout.
 
 | Plugin version | DSH version | Notes |
 |---|---|---|
-| 0.1.33 | 0.2.0-rc.2 – 0.2.1-alpha.x | Current target package line. Subagent child-start is detected at runtime (`startActivation` on `0.2.1-alpha.x`, `startContinuable` on `0.2.0-rc.x`); DSH peers accept `>=0.2.0-rc.2 <0.3.0-0`. Typecheck/tests/build/artifact pass against `0.2.0-rc.2`, and the same source typechecks and passes tests against `0.2.1-alpha.2`. Live Web/member-spawn smoke remains unverified. |
+| 0.1.34 | 0.2.0-rc.2 – 0.2.1-alpha.x | Current target package line. Bridges both child-start APIs and both persona/tool-composition generations (start-time fields on older hosts, member-scope persona section plus eager deny on `0.2.1-alpha.4`+). Typecheck/tests (752)/build/artifact pass against `0.2.1-alpha.4`, and the same source passes against `0.2.0-rc.2` and `0.2.1-alpha.2`. Live Web/member-spawn smoke remains unverified. |
+| 0.1.33 | 0.2.0-rc.2 – 0.2.1-alpha.3 | Bridges both child-start APIs and accepts `0.2.1-alpha.4` at the compatibility gate, but still sends `persona`/`toolFilter` at start, which that generation ignores: members would lose their persona, and `registration: 'eager'` members would see captain-only tools. Superseded by 0.1.34. |
 | 0.1.32 | 0.2.1-alpha.2 | Superseded: peers pinned exactly to `0.2.1-alpha.2`, and it called `startActivation` unconditionally, so DSH `0.2.0-rc.2` (and earlier lines) rejected it at the compatibility gate. |
 | 0.1.16 | 0.1.3-alpha.2 / 0.1.5-rc.2 | Root service context: tool bodies take injected services from the plugin root instead of the session scope. Added `registration: 'lazy' | 'eager'` — `eager` installs the whole surface globally for harnesses that join a subagent child to its parent preset instead of inheriting the parent agent scope. |
 | 0.1.15 | 0.1.3-alpha.2 | On-demand loading: the 14 team tools and the captain protocol are installed into the activating session's own scope instead of every session (measured 4.9k -> 0.27k tokens per request for inactive sessions) |

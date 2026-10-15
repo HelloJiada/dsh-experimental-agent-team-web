@@ -33,9 +33,16 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { registerAgentTeamsTools, type AgentTeamsRuntime, type ToolsConfig } from './tools.ts'
+import { registerAgentTeamsTools, roleMemoriesFor, type AgentTeamsRuntime, type ToolsConfig } from './tools.ts'
 import { CAPTAIN_ONLY_TOOL_NAMES, MEMBER_TOOL_NAMES, TEAM_TOOL_NAMES } from './tool-surface.ts'
-import { isKnownMemberAgent } from './member-state-guard.ts'
+import {
+  forgetMemberPersona,
+  isKnownMemberAgent,
+  memberPersonaCarryFor,
+} from './member-state-guard.ts'
+import { memberDeniedTools, memberPersona, startCapability } from './members.ts'
+import { findTeamByParticipant } from './state.ts'
+import { resolve } from 'node:path'
 
 export { CAPTAIN_ONLY_TOOL_NAMES, MEMBER_TOOL_NAMES, TEAM_TOOL_NAMES } from './tool-surface.ts'
 
@@ -46,6 +53,28 @@ export { CAPTAIN_ONLY_TOOL_NAMES, MEMBER_TOOL_NAMES, TEAM_TOOL_NAMES } from './t
  * SHADOWS the hint rather than joining it.
  */
 export const AGENT_TEAMS_USAGE_SECTION = 'agent-teams:usage'
+
+/**
+ * The host's deployment-persona section name. A scoped registration under this
+ * exact name shadows the inherited persona for that scope, which is how a
+ * member keeps its own persona on host generations that no longer accept one
+ * on the child start request.
+ */
+export const MEMBER_PERSONA_SECTION = 'deployment:persona-prefix'
+
+/** Order of the member persona section; shadowing is by name, not by order. */
+export const MEMBER_PERSONA_ORDER = 60
+
+/** Scope extras a member's own pre-step applies besides its tool surface. */
+export interface MemberScopeOptions {
+  /** Persona shadowing the inherited deployment persona. */
+  readonly persona?: string
+  /**
+   * Captain-only tool names to deny in this scope. Present only under
+   * `registration: 'eager'`, where the team tools live in the global layer.
+   */
+  readonly denyTools?: readonly string[]
+}
 
 /** Name of the always-on activation tool. */
 export const AGENT_TEAMS_ACTIVATION_TOOL = 'agent_teams_activate'
@@ -148,9 +177,27 @@ export function activateMemberAgentTeams(
   agent: Agent,
   config: ToolsConfig,
   runtime?: AgentTeamsRuntime,
+  options: MemberScopeOptions = {},
 ): boolean {
   if (activatedAgents.has(agent)) return false
-  registerAgentTeamsTools(agent.ctx, config, runtime, MEMBER_TOOL_NAMES)
+  if (options.denyTools !== undefined && options.denyTools.length > 0) {
+    // `registration: 'eager'` puts the whole surface in the global layer, so the
+    // member's own scope has to deny the captain-only names instead of simply
+    // not registering them.
+    agent.ctx.tools.restrict({ deny: [...options.denyTools] })
+  } else {
+    registerAgentTeamsTools(agent.ctx, config, runtime, MEMBER_TOOL_NAMES)
+  }
+  if (options.persona !== undefined && options.persona !== '') {
+    // Newer hosts take no persona at child start, so the member's own scope
+    // installs one under the host's persona-prefix name: a scoped section
+    // shadows the global one by name, exactly as the host did at start.
+    agent.ctx.systemPrompt.section({
+      name: MEMBER_PERSONA_SECTION,
+      order: MEMBER_PERSONA_ORDER,
+      text: options.persona,
+    })
+  }
   activatedAgents.add(agent)
   return true
 }
@@ -176,6 +223,7 @@ export function installMemberSurfaceActivation(
   config: ToolsConfig,
   stateDir: string,
   runtime?: AgentTeamsRuntime,
+  mode: 'lazy' | 'eager' = 'lazy',
 ): () => void {
   const handler = async (
     { agent }: { agent: Agent },
@@ -186,7 +234,17 @@ export function installMemberSurfaceActivation(
     if (agent.session.header.origin !== 'subagent') return decision
     try {
       if (!await isKnownMemberAgent(agent, stateDir)) return decision
-      activateMemberAgentTeams(agent, config, runtime)
+      const persona = await memberPersonaForStep(ctx, config, agent, stateDir)
+      // Under eager the whole surface is global, so the member's own scope
+      // denies the captain-only subset; under lazy it simply never receives it.
+      const denyTools = mode === 'eager'
+        ? memberDeniedTools(name => ctx.tools.get(name) !== undefined)
+        : []
+      activateMemberAgentTeams(agent, config, runtime, {
+        ...persona === undefined ? {} : { persona },
+        ...denyTools.length === 0 ? {} : { denyTools },
+      })
+      if (persona !== undefined) forgetMemberPersona(agent.id)
     } catch (error) {
       ctx.logger.warn(`agent-team-web: member surface activation failed: ${String(error)}`)
     }
@@ -194,6 +252,43 @@ export function installMemberSurfaceActivation(
   }
   const disposer = ctx.on('agent/pre-step', handler as never)
   return () => { if (typeof disposer === 'function') disposer() }
+}
+
+/**
+ * Resolve the persona a member's own pre-step must install.
+ *
+ * Hosts that still accept `persona` at child start already applied it (the
+ * descriptor even reapplies it on cold resume), so those return `undefined`.
+ * Newer hosts (`0.2.1-alpha.4`+) get the persona from the carry map written at
+ * spawn, falling back to the durable roster for a member this process never
+ * spawned — the create path can let the child step before the team file lands.
+ *
+ * @param ctx - plugin root context (reads the registered provider capability).
+ * @param config - resolved tool config (names the member provider).
+ * @param agent - the member agent whose first pre-step is running.
+ * @param stateDir - configured team state directory.
+ * @returns the persona text to install, or `undefined` when the host owns it.
+ */
+async function memberPersonaForStep(
+  ctx: Context,
+  config: ToolsConfig,
+  agent: Agent,
+  stateDir: string,
+): Promise<string | undefined> {
+  const carried = memberPersonaCarryFor(agent.id)
+  if (carried !== undefined) return carried
+  // The provider registry is a sibling plugin's effect and a step may run
+  // before it settles, so its absence means "assume the newer generation".
+  const subagents = (ctx as { subagents?: { getProvider?: (name: string) => unknown } }).subagents
+  const provider = subagents?.getProvider?.(config.memberProvider) as { capabilities?: unknown } | undefined
+  if (provider !== undefined && startCapability(provider, 'persona') === true) return undefined
+  const workspace = agent.session.header.cwd ?? process.cwd()
+  const stateRoot = resolve(workspace, stateDir)
+  const team = await findTeamByParticipant(stateRoot, agent.id)
+  const member = team?.members.find(entry => entry.id === agent.id && entry.status !== 'removed')
+  if (team === undefined || member === undefined) return undefined
+  const memories = await roleMemoriesFor(stateRoot, member.role)
+  return memberPersona(team, member, stateDir, memories)
 }
 
 /**

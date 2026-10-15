@@ -125,6 +125,35 @@ export function resetMemberAgents(): void {
 }
 
 /**
+ * Member personas computed at spawn for hosts that no longer accept a persona
+ * on the child start request (DSH `0.2.1-alpha.4` moved persona and tool
+ * composition to presets). The member's own first `agent/pre-step` applies the
+ * carried persona by shadowing the inherited `deployment:persona-prefix`
+ * section; the durable roster is the fallback for a cold-resumed member.
+ */
+const memberPersonaCarry = new Map<string, string>()
+
+/** Remember one member's persona until its first pre-step applies it. */
+export function rememberMemberPersona(id: string, persona: string): void {
+  if (id !== '' && persona !== '') memberPersonaCarry.set(id, persona)
+}
+
+/** Read (without consuming) one carried member persona. */
+export function memberPersonaCarryFor(id: string): string | undefined {
+  return memberPersonaCarry.get(id)
+}
+
+/** Drop one carried persona (member creation failed, or the persona was applied). */
+export function forgetMemberPersona(id: string): void {
+  memberPersonaCarry.delete(id)
+}
+
+/** Test/process-reset helper: forget every carried persona. */
+export function resetMemberPersonas(): void {
+  memberPersonaCarry.clear()
+}
+
+/**
  * Resolve membership from the durable active roster when a cold-resumed child
  * was not observed by this process. `findTeamByParticipant` excludes removed
  * members and therefore never upgrades a retired id back into active membership.

@@ -39,6 +39,25 @@ export { CAPTAIN_ONLY_TOOL_NAMES, MEMBER_TOOL_NAMES, TEAM_TOOL_NAMES } from './t
  * SHADOWS the hint rather than joining it.
  */
 export declare const AGENT_TEAMS_USAGE_SECTION = "agent-teams:usage";
+/**
+ * The host's deployment-persona section name. A scoped registration under this
+ * exact name shadows the inherited persona for that scope, which is how a
+ * member keeps its own persona on host generations that no longer accept one
+ * on the child start request.
+ */
+export declare const MEMBER_PERSONA_SECTION = "deployment:persona-prefix";
+/** Order of the member persona section; shadowing is by name, not by order. */
+export declare const MEMBER_PERSONA_ORDER = 60;
+/** Scope extras a member's own pre-step applies besides its tool surface. */
+export interface MemberScopeOptions {
+    /** Persona shadowing the inherited deployment persona. */
+    readonly persona?: string;
+    /**
+     * Captain-only tool names to deny in this scope. Present only under
+     * `registration: 'eager'`, where the team tools live in the global layer.
+     */
+    readonly denyTools?: readonly string[];
+}
 /** Name of the always-on activation tool. */
 export declare const AGENT_TEAMS_ACTIVATION_TOOL = "agent_teams_activate";
 /** The model-facing usage policy: when and how to drive AgentTeams. */
@@ -88,7 +107,7 @@ export declare function activateAgentTeams(agent: Agent, config: ToolsConfig, se
  * @param runtime - process-wide runtime installed once at plugin mount.
  * @returns `true` when this call installed the subset, `false` when it was already there.
  */
-export declare function activateMemberAgentTeams(agent: Agent, config: ToolsConfig, runtime?: AgentTeamsRuntime): boolean;
+export declare function activateMemberAgentTeams(agent: Agent, config: ToolsConfig, runtime?: AgentTeamsRuntime, options?: MemberScopeOptions): boolean;
 /**
  * Install the member-scope activation used by `registration: 'lazy'`.
  *
@@ -105,7 +124,7 @@ export declare function activateMemberAgentTeams(agent: Agent, config: ToolsConf
  * @param runtime - process-wide runtime installed once at plugin mount.
  * @returns a disposer removing the hook.
  */
-export declare function installMemberSurfaceActivation(ctx: Context, config: ToolsConfig, stateDir: string, runtime?: AgentTeamsRuntime): () => void;
+export declare function installMemberSurfaceActivation(ctx: Context, config: ToolsConfig, stateDir: string, runtime?: AgentTeamsRuntime, mode?: 'lazy' | 'eager'): () => void;
 /**
  * Register the always-on pieces for `registration: 'eager'`, the fallback for
  * harnesses where even a member's own scope cannot receive registrations.

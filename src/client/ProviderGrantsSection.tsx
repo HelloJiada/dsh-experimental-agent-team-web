@@ -27,7 +27,6 @@ export interface SettingsScopeSnapshot<T> {
   readonly user: unknown
   readonly revision: number | undefined
   readonly writable: boolean
-  readonly mode: 'host' | 'memory'
 }
 export interface SettingsScope<T> {
   getSnapshot(): SettingsScopeSnapshot<T>
@@ -116,7 +115,6 @@ const EMPTY_SNAPSHOT: SettingsScopeSnapshot<ProviderGrantsSectionValue> = {
   user: undefined,
   revision: undefined,
   writable: false,
-  mode: 'host',
 }
 
 

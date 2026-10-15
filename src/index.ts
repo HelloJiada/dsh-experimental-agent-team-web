@@ -273,8 +273,12 @@ export function apply(ctx: Context, config: Config): void {
     registerAgentTeamsSurface(ctx, toolsConfig, sectionOrder, runtime)
   } else {
     registerAgentTeamsActivation(ctx, toolsConfig, sectionOrder, runtime)
-    installMemberSurfaceActivation(ctx, toolsConfig, toolsConfig.stateDir, runtime)
   }
+  // The member pre-step hook runs under BOTH modes: lazy fills the member's own
+  // tool subset, eager restricts the globally registered captain-only names for
+  // that member, and both apply the member persona on host generations that no
+  // longer take one at child start (see installMemberSurfaceActivation).
+  installMemberSurfaceActivation(ctx, toolsConfig, toolsConfig.stateDir, runtime, eager ? 'eager' : 'lazy')
   const activateAgent: AgentTeamsActivation = eager
     // 全局层已经装好整面,激活无事可做(斜杠命令仍照常注入目标文本)。
     ? () => undefined

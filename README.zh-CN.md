@@ -8,7 +8,7 @@
 
 ## DSH 兼容性
 
-当前工作树已将本包自包含的 AgentTeams 内核适配到公开 DSH `0.2.0-rc.2` 与 `0.2.1-alpha.x` 两条包线：成员创建时按运行时可用的 API 选择 `startActivation`（`0.2.1-alpha.x`）或 `startContinuable`（`0.2.0-rc.x`），DSH peers 也改为同时接受这两条线。类型检查、测试、构建与打包校验在 `0.2.0-rc.2` 下通过，同一份源码也在 `0.2.1-alpha.2` 下验证通过。desktop profile 的插件层加载正常、本包无兼容性问题（另有 6 个无关的可选 profile bundle 因依赖不可解析而跳过）。真实 Web/成员派发冒烟仍需在已加载该构建的 DSH 进程中验证。不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
+当前工作树已将本包自包含的 AgentTeams 内核适配到公开 DSH `0.2.0-rc.2` 至 `0.2.1-alpha.x` 包线，并在运行时桥接两代 API：成员创建按宿主实际暴露的方法选择 `startActivation`（`0.2.1-alpha.x`）或 `startContinuable`（`0.2.0-rc.x`）；成员人格与队长专属工具面同样分两代——旧线仍在起始请求里带 `persona`/`toolFilter`，而 `0.2.1-alpha.4` 移除了这两个字段（及其能力位），改由本插件在成员自己的首个 `agent/pre-step` 里装同名 `deployment:persona-prefix` 段（按名遮蔽继承人格），`registration: 'eager'` 下再用 `tools.restrict({ deny })` 屏蔽队长专属工具。类型检查、752 项测试、构建与打包校验均在 `0.2.1-alpha.4` 下通过，同一份源码也在 `0.2.0-rc.2` 与 `0.2.1-alpha.2` 下通过。真实 Web/成员派发冒烟仍需在已加载该构建的 DSH 进程中验证。不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
 
 `registration` 保持默认 `lazy`。当前 DSH(`0.2.0-rc.2` / `0.2.1-alpha.x`)的子 agent 加入**父 preset**、而不是继承**父 agent scope**(`@deepseek-ai/dsh-subagent` 的 `applyChildComposition` 先 `agentPresets.composeFrom(childCtx, parent.ctx)`,之后才 `tools.restrict`),所以成员看不到队长自己的 scope——但它不需要看到:成员**自己的** scope 由插件填。在成员第一步之前(`agent/pre-step`,即该步请求组装前),插件把成员可见子集(除队长专属外的全部团队工具)装进该成员的 scope,成员 deny 名单因此也不再必要。`eager` 保留作兜底:整面注册进全局层,代价是每个会话约 4.9k tokens/请求。
 
@@ -97,7 +97,7 @@ AgentTeams 假设**单个 harness 进程**独占一个 workspace 的团队状态
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.34.tgz
 ```
 
 开发者/协作者也可用 git 或本地路径安装——仓库已提交 `lib/` 构建产物,无需构建:
@@ -150,4 +150,4 @@ tarball,无需改 URL。(若上面文件名仍带旧版本号,到
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.34.tgz`

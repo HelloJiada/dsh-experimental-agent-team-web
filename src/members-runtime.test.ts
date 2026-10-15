@@ -27,12 +27,18 @@ import {
   resolveMemberLlmCandidates,
   resolveMemberLlmSelection,
   spawnMember,
+  startCapability,
   startMemberChild,
   type MemberChildStartSpec,
   type MemberRuntimeConfig,
 } from './members.ts'
 import type { TeamMember, TeamState } from './types.ts'
-import { isMemberAgent, resetMemberAgents } from './member-state-guard.ts'
+import {
+  isMemberAgent,
+  memberPersonaCarryFor,
+  resetMemberAgents,
+  resetMemberPersonas,
+} from './member-state-guard.ts'
 
 const STATE_DIR = '.agent-team-web'
 
@@ -465,6 +471,61 @@ describe('startMemberChild — 两代 DSH subagent API', () => {
   it('两代 API 都不存在:报错同时点名 startActivation 与 startContinuable', async () => {
     await expect(startMemberChild({}, spec))
       .rejects.toThrow(/neither startActivation .* nor startContinuable/)
+  })
+})
+
+describe('startCapability — 起始能力探测(老线声明 / 新线移除)', () => {
+  it('显式布尔值原样返回', () => {
+    expect(startCapability({ capabilities: { persona: true, toolFilter: false } }, 'persona')).toBe(true)
+    expect(startCapability({ capabilities: { persona: true, toolFilter: false } }, 'toolFilter')).toBe(false)
+  })
+
+  it('字段缺失返回 undefined(DSH 0.2.1-alpha.4 起由 preset 接管)', () => {
+    expect(startCapability({ capabilities: { agentOptions: true, depthLimit: true } }, 'persona')).toBeUndefined()
+    expect(startCapability({ capabilities: {} }, 'toolFilter')).toBeUndefined()
+    expect(startCapability({}, 'persona')).toBeUndefined()
+  })
+})
+
+describe('spawnMember — 新代宿主(persona/toolFilter 已从起始请求移除)', () => {
+  it('不带 persona/toolFilter 起始,persona 转交首个 pre-step', async () => {
+    resetMemberAgents()
+    resetMemberPersonas()
+    const state = team({ members: [member('技术员')] })
+    const draft = member('技术员')
+    const selections = installMemberSelectionRuntime(baseCtx(), STATE_DIR)
+    let activationSpec: Record<string, unknown> | undefined
+    const ctx = baseCtx({
+      subagents: {
+        ...baseCtx().subagents,
+        getProvider: () => ({
+          prepareContinuable: {},
+          capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true },
+        }),
+        startActivation: async (options: { childId?: string }) => {
+          activationSpec = options as unknown as Record<string, unknown>
+          return { childId: SessionId(options.childId ?? 'child-1'), messageId: MessageId('message-1') }
+        },
+      },
+    })
+    await spawnMember(
+      ctx,
+      runtimeConfig,
+      selections,
+      { provider: 'p', model: 'm' },
+      captain('/ws'),
+      state,
+      draft,
+      STATE_DIR,
+      new AbortController().signal,
+    )
+    const request = activationSpec?.request as Record<string, unknown>
+    expect(activationSpec?.delivery).toBe('parent')
+    expect(request.persona).toBeUndefined()
+    expect(request.toolFilter).toBeUndefined()
+    // persona 已留给成员自己的 pre-step(携带队列),其中含成员身份与职责。
+    expect(memberPersonaCarryFor(draft.id)).toContain('技术员')
+    expect(isMemberAgent(draft.id)).toBe(true)
   })
 })
 

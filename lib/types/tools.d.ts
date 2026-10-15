@@ -12,6 +12,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
 import { type MemberSelectionRuntime } from './members.ts';
 import { type TeamState, type TeamTask } from './types.ts';
+import { type BestPracticeEntry } from './best-practices.ts';
 /** Resolved plugin config consumed by the tools. */
 export interface ToolsConfig {
     /** State directory name under the captain's workspace. */
@@ -55,6 +56,15 @@ export interface ToolsConfig {
     /** A member-owned open task is "stalled" (helppable) after this many ms. */
     stallThresholdMs: number;
 }
+/**
+ * 自成长团队记忆:按角色从全局 best-practices 库选出可注入的经验条目。
+ * 无角色(或空角色)直接返回空;冷启动守卫(角色样本 <2)由
+ * {@link selectBestPracticesForRole} 内部处理,返回空即不注入。
+ *
+ * Exported for the member pre-step persona fallback: hosts that no longer take
+ * a persona at child start rebuild the same member persona there.
+ */
+export declare function roleMemoriesFor(stateRoot: string, role: string | undefined): Promise<readonly BestPracticeEntry[]>;
 /** One open (claimed/in-progress) work item for a member — either owned or
  * being helped by them (self-organizing dispatch). Keeps the one-worker rule
  * across both roles. */

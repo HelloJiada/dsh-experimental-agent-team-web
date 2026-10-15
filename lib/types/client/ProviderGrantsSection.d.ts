@@ -24,7 +24,6 @@ export interface SettingsScopeSnapshot<T> {
     readonly user: unknown;
     readonly revision: number | undefined;
     readonly writable: boolean;
-    readonly mode: 'host' | 'memory';
 }
 export interface SettingsScope<T> {
     getSnapshot(): SettingsScopeSnapshot<T>;

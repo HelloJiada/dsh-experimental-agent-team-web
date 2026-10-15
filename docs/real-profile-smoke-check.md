@@ -14,7 +14,7 @@
 当前目标版本为 DSH `0.2.0-rc.2` – `0.2.1-alpha.x`；本文件中的完整实时流程尚未在这些版本的运行进程上执行。
 
 本文件只保留最短路径；完整发布前验证流程见 [releasing.md](releasing.md)。
-截至本次适配，DSH `0.2.0-rc.2` 下的类型检查、743 项自动化测试、build 与 tarball 检查通过，同一份源码也在 `0.2.1-alpha.2` 下通过类型检查与测试；本插件在 desktop profile 的离线组合检查中加载正常、无兼容性问题（另有 6 个无关可选 bundle 因 profile/install 中不可解析而跳过）。离线组合不代表运行进程已加载该构建，实时检查须在已加载本构建的 DSH 进程中执行。
+截至本次适配，DSH `0.2.1-alpha.4` 下的类型检查、752 项自动化测试、build 与 tarball 检查通过，同一份源码也在 `0.2.0-rc.2` 与 `0.2.1-alpha.2` 下通过类型检查与测试。离线组合检查不代表运行进程已加载该构建，实时检查须在已加载本构建的 DSH 进程中执行；本文件中的实时流程（含成员派发）仍未执行。
 
 ## 0. 安装
 
@@ -23,7 +23,7 @@
 ```bash
 # 安装本 bundle（示例：release tarball）
 cd ~/.dsh/profiles/web
-pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz
+pnpm add ./deepseek-ai-dsh-experimental-agent-team-web-0.1.34.tgz
 ```
 
 Profile patch 可直接复用：

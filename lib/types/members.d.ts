@@ -34,6 +34,23 @@ import type { TeamMember, TeamState } from './types.ts';
  * @returns the deny list to send (empty when nothing can be named).
  */
 export declare function memberDeniedTools(known?: (name: string) => boolean): readonly string[];
+/**
+ * Read one start-time provider capability across host generations.
+ *
+ * Older generations declare `persona` and `toolFilter` on
+ * `SubagentProvider.capabilities`; DSH `0.2.1-alpha.4` removed both flags and
+ * moved composition to presets. The probe therefore distinguishes three
+ * states: `true` (apply at start), `false` (the provider explicitly cannot,
+ * which stays a hard failure), and `undefined` (newer host; the plugin applies
+ * the equivalent in the member's own scope at its first pre-step).
+ *
+ * @param provider - the registered subagent provider.
+ * @param name - the capability flag to read.
+ * @returns the declared boolean, or `undefined` when the flag is absent.
+ */
+export declare function startCapability(provider: {
+    readonly capabilities?: unknown;
+}, name: 'persona' | 'toolFilter'): boolean | undefined;
 /** Runtime knobs for member spawning, resolved from plugin config. */
 export interface MemberRuntimeConfig {
     /** Registered `ctx.subagents` provider name (must support continuable + persona). */
@@ -152,15 +169,19 @@ export interface MemberChildStartSpec {
     childId: SessionId;
     /** Short display label persisted with the child session. */
     label: string;
-    /** Delegation request: welcome prompt, parent, persona, tool filter, route. */
+    /**
+     * Delegation request: welcome prompt, parent, route, and — only on host
+     * generations that still accept them — the member persona and captain-only
+     * tool filter.
+     */
     request: {
         prompt: readonly {
             type: 'text';
             text: string;
         }[];
         parent: Agent;
-        persona: string;
-        toolFilter: {
+        persona?: string;
+        toolFilter?: {
             deny: readonly string[];
         };
         agentOptions: {

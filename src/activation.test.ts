@@ -417,6 +417,77 @@ describe("registration: 'lazy' — 成员面装进成员自己的 scope", () => 
   })
 })
 
+/** A stub scope that also records `tools.restrict` calls. */
+interface RestrictedLayer extends Layer {
+  restrictions: { deny?: readonly string[] }[]
+}
+
+function restrictedCtxOf(target: RestrictedLayer): Context {
+  return {
+    tools: {
+      register: (definition: StubTool) => {
+        target.tools.set(definition.name, definition)
+        return () => undefined
+      },
+      restrict: (filter: { deny?: readonly string[] }) => {
+        target.restrictions.push(filter)
+        return () => undefined
+      },
+    },
+    systemPrompt: {
+      section: (section: { name: string; order: number; text: string | ((context: unknown) => string) }) => {
+        target.sections.set(section.name, section)
+        return () => undefined
+      },
+    },
+    logger: { warn: () => undefined, info: () => undefined, error: () => undefined, debug: () => undefined },
+  } as unknown as Context
+}
+
+describe('成员 scope 的 persona 与 eager deny(DSH 0.2.1-alpha.4+)', () => {
+  it('装上 persona 段:与宿主同名 deployment:persona-prefix,按名遮蔽继承的人格', () => {
+    const target: RestrictedLayer = { tools: new Map(), sections: new Map(), restrictions: [] }
+    const member = { id: 'session-member-p', ctx: restrictedCtxOf(target) } as unknown as Agent
+
+    expect(activateMemberAgentTeams(member, config, runtime, { persona: 'You are 技术员' })).toBe(true)
+    expect(target.sections.get('deployment:persona-prefix')?.text).toBe('You are 技术员')
+    // 成员面照旧只含成员子集(lazy)。
+    expect([...target.tools.keys()].sort()).toEqual([...MEMBER_TOOL_NAMES].sort())
+    expect(target.restrictions).toHaveLength(0)
+  })
+
+  it('eager 模式下成员 scope 只 restrict 队长专属名单,不再重复注册成员子集', () => {
+    const target: RestrictedLayer = { tools: new Map(), sections: new Map(), restrictions: [] }
+    const member = { id: 'session-member-e', ctx: restrictedCtxOf(target) } as unknown as Agent
+
+    expect(activateMemberAgentTeams(member, config, runtime, { denyTools: [...CAPTAIN_ONLY_TOOL_NAMES] })).toBe(true)
+    expect(target.restrictions).toEqual([{ deny: [...CAPTAIN_ONLY_TOOL_NAMES] }])
+    // 整面已在全局层,成员 scope 不再注册工具。
+    expect(target.tools.size).toBe(0)
+  })
+
+  it('eager 模式的 pre-step 钩子给已登记成员加 deny 名单', async () => {
+    resetMemberAgents()
+    registerMemberAgent('session-member-3')
+    const harness = preStepHarness()
+    const disposer = installMemberSurfaceActivation(harness.ctx, config, config.stateDir, runtime, 'eager')
+    try {
+      const target: RestrictedLayer = { tools: new Map(), sections: new Map(), restrictions: [] }
+      const member = {
+        id: 'session-member-3',
+        ctx: restrictedCtxOf(target),
+        session: { header: { origin: 'subagent', cwd: '/ws' } },
+      } as unknown as Agent
+      await harness.fire(member)
+      expect(target.restrictions).toEqual([{ deny: [...CAPTAIN_ONLY_TOOL_NAMES] }])
+      expect(target.tools.size).toBe(0)
+    } finally {
+      disposer()
+      resetMemberAgents()
+    }
+  })
+})
+
 /** Build a live-looking agent carrying the session origin the hook branches on. */
 function memberAgentOf(target: Layer, id: string, origin: 'subagent' | undefined): Agent {
   return {
@@ -438,6 +509,8 @@ function preStepHarness(): { ctx: Context; fire: (agent: Agent) => Promise<{ kin
       if (name === 'agent/pre-step') handler = fn
       return () => undefined
     },
+    // The eager path probes which captain-only names exist globally.
+    tools: { get: () => ({ name: 'global' }) },
     logger: { warn: () => undefined, info: () => undefined, error: () => undefined, debug: () => undefined },
   } as unknown as Context
   return {

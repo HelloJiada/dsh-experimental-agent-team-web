@@ -41,6 +41,14 @@ export declare function unregisterMemberAgent(id: string): void;
 export declare function isMemberAgent(id: string): boolean;
 /** Test/process-reset helper: forget only the process-local acceleration set. */
 export declare function resetMemberAgents(): void;
+/** Remember one member's persona until its first pre-step applies it. */
+export declare function rememberMemberPersona(id: string, persona: string): void;
+/** Read (without consuming) one carried member persona. */
+export declare function memberPersonaCarryFor(id: string): string | undefined;
+/** Drop one carried persona (member creation failed, or the persona was applied). */
+export declare function forgetMemberPersona(id: string): void;
+/** Test/process-reset helper: forget every carried persona. */
+export declare function resetMemberPersonas(): void;
 /**
  * Whether one live agent is a member of a team — process-local set first, then
  * the durable roster for a child this process never saw spawn (cold resume).

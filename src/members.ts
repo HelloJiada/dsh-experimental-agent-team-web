@@ -22,7 +22,12 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { isCommissarRole } from './commissar-gate.ts'
 import { canonicalExecRole } from './role-limits.ts'
-import { registerMemberAgent, unregisterMemberAgent } from './member-state-guard.ts'
+import {
+  forgetMemberPersona,
+  registerMemberAgent,
+  rememberMemberPersona,
+  unregisterMemberAgent,
+} from './member-state-guard.ts'
 import { CAPTAIN_ONLY_TOOL_NAMES } from './tool-surface.ts'
 import { truncatePracticeForInjection } from './best-practices.ts'
 import type { BestPracticeEntry } from './best-practices.ts'
@@ -55,6 +60,29 @@ const MEMBER_DENIED_TOOLS = CAPTAIN_ONLY_TOOL_NAMES
 export function memberDeniedTools(known?: (name: string) => boolean): readonly string[] {
   if (known === undefined) return MEMBER_DENIED_TOOLS
   return MEMBER_DENIED_TOOLS.filter(name => known(name))
+}
+
+/**
+ * Read one start-time provider capability across host generations.
+ *
+ * Older generations declare `persona` and `toolFilter` on
+ * `SubagentProvider.capabilities`; DSH `0.2.1-alpha.4` removed both flags and
+ * moved composition to presets. The probe therefore distinguishes three
+ * states: `true` (apply at start), `false` (the provider explicitly cannot,
+ * which stays a hard failure), and `undefined` (newer host; the plugin applies
+ * the equivalent in the member's own scope at its first pre-step).
+ *
+ * @param provider - the registered subagent provider.
+ * @param name - the capability flag to read.
+ * @returns the declared boolean, or `undefined` when the flag is absent.
+ */
+export function startCapability(
+  provider: { readonly capabilities?: unknown },
+  name: 'persona' | 'toolFilter',
+): boolean | undefined {
+  const capabilities = provider.capabilities as Record<string, unknown> | undefined
+  const value = capabilities?.[name]
+  return typeof value === 'boolean' ? value : undefined
 }
 
 /**
@@ -533,12 +561,16 @@ export interface MemberChildStartSpec {
   childId: SessionId
   /** Short display label persisted with the child session. */
   label: string
-  /** Delegation request: welcome prompt, parent, persona, tool filter, route. */
+  /**
+   * Delegation request: welcome prompt, parent, route, and — only on host
+   * generations that still accept them — the member persona and captain-only
+   * tool filter.
+   */
   request: {
     prompt: readonly { type: 'text', text: string }[]
     parent: Agent
-    persona: string
-    toolFilter: { deny: readonly string[] }
+    persona?: string
+    toolFilter?: { deny: readonly string[] }
     agentOptions: { provider: string; model: string; reasoningEffort?: ReasoningEffortId }
     maxDepth?: number
   }
@@ -629,12 +661,21 @@ export async function spawnMember(
   if (provider.prepareContinuable === undefined) {
     throw new Error(`agent-team-web: provider "${config.provider}" does not support continuable members`)
   }
-  if (!provider.capabilities.persona) {
+  // Start-time persona/tool composition exists only on older generations: DSH
+  // 0.2.1-alpha.4 removed both flags and moved composition to presets. An
+  // explicit `false` stays a hard failure; an absent flag means the newer host
+  // generation, where the plugin applies the same persona and captain-only
+  // tool denial in the member's own scope at its first pre-step.
+  const personaCapability = startCapability(provider, 'persona')
+  const toolFilterCapability = startCapability(provider, 'toolFilter')
+  if (personaCapability === false) {
     throw new Error(`agent-team-web: provider "${config.provider}" cannot apply a member persona`)
   }
-  if (!provider.capabilities.toolFilter) {
+  if (toolFilterCapability === false) {
     throw new Error(`agent-team-web: provider "${config.provider}" cannot restrict captain-only tools for members`)
   }
+  const personaAtStart = personaCapability === true
+  const toolFilterAtStart = toolFilterCapability === true
   const label = `${MEMBER_LABEL_PREFIX}${team.id}:${member.name}`
   // 队长专属工具只在全局层可见时才能被 restrict 命名;lazy 模式下这些名字
   // 只存在于队长的 agent scope,直接下发会让整个 spawn 抛错(见 memberDeniedTools)。
@@ -658,6 +699,13 @@ export async function spawnMember(
   // child turn as soon as it accepts the initial prompt, and its first
   // pre-step must already recognize this session as an AgentTeams member.
   registerMemberAgent(reservedChildId)
+  const persona = memberPersona(team, member, stateDir, memories)
+  if (!personaAtStart) {
+    // Carry the persona to the member's own first pre-step. The durable roster
+    // cannot be the only source: on the create path the child may step before
+    // the team directory is written.
+    rememberMemberPersona(reservedChildId, persona)
+  }
   let started: MemberChildStartReceipt
   try {
     started = await selections.withPending(captain.id, label, llmSelection, () => (
@@ -668,8 +716,8 @@ export async function spawnMember(
         request: {
           prompt: [{ type: 'text', text: memberWelcome(team) }],
           parent: captain,
-          persona: memberPersona(team, member, stateDir, memories),
-          toolFilter: { deny: [...denyTools] },
+          ...personaAtStart ? { persona } : {},
+          ...toolFilterAtStart ? { toolFilter: { deny: [...denyTools] } } : {},
           agentOptions: {
             provider: llmSelection.provider,
             model: llmSelection.model,
@@ -684,6 +732,7 @@ export async function spawnMember(
     ))
   } catch (error) {
     unregisterMemberAgent(reservedChildId)
+    forgetMemberPersona(reservedChildId)
     throw error
   }
   if (started.childId !== reservedChildId) {
@@ -691,6 +740,7 @@ export async function spawnMember(
     // broken adapter as a failed member creation rather than recording a
     // replacement id whose first pre-step may already have raced registration.
     unregisterMemberAgent(reservedChildId)
+    forgetMemberPersona(reservedChildId)
     try {
       await started.dispose?.()
     } catch (error: unknown) {
