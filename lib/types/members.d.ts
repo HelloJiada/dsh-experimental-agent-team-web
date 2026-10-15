@@ -13,6 +13,8 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Agent } from '@deepseek-ai/dsh-agent';
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm';
+import type { SessionId } from '@deepseek-ai/dsh-session';
 import type { BestPracticeEntry } from './best-practices.ts';
 import type { TeamMember, TeamState } from './types.ts';
 /**
@@ -137,6 +139,58 @@ export declare function memberPersona(team: TeamState, member: TeamMember, state
  * @param team - the team the member joined.
  */
 export declare function memberWelcome(team: TeamState): string;
+/**
+ * The continuable-start request shared by both DSH subagent API generations.
+ * DSH `0.2.0-rc.x` takes it as {@link ContinuableStartRuntime.startContinuable}
+ * and DSH `0.2.1-alpha.x` as `startActivation` with an extra `delivery` field;
+ * every other field is identical, so the plugin builds it once.
+ */
+export interface MemberChildStartSpec {
+    /** Registered continuable provider name. */
+    provider: string;
+    /** Caller-reserved child identity; the host must honor it. */
+    childId: SessionId;
+    /** Short display label persisted with the child session. */
+    label: string;
+    /** Delegation request: welcome prompt, parent, persona, tool filter, route. */
+    request: {
+        prompt: readonly {
+            type: 'text';
+            text: string;
+        }[];
+        parent: Agent;
+        persona: string;
+        toolFilter: {
+            deny: readonly string[];
+        };
+        agentOptions: {
+            provider: string;
+            model: string;
+            reasoningEffort?: ReasoningEffortId;
+        };
+        maxDepth?: number;
+    };
+    /** Caller cancellation, owning the operation until inbox acceptance. */
+    signal: AbortSignal;
+}
+/** What both generations return once the child accepted its initial prompt. */
+export interface MemberChildStartReceipt {
+    /** Durable child session id. */
+    readonly childId: SessionId;
+    /** Cancel the exact activation; present only on the activation generation. */
+    readonly dispose?: () => Promise<void>;
+}
+/**
+ * Start one continuable child on whichever subagent API generation the running
+ * DSH exposes. DSH `0.2.1-alpha.1` replaced `startContinuable` with
+ * `startActivation` while keeping the same request shape, so one plugin build
+ * must detect the generation at call time instead of pinning one line.
+ * @param subagents - the live `ctx.subagents` service.
+ * @param spec - the shared continuable-start request.
+ * @returns the durable child id and (on the activation generation) its disposer.
+ * @throws when the runtime exposes neither API, naming both explicitly.
+ */
+export declare function startMemberChild(subagents: unknown, spec: MemberChildStartSpec): Promise<MemberChildStartReceipt>;
 /**
  * Spawn one member as a durable continuable subagent of the captain and fill
  * `member.id` with its child session id. On failure nothing is persisted.

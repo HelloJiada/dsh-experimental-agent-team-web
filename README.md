@@ -8,18 +8,19 @@
 
 ## DSH compatibility
 
-This worktree adapts the self-contained AgentTeams kernel to the current public
-DSH `0.2.1-alpha.2` package line. The migration updates the subagent creation API
-and declares the client-slot and working-directory peers used by this package.
-Typecheck, tests, build, and packed-artifact checks pass against alpha.2. The
-desktop profile now has the alpha.2 candidate installed and its plugin layer
-passes offline compatibility/composition checks (six unrelated optional profile
-bundles are unavailable and skipped). The active app has not been restarted, so
-live Web/member-spawn smoke remains pending. This package does not
+This worktree adapts the self-contained AgentTeams kernel to the public DSH
+`0.2.0-rc.2` and `0.2.1-alpha.x` package lines. The subagent child-start call is
+detected at runtime (`startActivation` on `0.2.1-alpha.x`, `startContinuable` on
+`0.2.0-rc.x`), and the declared DSH peer ranges accept both lines. Typecheck,
+tests, build, and packed-artifact checks pass against `0.2.0-rc.2`; the same
+source is verified against `0.2.1-alpha.2`. The plugin layer loads in the desktop
+profile with no compatibility issue for this package (six unrelated optional
+profile bundles are unavailable and skipped). Live Web/member-spawn smoke still
+requires a running DSH that has loaded this build. This package does not
 require the unpublished official experimental Agent Teams package or a local
 DSH checkout.
 
-`registration` stays `lazy` (the default) on current DSH. DSH `0.2.1-alpha.2`
+`registration` stays `lazy` (the default) on current DSH. DSH `0.2.0-rc.2` / `0.2.1-alpha.x`
 joins a subagent child to its parent **preset** instead of letting it inherit the
 parent **agent scope** (`@deepseek-ai/dsh-subagent` `applyChildComposition` →
 `agentPresets.composeFrom(childCtx, parent.ctx)`, then `tools.restrict`), so a
@@ -41,7 +42,7 @@ An external DeepSeek Harness (DSH) bundle that turns the current session into th
 
 It provides:
 
-- **loaded on demand**: by default it registers only one `agent_teams_activate` tool plus a two-line hint; the 14 team tools and the captain protocol are installed into the **activating session's own scope** only when activation happens (measured: an inactive session pays ~270 tokens/request instead of ~4,900). Registration stays on that scope, while tool bodies take DSH services from the plugin root context — a session scope does not resolve the plugin's injected `subagents`/`agents` (see `docs/compatibility.md`). Three equivalent, idempotent activation entries: natural language ("use AgentTeams to do X" → the model calls `agent_teams_activate`), the `/agent-teams <goal>` slash command, and its pre-step gesture boundary for surfaces without command adjudication (headless). Current DSH (`0.2.1-alpha.2`) is such a harness — its subagent children join the parent **preset** instead of inheriting the parent **agent scope** — so the member's own scope is filled instead: at the member's first `agent/pre-step` the plugin installs every team tool except the captain-only subset into that member's scope. `registration: 'eager'` (whole surface global, ~4,900 tokens/request in every session) stays available as a fallback; see `docs/compatibility.md`;
+- **loaded on demand**: by default it registers only one `agent_teams_activate` tool plus a two-line hint; the 14 team tools and the captain protocol are installed into the **activating session's own scope** only when activation happens (measured: an inactive session pays ~270 tokens/request instead of ~4,900). Registration stays on that scope, while tool bodies take DSH services from the plugin root context — a session scope does not resolve the plugin's injected `subagents`/`agents` (see `docs/compatibility.md`). Three equivalent, idempotent activation entries: natural language ("use AgentTeams to do X" → the model calls `agent_teams_activate`), the `/agent-teams <goal>` slash command, and its pre-step gesture boundary for surfaces without command adjudication (headless). Current DSH (`0.2.0-rc.2` / `0.2.1-alpha.x`) is such a harness — its subagent children join the parent **preset** instead of inheriting the parent **agent scope** — so the member's own scope is filled instead: at the member's first `agent/pre-step` the plugin installs every team tool except the captain-only subset into that member's scope. `registration: 'eager'` (whole surface global, ~4,900 tokens/request in every session) stays available as a fallback; see `docs/compatibility.md`;
 - the full `agent_teams_*` tool suite (create/add-member/create-task/claim/update/reassign/remove/send-message/status/set-mode/delete, plus `agent_teams_retro_review` and `agent_teams_best_practices`), visible after activation to the captain **and its members** (member child scopes inherit the captain's registrations; under `registration: eager` they inherit them from the global layer);
 - a disk-backed team kernel — `.agent-team-web/<teamId>/team.json` + mailbox inboxes are the single source of truth, with atomic writes and per-team locking;
 - an event-driven shared-task scheduler that auto-assigns ready work to idle members and reacts to `agent/status`;
@@ -176,7 +177,7 @@ The `releases/latest` URL always points at the newest release:
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz
 ```
 
 For developers / contributors, a direct git or path install also works — the repository
@@ -233,4 +234,4 @@ page for the current asset name.)
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz`

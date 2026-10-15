@@ -521,6 +521,75 @@ export function memberWelcome(team: TeamState): string {
 }
 
 /**
+ * The continuable-start request shared by both DSH subagent API generations.
+ * DSH `0.2.0-rc.x` takes it as {@link ContinuableStartRuntime.startContinuable}
+ * and DSH `0.2.1-alpha.x` as `startActivation` with an extra `delivery` field;
+ * every other field is identical, so the plugin builds it once.
+ */
+export interface MemberChildStartSpec {
+  /** Registered continuable provider name. */
+  provider: string
+  /** Caller-reserved child identity; the host must honor it. */
+  childId: SessionId
+  /** Short display label persisted with the child session. */
+  label: string
+  /** Delegation request: welcome prompt, parent, persona, tool filter, route. */
+  request: {
+    prompt: readonly { type: 'text', text: string }[]
+    parent: Agent
+    persona: string
+    toolFilter: { deny: readonly string[] }
+    agentOptions: { provider: string; model: string; reasoningEffort?: ReasoningEffortId }
+    maxDepth?: number
+  }
+  /** Caller cancellation, owning the operation until inbox acceptance. */
+  signal: AbortSignal
+}
+
+/** What both generations return once the child accepted its initial prompt. */
+export interface MemberChildStartReceipt {
+  /** Durable child session id. */
+  readonly childId: SessionId
+  /** Cancel the exact activation; present only on the activation generation. */
+  readonly dispose?: () => Promise<void>
+}
+
+/** The structural view of `ctx.subagents` this plugin depends on. */
+interface ContinuableStartRuntime {
+  /** DSH `0.2.1-alpha.1`+ continuable start (activation lifecycle). */
+  startActivation?: (spec: MemberChildStartSpec & { delivery: 'parent' | 'caller' }) => Promise<MemberChildStartReceipt>
+  /** DSH `0.2.0-rc.x` continuable start (continuation lifecycle). */
+  startContinuable?: (spec: MemberChildStartSpec) => Promise<MemberChildStartReceipt>
+}
+
+/**
+ * Start one continuable child on whichever subagent API generation the running
+ * DSH exposes. DSH `0.2.1-alpha.1` replaced `startContinuable` with
+ * `startActivation` while keeping the same request shape, so one plugin build
+ * must detect the generation at call time instead of pinning one line.
+ * @param subagents - the live `ctx.subagents` service.
+ * @param spec - the shared continuable-start request.
+ * @returns the durable child id and (on the activation generation) its disposer.
+ * @throws when the runtime exposes neither API, naming both explicitly.
+ */
+export async function startMemberChild(
+  subagents: unknown,
+  spec: MemberChildStartSpec,
+): Promise<MemberChildStartReceipt> {
+  const runtime = subagents as ContinuableStartRuntime
+  if (typeof runtime.startActivation === 'function') {
+    return await runtime.startActivation({ delivery: 'parent', ...spec })
+  }
+  if (typeof runtime.startContinuable === 'function') {
+    return await runtime.startContinuable(spec)
+  }
+  throw new Error(
+    'agent-team-web: ctx.subagents exposes neither startActivation (DSH 0.2.1-alpha.1+) nor '
+    + 'startContinuable (DSH 0.2.0-rc.x) — install a DSH release and plugin version that match',
+  )
+}
+
+/**
  * Spawn one member as a durable continuable subagent of the captain and fill
  * `member.id` with its child session id. On failure nothing is persisted.
  * @param ctx - the plugin context (injects `subagents`).
@@ -549,7 +618,7 @@ export async function spawnMember(
 ): Promise<void> {
   // Fail loud at the first use: provider registration is a sibling plugin's
   // effect and may settle after this plugin mounts. Capability checks here
-  // mirror what startActivation requires for a continuable member, with an actionable error.
+  // mirror what the continuable start requires, with an actionable error.
   const provider = ctx.subagents.getProvider(config.provider)
   if (provider === undefined) {
     throw new Error(
@@ -585,15 +654,14 @@ export async function spawnMember(
   // 成员的首个 pre-step 一定早不过登记——成员面正是靠「pre-step 时已是成员」装进
   // 该成员自己的 scope(见 activateMemberAgentTeams)。
   const reservedChildId = brandedSessionId(randomUUID())
-  // Register before startActivation: the continuation manager may begin the
-  // first child turn as soon as it accepts the initial prompt, and its first
+  // Register before the start: the continuation manager may begin the first
+  // child turn as soon as it accepts the initial prompt, and its first
   // pre-step must already recognize this session as an AgentTeams member.
   registerMemberAgent(reservedChildId)
-  let started
+  let started: MemberChildStartReceipt
   try {
     started = await selections.withPending(captain.id, label, llmSelection, () => (
-      ctx.subagents.startActivation({
-        delivery: 'parent',
+      startMemberChild(ctx.subagents, {
         provider: config.provider,
         childId: reservedChildId,
         label,
@@ -624,7 +692,7 @@ export async function spawnMember(
     // replacement id whose first pre-step may already have raced registration.
     unregisterMemberAgent(reservedChildId)
     try {
-      await started.dispose()
+      await started.dispose?.()
     } catch (error: unknown) {
       ctx.logger.warn(`agent-team-web: cleanup after mismatched child id also failed: ${String(error)}`)
     }

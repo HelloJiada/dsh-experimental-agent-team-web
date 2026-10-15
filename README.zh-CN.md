@@ -8,9 +8,9 @@
 
 ## DSH 兼容性
 
-当前工作树已将本包自包含的 AgentTeams 内核适配到桌面正在使用的 DSH `0.2.1-alpha.2`。本次迁移更新 subagent 创建 API，并补充本包实际使用的 client slot 与 working-directory peers；类型检查、测试、构建及打包校验均通过。alpha.2 候选包已安装到 desktop profile，离线组合检查确认本插件加载、peer 兼容且未被跳过；另有 6 个无关的可选 profile bundle 因依赖不可解析而跳过。桌面活动进程尚未重启，真实 Web/成员派发冒烟仍待正常重启后验证。不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
+当前工作树已将本包自包含的 AgentTeams 内核适配到公开 DSH `0.2.0-rc.2` 与 `0.2.1-alpha.x` 两条包线：成员创建时按运行时可用的 API 选择 `startActivation`（`0.2.1-alpha.x`）或 `startContinuable`（`0.2.0-rc.x`），DSH peers 也改为同时接受这两条线。类型检查、测试、构建与打包校验在 `0.2.0-rc.2` 下通过，同一份源码也在 `0.2.1-alpha.2` 下验证通过。desktop profile 的插件层加载正常、本包无兼容性问题（另有 6 个无关的可选 profile bundle 因依赖不可解析而跳过）。真实 Web/成员派发冒烟仍需在已加载该构建的 DSH 进程中验证。不需要未发布的官方实验性 Agent Teams 包或本地 DSH checkout。
 
-`registration` 保持默认 `lazy`。当前 DSH(`0.2.1-alpha.2`)的子 agent 加入**父 preset**、而不是继承**父 agent scope**(`@deepseek-ai/dsh-subagent` 的 `applyChildComposition` 先 `agentPresets.composeFrom(childCtx, parent.ctx)`,之后才 `tools.restrict`),所以成员看不到队长自己的 scope——但它不需要看到:成员**自己的** scope 由插件填。在成员第一步之前(`agent/pre-step`,即该步请求组装前),插件把成员可见子集(除队长专属外的全部团队工具)装进该成员的 scope,成员 deny 名单因此也不再必要。`eager` 保留作兜底:整面注册进全局层,代价是每个会话约 4.9k tokens/请求。
+`registration` 保持默认 `lazy`。当前 DSH(`0.2.0-rc.2` / `0.2.1-alpha.x`)的子 agent 加入**父 preset**、而不是继承**父 agent scope**(`@deepseek-ai/dsh-subagent` 的 `applyChildComposition` 先 `agentPresets.composeFrom(childCtx, parent.ctx)`,之后才 `tools.restrict`),所以成员看不到队长自己的 scope——但它不需要看到:成员**自己的** scope 由插件填。在成员第一步之前(`agent/pre-step`,即该步请求组装前),插件把成员可见子集(除队长专属外的全部团队工具)装进该成员的 scope,成员 deny 名单因此也不再必要。`eager` 保留作兜底:整面注册进全局层,代价是每个会话约 4.9k tokens/请求。
 
 ## 概览
 
@@ -18,7 +18,7 @@
 
 提供能力:
 
-- **按需加载**:默认只注册一个 `agent_teams_activate` 工具和一段两行提示,14 个团队工具与队长协议在激活时才装进**当前会话自己的作用域**(实测把未激活会话的每次请求开销从约 4,900 tokens 降到约 270 tokens)。注册留在会话作用域,工具体的 DSH 服务访问走插件根 ctx——会话作用域解析不到本插件注入的 `subagents`/`agents`(见 `docs/compatibility.md`)。三种激活入口等价且幂等:自然语言(「用 AgentTeams 做 X」→ 模型调 `agent_teams_activate`)、`/agent-teams <目标>` 斜杠命令(含 pre-step 手势边界,无命令裁决的 headless 面同样可用)。当前 DSH(`0.2.1-alpha.2`)正是让子 agent 加入**父的 preset**、而非继承**父 agent 的 scope** 的宿主,因此改为填成员**自己**的 scope:在成员首个 `agent/pre-step` 时把「除队长专属外的全部团队工具」装进该成员作用域。`registration: 'eager'`(整面进全局层,每会话约 4,900 tokens/请求)保留作兜底,详见 `docs/compatibility.md`;
+- **按需加载**:默认只注册一个 `agent_teams_activate` 工具和一段两行提示,14 个团队工具与队长协议在激活时才装进**当前会话自己的作用域**(实测把未激活会话的每次请求开销从约 4,900 tokens 降到约 270 tokens)。注册留在会话作用域,工具体的 DSH 服务访问走插件根 ctx——会话作用域解析不到本插件注入的 `subagents`/`agents`(见 `docs/compatibility.md`)。三种激活入口等价且幂等:自然语言(「用 AgentTeams 做 X」→ 模型调 `agent_teams_activate`)、`/agent-teams <目标>` 斜杠命令(含 pre-step 手势边界,无命令裁决的 headless 面同样可用)。当前 DSH(`0.2.0-rc.2` / `0.2.1-alpha.x`)正是让子 agent 加入**父的 preset**、而非继承**父 agent 的 scope** 的宿主,因此改为填成员**自己**的 scope:在成员首个 `agent/pre-step` 时把「除队长专属外的全部团队工具」装进该成员作用域。`registration: 'eager'`(整面进全局层,每会话约 4,900 tokens/请求)保留作兜底,详见 `docs/compatibility.md`;
 - 完整 `agent_teams_*` 工具集(建队/加成员/建任务/认领/更新/转派/移除/发消息/状态/模式切换/删除,以及 `agent_teams_retro_review`、`agent_teams_best_practices`),激活后对队长**及其成员**可见(成员子作用域继承队长的注册;`registration: eager` 下改为从全局层继承);
 - 磁盘为唯一真源的团队内核 — `.agent-team-web/<teamId>/team.json` + 邮箱 inbox,原子写入 + 按团队加锁;
 - 事件驱动的共享任务调度器,自动把就绪任务派给空闲成员并响应 `agent/status`;
@@ -97,7 +97,7 @@ AgentTeams 假设**单个 harness 进程**独占一个 workspace 的团队状态
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz
+pnpm add https://github.com/HelloJiada/dsh-experimental-agent-team-web/releases/latest/download/deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz
 ```
 
 开发者/协作者也可用 git 或本地路径安装——仓库已提交 `lib/` 构建产物,无需构建:
@@ -150,4 +150,4 @@ tarball,无需改 URL。(若上面文件名仍带旧版本号,到
 
 ---
 
-Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.32.tgz`
+Release tarball: `deepseek-ai-dsh-experimental-agent-team-web-0.1.33.tgz`

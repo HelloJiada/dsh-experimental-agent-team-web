@@ -104,7 +104,10 @@ describe('client bundle protocol', () => {
     expect(registrations[0]?.id).toBe(manifest.name)
     expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-layout')
     expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-slots')
-    expect(manifest.peerDependencies?.['@deepseek-ai/dsh-client-ui-slots']).toBe('0.2.1-alpha.2')
+    // The slot package is a real client external, so it must be declared and
+    // pinned to the same supported DSH range as the other UI peers.
+    expect(manifest.peerDependencies?.['@deepseek-ai/dsh-client-ui-slots'])
+      .toBe(manifest.peerDependencies?.['@deepseek-ai/dsh-client-ui-layout'])
     const declared = new Set(manifest.dsh?.client?.inject ?? [])
     const available = new Set([...defaultModuleTable, ...declared])
     const requested = new Set<string>()

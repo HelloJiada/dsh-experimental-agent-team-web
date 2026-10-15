@@ -27,6 +27,8 @@ import {
   resolveMemberLlmCandidates,
   resolveMemberLlmSelection,
   spawnMember,
+  startMemberChild,
+  type MemberChildStartSpec,
   type MemberRuntimeConfig,
 } from './members.ts'
 import type { TeamMember, TeamState } from './types.ts'
@@ -410,6 +412,59 @@ describe('spawnMember — 成员派生', () => {
       new AbortController().signal,
     )).rejects.toThrow(/no subagent provider "spawn" is registered/)
     expect(draft.id).toBe('')
+  })
+})
+
+describe('startMemberChild — 两代 DSH subagent API', () => {
+  const spec = {
+    provider: 'spawn',
+    childId: SessionId('child-reserved'),
+    label: 'lbl',
+    request: {
+      prompt: [{ type: 'text' as const, text: 'welcome' }],
+      parent: captain('/ws'),
+      persona: 'persona',
+      toolFilter: { deny: ['agent_teams_create'] },
+      agentOptions: { provider: 'p', model: 'm' },
+    },
+    signal: new AbortController().signal,
+  } satisfies MemberChildStartSpec
+
+  it('DSH 0.2.1-alpha.x:优先 startActivation,携带 parent delivery', async () => {
+    const seen: unknown[] = []
+    const receipt = await startMemberChild({
+      startActivation: async (received: unknown) => {
+        seen.push(received)
+        return { childId: SessionId('child-reserved'), dispose: async () => undefined }
+      },
+      startContinuable: async () => {
+        throw new Error('startContinuable must not be used when startActivation exists')
+      },
+    }, spec)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ delivery: 'parent', childId: 'child-reserved', provider: 'spawn', label: 'lbl' })
+    expect(receipt.childId).toBe('child-reserved')
+    expect(typeof receipt.dispose).toBe('function')
+  })
+
+  it('DSH 0.2.0-rc.x:仅有 startContinuable 时回退到该 API,不携带 delivery', async () => {
+    const seen: Record<string, unknown>[] = []
+    const receipt = await startMemberChild({
+      startContinuable: async (received: Record<string, unknown>) => {
+        seen.push(received)
+        return { childId: SessionId('child-reserved') }
+      },
+    }, spec)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).not.toHaveProperty('delivery')
+    expect(seen[0]).toMatchObject({ childId: 'child-reserved', request: { persona: 'persona' } })
+    expect(receipt.childId).toBe('child-reserved')
+    expect(receipt.dispose).toBeUndefined()
+  })
+
+  it('两代 API 都不存在:报错同时点名 startActivation 与 startContinuable', async () => {
+    await expect(startMemberChild({}, spec))
+      .rejects.toThrow(/neither startActivation .* nor startContinuable/)
   })
 })
 
